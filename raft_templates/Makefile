@@ -58,15 +58,15 @@ build: $(TARGET_BINARY)
 
 ifeq ($(MONITOR),SerialMonitor.py)
 flash: build
-	@$(PYTHON_FOR_FLASH_MONITOR) $(BUILD_DIR)/_deps/raftcore-src/scripts/flashUsingPartitionCSV.py $(BUILD_RAFT_ARTEFACTS_DIR)/partitions.csv $(BUILD_DIR) $(SYSTYPE).bin $(PORT) -s $(BUILD_CONFIG_DIR)/sdkconfig -f fs.bin
+	@$(PYTHON_FOR_FLASH_MONITOR) $(BUILD_DIR)/_deps/raftcore-src/scripts/flashUsingPartitionCSV.py $(BUILD_RAFT_ARTEFACTS_DIR)/partitions.csv $(BUILD_DIR) $(SYSTYPE).bin $(PORT) -s $(SDKCONFIG_FILE) -f fs.bin
 	@$(PYTHON_FOR_FLASH_MONITOR) $(BUILD_DIR)/_deps/raftcore-src/scripts/SerialMonitor.py $(PORT) -g
 else ifeq ($(MONITOR),serial-monitor)
 flash: build
-	@$(PYTHON_FOR_FLASH_MONITOR) $(BUILD_DIR)/_deps/raftcore-src/scripts/flashUsingPartitionCSV.py $(BUILD_RAFT_ARTEFACTS_DIR)/partitions.csv $(BUILD_DIR) $(SYSTYPE).bin $(PORT) -s $(BUILD_CONFIG_DIR)/sdkconfig -f fs.bin
+	@$(PYTHON_FOR_FLASH_MONITOR) $(BUILD_DIR)/_deps/raftcore-src/scripts/flashUsingPartitionCSV.py $(BUILD_RAFT_ARTEFACTS_DIR)/partitions.csv $(BUILD_DIR) $(SYSTYPE).bin $(PORT) -s $(SDKCONFIG_FILE) -f fs.bin
 	serial-monitor -p $(PORT)
 else
 flash: build
-	@$(PYTHON_FOR_FLASH_MONITOR) $(BUILD_DIR)/_deps/raftcore-src/scripts/flashUsingPartitionCSV.py $(BUILD_RAFT_ARTEFACTS_DIR)/partitions.csv $(BUILD_DIR) $(SYSTYPE).bin $(PORT) -s $(BUILD_CONFIG_DIR)/sdkconfig -f fs.bin
+	@$(PYTHON_FOR_FLASH_MONITOR) $(BUILD_DIR)/_deps/raftcore-src/scripts/flashUsingPartitionCSV.py $(BUILD_RAFT_ARTEFACTS_DIR)/partitions.csv $(BUILD_DIR) $(SYSTYPE).bin $(PORT) -s $(SDKCONFIG_FILE) -f fs.bin
 endif
 
 .PHONY: build clean flash test

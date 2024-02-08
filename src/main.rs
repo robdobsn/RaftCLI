@@ -3,6 +3,8 @@ use clap::Parser;
 use std::path::Path;
 mod app_new;
 use app_new::generate_new_app;
+mod app_config;
+use app_config::get_user_input;
 
 // Define the command line arguments
 #[derive(Parser, Debug)]
@@ -63,11 +65,15 @@ fn main() {
     match args.action.as_str() {
         "new" => {
 
+            // Get configuration
+            let json_config_str = get_user_input();
+            let json_config = serde_json::from_str(&json_config_str.unwrap()).unwrap();
+
             // Validate target folder
             check_target_folder_valid(&args.folder_base, args.clean);
 
             // Generate a new app
-            let result = generate_new_app(&args.folder_base).unwrap();
+            let result = generate_new_app(&args.folder_base, json_config).unwrap();
             println!("{:?}", result);
 
         }

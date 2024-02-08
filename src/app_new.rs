@@ -61,40 +61,46 @@ fn process_dir(handlebars: &mut Handlebars, in_dir: &Dir, target_folder: &str, c
     Ok(())
 }
 
-pub fn generate_new_app(target_folder: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn generate_new_app(target_folder: &str, context: serde_json::Value) -> Result<(), Box<dyn std::error::Error>> {
 
-    // TODO - change this to all user input ...
-    // Parameters to configure
-    // 1. Name of SysType
-    // 2. WebServer
-    // 3. Fixed WiFi SSID / Password - or use a config file which is not checked into git
-    // 4. Basic SysMods
-    // 5. Target chip
-    // 6. Size of flash
-    // 7. SPIRAM
-    // 8. SPIFFS / LittleFS
-    // 9. Name of main app SysMod
-    // 10. Name of main app SysMod
+    // // TODO - change this to all user input ...
+    // // Parameters to configure
+    // // 1. Name of SysType
+    // // 2. WebServer
+    // // 3. Fixed WiFi SSID / Password - or use a config file which is not checked into git
+    // // 4. Basic SysMods
+    // // 5. Target chip
+    // // 6. Size of flash
+    // // 7. SPIRAM
+    // // 8. SPIFFS / LittleFS
+    // // 9. Name of main app SysMod
+    // // 10. Name of main app SysMod
 
-    // Define the context for the template
-    let context = json!({
-        "esp_idf_version": "5.1.2",
-        "project_name": "MyRaftProject",
-        "project_semver": "0.0.0",
-        "target_chip": "esp32",
-        "sys_type_name": "MySysType",
-        "raft_core_git_tag": "ReWorkConfigBase",
-        "inc_raft_sysmods": "RaftSysMods@ReWorkConfigBase",
-        "inc_raft_webserver": "RaftWebServer@ReWorkConfigBase",
-        "user_sys_mod_class": "MySysMod",
-        "user_sys_mod_name": "my_sys_mod",
-        "include_user_sysmod": "#include \"MySysMod.h\"",
-        "include_raft_sysmods": "#include \"RegisterSysMods.h\"",
-        "include_raft_webserver": "#include \"RegisterWebServer.h\"",
-        "register_raft_sysmods": "\n    // Register SysMods from RaftSysMods library\n    RegisterSysMods::registerSysMods(raftCoreApp.getSysManager());\n",
-        "register_raft_webserver": "\n    // Register WebServer from RaftWebServer library\n    RegisterSysMods::registerWebServer(raftCoreApp.getSysManager());\n",
-        "register_user_sysmod": "\n    // Register sysmod\n    raftCoreApp.registerSysMod(\"my_sys_mod\", MySysMod::create, true);\n",
-    });
+    // // Define the context for the template
+    // let context = json!({
+    //     "project_name": "MyRaftProject",
+    //     "project_semver": "0.0.0",
+    //     "sys_type_name": "MySysType",
+    //     "target_chip": "esp32",
+    //     "esp_idf_version": "5.1.2",
+    //     "raft_core_git_tag": "ReWorkConfigBase",
+    //     "use_raft_sysmods": true,
+    //     "use_raft_webserver": true,
+    //     "create_use_sysmod": true,
+    //     "user_sys_mod_class": "MySysMod",
+    //     "user_sys_mod_name": "my_sys_mod",
+
+    //     "inc_raft_sysmods": "RaftSysMods@ReWorkConfigBase",
+    //     "include_raft_sysmods": "#include \"RegisterSysMods.h\"",
+    //     "register_raft_sysmods": "\n    // Register SysMods from RaftSysMods library\n    RegisterSysMods::registerSysMods(raftCoreApp.getSysManager());\n",
+
+    //     "inc_raft_webserver": "RaftWebServer@ReWorkConfigBase",
+    //     "include_raft_webserver": "#include \"RegisterWebServer.h\"",
+    //     "register_raft_webserver": "\n    // Register WebServer from RaftWebServer library\n    RegisterSysMods::registerWebServer(raftCoreApp.getSysManager());\n",
+
+    //     "include_user_sysmod": "#include \"MySysMod.h\"",
+    //     "register_user_sysmod": "\n    // Register sysmod\n    raftCoreApp.registerSysMod(\"my_sys_mod\", MySysMod::create, true);\n",
+    // });
 
     // Create an instance of Handlebars
     let mut handlebars = Handlebars::new();
