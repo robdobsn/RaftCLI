@@ -136,10 +136,13 @@ pub async fn start(port: String, baud: u32, log: bool, log_folder: String) -> to
     // Setup signaling mechanism
     let (oneshot_exit_send, oneshot_exit_get) = oneshot::channel();
 
-    // Open serial port
+    // Open serial port - non-Unix
+    #[cfg(not(unix))]
     let serial_port = tokio_serial::new(port, baud).open_native_async()?;
 
-    // Set the port to non-exclusive mode on Unix
+    // Open serial port and set to non-exclusive mode on Unix
+    #[cfg(unix)]
+    let mut serial_port = tokio_serial::new(port, baud).open_native_async()?;
     #[cfg(unix)]
     serial_port.set_exclusive(false).expect("Failed to set port non-exclusive");
 
