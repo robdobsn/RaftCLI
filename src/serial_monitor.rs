@@ -57,8 +57,9 @@ impl Encoder<String> for LineCodec {
 
     fn encode(&mut self, item: String, dst: &mut BytesMut) -> Result<(), Self::Error> {
         // println!("In writer {:?}", &item);
-        dst.reserve(item.len());
+        dst.reserve(item.len() + 1);
         dst.put(item.as_bytes());
+        dst.put_u8(b'\r');
         Ok(())
     }
 }
@@ -96,27 +97,47 @@ pub async fn start(port: String, baud: u32) -> tokio_serial::Result<()> {
     });
 
     tokio::spawn(async move {
+
+        // User input buffer
+        let mut user_input_buffer = String::new();
+
+        // Main serial monitor loop
         loop {
 
             if poll(Duration::from_millis(100)).expect("Error polling for event") {
                 let evt = read().expect("Error reading event");
                 match evt {
                     Event::Key(key) => {
-                        // println!("Key pressed: {:?}", key);
-                        // Exit loop if 'q' is pressed
-                        if key.code == KeyCode::Esc {
-                            let _ = oneshot_exit_tx.send(());
-                            break;
+                        // Check for key press (release events are also available)
+                        if key.kind != crossterm::event::KeyEventKind::Press {
+                            continue;
                         }
 
-                        if key.kind == crossterm::event::KeyEventKind::Press {
-                            let msg = key_code_to_terminal_sequence(key.code);
-                            let write_result = tx
-                                .send(msg)
-                                .await;
-                            match write_result {
-                                Ok(_) => (),
-                                Err(err) => println!("{:?}", err),
+                        // Handle key press
+                        match key.code {
+                            // Break out of the serial monitor on Esc key
+                            KeyCode::Esc => {
+                                let _ = oneshot_exit_tx.send(());
+                                break;
+                            },
+                            // Check for Enter key and send the user input buffer
+                            KeyCode::Enter => {
+                                let write_result = tx
+                                    .send(user_input_buffer.clone())
+                                    .await;
+                                match write_result {
+                                    Ok(_) => (),
+                                    Err(err) => println!("{:?}", err),
+                                }
+                                user_input_buffer.clear();
+                            },
+                            // Handle backspace
+                            KeyCode::Backspace => {
+                                user_input_buffer.pop();
+                            },
+                            // Handle other characters
+                            _ => {
+                                user_input_buffer.push_str(key_code_to_terminal_sequence(key.code).as_str());
                             }
                         }
                     },
