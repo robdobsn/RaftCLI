@@ -80,18 +80,19 @@ fn check_target_folder_valid(target_folder: &str, clean: bool) {
 #[tokio::main]
 async fn main() {
     let args = Cli::parse();
-    println!("{:?}", args);
+    // println!("{:?}", args);
 
     // Call the function to test the templates
     match args.action.as_str() {
         "new" => {
 
+            // Validate target folder - doing this first so that any errors in the folder
+            // defintion are handled first
+            check_target_folder_valid(&args.base_folder, args.clean);
+
             // Get configuration
             let json_config_str = get_user_input();
             let json_config = serde_json::from_str(&json_config_str.unwrap()).unwrap();
-
-            // Validate target folder
-            check_target_folder_valid(&args.base_folder, args.clean);
 
             // Generate a new app
             let result = generate_new_app(&args.base_folder, json_config).unwrap();

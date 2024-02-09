@@ -120,7 +120,7 @@ impl Encoder<String> for LineCodec {
 pub async fn start(port: String, baud: u32, log: bool, log_folder: String) -> tokio_serial::Result<()> {
 
     // Debug
-    println!("Starting serial monitor on port: {} at baud: {}", port, baud);
+    // println!("Starting serial monitor on port: {} at baud: {}", port, baud);
 
     // Open log file if required
     let log_file = if log {

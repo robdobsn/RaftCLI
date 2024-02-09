@@ -45,7 +45,8 @@ fn process_dir(handlebars: &mut Handlebars, in_dir: &Dir, target_folder: &str, c
             // Decide to render or copy file based on its content or extension
             if content.contains("{{") && content.contains("}}") {
 
-                println!("Rendering file from {} to: {}", path, dest_path);
+                // Debug
+                // println!("Rendering file from {} to: {}", path, dest_path);
 
                 // File likely contains Handlebars syntax; attempt to register it and then render it
                 handlebars.register_template_string(path.as_str(), content)?;
@@ -54,7 +55,8 @@ fn process_dir(handlebars: &mut Handlebars, in_dir: &Dir, target_folder: &str, c
 
             } else {
 
-                println!("Copying file from {} to: {}", path, dest_path);
+                // Debug
+                // println!("Copying file from {} to: {}", path, dest_path);
 
                 // File does not contain Handlebars syntax; copy as is
                 fs::write(dest_path, content)?;
