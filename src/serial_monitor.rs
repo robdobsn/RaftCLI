@@ -141,7 +141,7 @@ pub async fn start(port: String, baud: u32, log: bool, log_folder: String) -> to
 
     // Set the port to non-exclusive mode on Unix
     #[cfg(unix)]
-    port.set_exclusive(false).expect("Failed to set port non-exclusive");
+    serial_port.set_exclusive(false).expect("Failed to set port non-exclusive");
 
     // Create a stream from the serial port
     let stream = LineCodec.framed(serial_port);
