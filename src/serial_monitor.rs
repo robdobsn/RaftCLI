@@ -2,15 +2,19 @@
 // Rob Dobson 2024
 
 use crossterm::{
+    execute,
     event::{poll, read, Event, KeyCode},
-    terminal::{enable_raw_mode, disable_raw_mode},
+    terminal::{self, Clear, ClearType, enable_raw_mode, disable_raw_mode},
+    cursor::{MoveTo, SavePosition, MoveToNextLine, RestorePosition},
 };
 use futures::stream::StreamExt;
-use std::{io, str};
+use std::{str, io};
+use std::io::{stdout, Write};
 use tokio::time::Duration;
 use tokio_util::codec::{Decoder, Encoder};
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, Mutex};
 use futures::SinkExt;
+use std::sync::Arc;
 
 use bytes::{BufMut, BytesMut};
 use tokio_serial::SerialPortBuilderExt;
@@ -74,32 +78,75 @@ pub async fn start(port: String, baud: u32) -> tokio_serial::Result<()> {
     enable_raw_mode()?;
 
     // Setup signaling mechanism
-    let (oneshot_exit_tx, oneshot_exit_rx) = oneshot::channel();
+    let (oneshot_exit_send, oneshot_exit_get) = oneshot::channel();
 
     // Open serial port
     let serial_port = tokio_serial::new(port, baud).open_native_async()?;
 
+    // Set the port to non-exclusive mode on Unix
     #[cfg(unix)]
-    port.set_exclusive(false).expect("Failed to set port exclusive");
+    port.set_exclusive(false).expect("Failed to set port non-exclusive");
 
+    // Create a stream from the serial port
     let stream = LineCodec.framed(serial_port);
-    let (mut tx, mut rx) = stream.split();
+    let (mut serial_tx, mut serial_rx) = stream.split();
 
+    // User input buffer
+    let user_input_buffer = Arc::new(Mutex::new(String::new()));
+
+    // Clone the user input buffer for use in the serial_rx task
+    let serial_rx_buffer_clone = user_input_buffer.clone();
+
+    // Create a separate task to read from the serial port and send to the terminal
     tokio::spawn(async move {
         loop {
-            let item = rx
-                .next()
-                .await
-                .expect("Error awaiting future in RX stream.")
-                .expect("Reading stream resulted in an error");
-            print!("{item}");
+            if let Some(item) = serial_rx.next().await.transpose().expect("Failed to read from RX stream") {
+
+                // Get the terminal output
+                let mut stdout = stdout();
+
+                // Check if the user input buffer is not empty and display it
+                {
+                    // Lock the user input buffer
+                    let buf = serial_rx_buffer_clone.lock().await;
+
+                    // If it isn't empty then delete the bottom row before continuing
+                    if !buf.is_empty() {
+                        execute!(stdout, MoveToNextLine(1), Clear(ClearType::CurrentLine)).unwrap();
+                    }
+
+                    // // Save the current cursor position before printing the received item
+                    // execute!(stdout, SavePosition).unwrap();
+
+                    // Print the received serial data
+                    print!("{item}");
+
+                    // Check if the user input buffer is not empty
+                    if !buf.is_empty() {
+                        // If the user input buffer is not empty, add an additional linefeed to create a blank line
+                        execute!(stdout, MoveToNextLine(1), RestorePosition).unwrap();
+                        // Move to the start of the line
+                        execute!(stdout, MoveTo(0, terminal::size().unwrap().1 - 1)).unwrap();
+                        // Output the user input buffer to the blank line
+                        print!("{}", buf);
+                        // // Move the cursor back to the previous position to ensure new data continues above the input buffer
+                        // execute!(stdout, RestorePosition).unwrap();
+                    }
+                } // Release the lock on the user input buffer
+    
+                stdout.flush().unwrap();
+            }
         }
     });
 
+    // Clone the user input buffer for use in the serial_tx task
+    let serial_tx_buffer_clone = user_input_buffer.clone();
+
+    // Create a separate task to read from the terminal and send to the serial port
     tokio::spawn(async move {
 
-        // User input buffer
-        let mut user_input_buffer = String::new();
+        // Stdout
+        let mut stdout = stdout();
 
         // Main serial monitor loop
         loop {
@@ -114,32 +161,60 @@ pub async fn start(port: String, baud: u32) -> tokio_serial::Result<()> {
                         }
 
                         // Handle key press
-                        match key.code {
-                            // Break out of the serial monitor on Esc key
-                            KeyCode::Esc => {
-                                let _ = oneshot_exit_tx.send(());
-                                break;
-                            },
-                            // Check for Enter key and send the user input buffer
-                            KeyCode::Enter => {
-                                let write_result = tx
-                                    .send(user_input_buffer.clone())
-                                    .await;
-                                match write_result {
-                                    Ok(_) => (),
-                                    Err(err) => println!("{:?}", err),
+                        {
+                            // Lock the user input buffer
+                            let mut buf = serial_tx_buffer_clone.lock().await;
+
+                            // Handle key press
+                            match key.code {
+                                // Break out of the serial monitor on Esc key
+                                KeyCode::Esc => {
+                                    let _ = oneshot_exit_send.send(());
+                                    break;
+                                },
+                                // Check for Enter key and send the user input buffer
+                                KeyCode::Enter => {
+                                    // Clear the user input display line before sending.
+                                    execute!(stdout, MoveTo(0, terminal::size().unwrap().1 - 1), Clear(ClearType::CurrentLine)).unwrap();
+
+                                    // Add a carriage return to the user input buffer
+                                    buf.push_str("\r");
+
+                                    // Send the user input buffer to the serial port
+                                    let write_result = serial_tx
+                                        .send(buf.clone())
+                                        .await;
+                                    match write_result {
+                                        Ok(_) => (),
+                                        Err(err) => println!("{:?}", err),
+                                    }
+
+                                    // Clear the user input buffer
+                                    buf.clear();
+
+                                    // // Redisplay the updated buffer.
+                                    // execute!(stdout, MoveTo(0, terminal::size().unwrap().1 - 1), Clear(ClearType::CurrentLine)).unwrap();
+                                },
+                                // Handle backspace
+                                KeyCode::Backspace => {
+                                    // Pop the last character from the buffer
+                                    buf.pop();
+                                    // Clear the user input display line
+                                    execute!(stdout, MoveTo(0, terminal::size().unwrap().1 - 1), Clear(ClearType::CurrentLine)).unwrap();
+                                    // Display the buffer as the user types.
+                                    print!("{}", buf);
+                                },
+                                // Handle other characters
+                                _ => {
+                                    buf.push_str(key_code_to_terminal_sequence(key.code).as_str());
+                                    // Display the buffer as the user types.
+                                    print!("{}", key_code_to_terminal_sequence(key.code));
                                 }
-                                user_input_buffer.clear();
-                            },
-                            // Handle backspace
-                            KeyCode::Backspace => {
-                                user_input_buffer.pop();
-                            },
-                            // Handle other characters
-                            _ => {
-                                user_input_buffer.push_str(key_code_to_terminal_sequence(key.code).as_str());
                             }
-                        }
+                        } // Release the lock on the user input buffer
+
+                        // Ensure the user's typing appears at the bottom line.
+                        stdout.flush().unwrap();
                     },
                     _ => {} // Handle other events here
                 }
@@ -148,7 +223,7 @@ pub async fn start(port: String, baud: u32) -> tokio_serial::Result<()> {
     });
 
     // Wait here for the oneshot signal to exit
-    let _ = oneshot_exit_rx.await;
+    let _ = oneshot_exit_get.await;
 
     // Exit crossterm raw mode
     disable_raw_mode()?;
