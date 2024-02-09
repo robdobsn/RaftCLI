@@ -1,10 +1,14 @@
+// RaftCLI: App configuration module
+// Rob Dobson 2024
+
 use serde::{Deserialize, Serialize};
-use dialoguer::{Input};
+use dialoguer::Input;
 use serde_json::Result;
 use serde_json::json;
 use handlebars::Handlebars;
 use regex;
 
+// Define the schema for the user input
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct ConfigQuestion {
     key: String,
@@ -19,9 +23,10 @@ struct ConfigQuestion {
     generator: Option<String>,
 }
 
+// Get the populated schema for the user input
 fn get_schema() -> serde_json::Value {
 
-    // Define the schema for the user input
+    // Populate schema for the user input
     let schema = json!([
         {
             "key": "project_name",
@@ -74,26 +79,6 @@ fn get_schema() -> serde_json::Value {
             "error": "Invalid ESP-IDF version"
         },
         {
-            "key": "use_raft_sysmods",
-            "prompt": "Use Raft SysMods",
-            "default": "true",
-            "datatype": "boolean",
-            "description": "Use the Raft SysMods library",
-            "pattern": "^(true|false|y|n)$",
-            "message": "Use Raft SysMods must be true or false",
-            "error": "Invalid Raft SysMods choice"
-        },
-        {
-            "key": "use_raft_webserver",
-            "prompt": "Use Raft WebServer",
-            "default": "true",
-            "datatype": "boolean",
-            "description": "Use the Raft WebServer library",
-            "pattern": "^(true|false|y|n)$",
-            "message": "Use Raft WebServer must be true or false",
-            "error": "Invalid Raft WebServer choice"
-        },
-        {
             "key": "create_user_sysmod",
             "prompt": "Create User SysMod",
             "default": "true",
@@ -128,17 +113,57 @@ fn get_schema() -> serde_json::Value {
         {
             "key": "raft_core_git_tag",
             "prompt": "Raft Core Git Tag",
-            "default": "",
+            "default": "main",
             "datatype": "string",
             "description": "The git tag for the Raft Core library",
             "pattern": "^[a-zA-Z0-9_]*$",
             "message": "",
-            "error": "Invalid Raft Core git tag"
+            "error": "Invalid git tag"
+        },
+        {
+            "key": "use_raft_sysmods",
+            "prompt": "Use Raft SysMods",
+            "default": "true",
+            "datatype": "boolean",
+            "description": "Use the Raft SysMods library",
+            "pattern": "^(true|false|y|n)$",
+            "message": "Use Raft SysMods must be true or false",
+            "error": "Invalid Raft SysMods choice"
+        },
+        {
+            "key": "raft_sysmods_git_tag",
+            "prompt": "Raft SysMods Git Tag",
+            "default": "main",
+            "datatype": "string",
+            "description": "The git tag for the Raft SysMods library",
+            "pattern": "^[a-zA-Z0-9_]*$",
+            "message": "",
+            "error": "Invalid git tag"
+        },
+        {
+            "key": "use_raft_webserver",
+            "prompt": "Use Raft Web Server",
+            "default": "true",
+            "datatype": "boolean",
+            "description": "Use the Raft WebServer library",
+            "pattern": "^(true|false|y|n)$",
+            "message": "Use Raft WebServer must be true or false",
+            "error": "Invalid Raft WebServer choice"
+        },
+        {
+            "key": "raft_webserver_git_tag",
+            "prompt": "Raft Web Server Git Tag",
+            "default": "main",
+            "datatype": "string",
+            "description": "The git tag for the Raft Web Server library",
+            "pattern": "^[a-zA-Z0-9_]*$",
+            "message": "",
+            "error": "Invalid git tag"
         },
         {
             "key": "inc_raft_sysmods",
             "condition": "use_raft_sysmods",
-            "generator": "RaftSysMods@ReWorkConfigBase",
+            "generator": "RaftSysMods@{{raft_sysmods_git_tag}}",
         },
         {
             "key": "include_raft_sysmods",
@@ -153,7 +178,7 @@ fn get_schema() -> serde_json::Value {
         {
             "key": "inc_raft_webserver",
             "condition": "use_raft_webserver",
-            "generator": "RaftWebServer@ReWorkConfigBase",
+            "generator": "RaftWebServer@{{raft_webserver_git_tag}}",
         },
         {
             "key": "include_raft_webserver",
@@ -181,6 +206,7 @@ fn get_schema() -> serde_json::Value {
     schema
 }
 
+// Get user input
 pub fn get_user_input() -> Result<String> {
     
     // Load and deserialize the schema

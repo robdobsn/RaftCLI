@@ -1,10 +1,14 @@
-// main.rs
+// RaftCLI: Main module
+// Rob Dobson 2024
+
 use clap::Parser;
 use std::path::Path;
+use remove_dir_all::remove_dir_contents;
 mod app_new;
 use app_new::generate_new_app;
 mod app_config;
 use app_config::get_user_input;
+mod serial_monitor;
 
 // Define the command line arguments
 #[derive(Parser, Debug)]
@@ -22,6 +26,14 @@ struct Cli {
     /// Force clean of target folder contents
     #[clap(short = 'c', long)]
     clean: bool,
+
+    // Optional argument to specify the serial port
+    #[clap(short = 'p', long)]
+    port: Option<String>,
+
+    // Optional argument to specify the baud rate
+    #[clap(short = 'b', long)]
+    baud: Option<u32>,
 }
 
 // Check the target folder is valid
@@ -41,7 +53,7 @@ fn check_target_folder_valid(target_folder: &str, clean: bool) {
         if std::fs::read_dir(&target_folder).unwrap().next().is_some() {
             if clean {
                 // Delete the contents of the folder
-                match std::fs::remove_dir_all(&target_folder) {
+                match remove_dir_contents(&target_folder) {
                     Ok(_) => println!("Deleted folder contents: {}", target_folder),
                     Err(e) => {
                         println!("Error deleting folder contents: {}", e);
@@ -57,7 +69,8 @@ fn check_target_folder_valid(target_folder: &str, clean: bool) {
 }
 
 // Main function
-fn main() {
+#[tokio::main]
+async fn main() {
     let args = Cli::parse();
     println!("{:?}", args);
 
@@ -76,6 +89,21 @@ fn main() {
             let result = generate_new_app(&args.folder_base, json_config).unwrap();
             println!("{:?}", result);
 
+        }
+        "monitor" => {
+            // Extract port and buad rate arguments
+            let port = args.port.unwrap_or(serial_monitor::get_default_port());
+            let baud = args.baud.unwrap_or(115200);
+
+            // Start the serial monitor
+            let result = serial_monitor::start(port, baud).await;
+            match result {
+                Ok(()) => std::process::exit(0),
+                Err(e) => {
+                    println!("Error: {}", e);
+                    std::process::exit(1);
+                }
+            }
         }
         _ => {}
     }

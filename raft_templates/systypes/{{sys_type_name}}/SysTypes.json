@@ -36,6 +36,46 @@
         "enable": 1,
         "OTADirect": 1
     },
+    "MQTTMan": {
+        "enable": 0,
+        "brokerHostname": "mqttbroker",
+        "brokerPort": 1883,
+        "clientID": "mqttclientid",
+        "topics": [
+            {
+                "name": "examplein",
+                "inbound": 1,
+                "path": "example/in",
+                "qos": 1
+            },
+            {
+                "name": "exampleout",
+                "inbound": 0,
+                "path": "example/out",
+                "qos": 1
+            }
+        ]
+    },
+    "LogManager": {
+        "enable": 0,
+        "logDests": [
+            {
+                "enable": false,
+                "type": "Papertrail",
+                "host": "xxxxx.papertrailapp.com",
+                "port": 12345
+            }
+        ]
+    },    
+    "SerialConsole": {
+        "enable": 1,
+        "uartNum": 0,
+        "rxBuf": 5000,
+        "txBuf": 1500,
+        "crlfOnTx": 1,
+        "protocol": "RICSerial",
+        "logLevel": "D"
+    },
     "WebServer": {
         "enable": 1,
         "webServerPort": 80,
