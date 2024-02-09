@@ -10,7 +10,6 @@ use crossterm::{
 use futures::stream::StreamExt;
 use std::{str, io};
 use std::io::{stdout, Write};
-use tokio::time::Duration;
 use tokio_util::codec::{Decoder, Encoder};
 use tokio::sync::{oneshot, Mutex};
 use futures::SinkExt;
@@ -20,8 +19,14 @@ use bytes::{BufMut, BytesMut};
 use tokio_serial::SerialPortBuilderExt;
 struct LineCodec;
 
+struct LogFileInfo {
+    file: std::fs::File,
+    last_write: std::time::Instant
+}
+type SharedLogFile = Arc<Mutex<Option<LogFileInfo>>>;
+
 // Logging to file
-pub fn open_log_file(log_to_file: bool, log_folder: String) -> Result<Option<std::fs::File>, std::io::Error> {
+fn open_log_file(log_to_file: bool, log_folder: String) -> Result<SharedLogFile, std::io::Error> {
     if log_to_file && log_folder.len() > 0 && log_folder != "none" {
         // Create a log file
         // name YYYYMMDD-HHMMSS.log (eg. 20210923-123456.log)
@@ -29,14 +34,38 @@ pub fn open_log_file(log_to_file: bool, log_folder: String) -> Result<Option<std
         let log_file_name = format!("{}/{}.log", log_folder, name);
         std::fs::create_dir_all(log_folder)?;
         // Open the log file
-        return Ok(Some(
-            std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(log_file_name)?,
-        ));
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(log_file_name);
+        return Ok(Arc::new(Mutex::new(Some(
+            LogFileInfo {
+                file: file?,
+                last_write: std::time::Instant::now()
+            }
+        ))));
     }
-    Ok(None)
+    Ok(Arc::new(Mutex::new(None)))
+}
+
+// Write to log file and maybe close/reopen
+async fn write_and_maybe_rotate_log(log_file: &SharedLogFile, item: &str) -> std::io::Result<()> {
+    let mut log_file = log_file.lock().await;
+    if let Some(log_file) = log_file.as_mut() {
+
+        // Write to log file
+        write!(log_file.file, "{item}")?;
+
+        // Check elapsed time
+        if log_file.last_write.elapsed() > std::time::Duration::from_secs(1) { // 1 seconds threshold
+            // Close and reopen the log file
+            log_file.file.sync_all()?;
+        }
+
+        // Update last write time
+        log_file.last_write = std::time::Instant::now();
+    }
+    Ok(())
 }
 
 // Convert key codes to terminal sequences
@@ -95,10 +124,10 @@ pub async fn start(port: String, baud: u32, log: bool, log_folder: String) -> to
 
     // Open log file if required
     let log_file = if log {
-        let file = open_log_file(log, log_folder.clone())?.map(|file| Arc::new(Mutex::new(file)));
+        let file = open_log_file(log, log_folder.clone())?;
         file
     } else {
-        None
+        Arc::new(Mutex::new(None))
     };
 
     // Enter crossterm raw mode (characters are not automatically echoed to the terminal)
@@ -133,12 +162,7 @@ pub async fn start(port: String, baud: u32, log: bool, log_folder: String) -> to
             if let Some(item) = serial_rx.next().await.transpose().expect("Failed to read from RX stream") {
 
                 // Log to file if required
-                if let Some(file) = &log_file_clone {
-                    let mut file = file.lock().await;
-                    if let Err(e) = write!(file, "{item}") {
-                        eprintln!("Failed to write to log file: {}", e);
-                    }
-                }
+                write_and_maybe_rotate_log(&log_file_clone, &item).await.expect("Failed to write to log file");
 
                 // Get the terminal output
                 let mut stdout = stdout();
@@ -184,7 +208,7 @@ pub async fn start(port: String, baud: u32, log: bool, log_folder: String) -> to
         // Main serial monitor loop
         loop {
 
-            if poll(Duration::from_millis(100)).expect("Error polling for event") {
+            if poll(tokio::time::Duration::from_millis(100)).expect("Error polling for event") {
                 let evt = read().expect("Error reading event");
                 match evt {
                     Event::Key(key) => {
