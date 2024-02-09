@@ -17,10 +17,10 @@ struct Cli {
     // action is a required argument and can be "new", "monitor"
     action: String,
 
-    // folder_base is an optional argument
+    // base_folder is an optional argument
     // when creating a new app a folder is created here for the app
     #[clap(short = 'f', long, default_value = ".")]
-    folder_base: String,
+    base_folder: String,
 
     // Optional argument to clean contents of target folder
     /// Force clean of target folder contents
@@ -34,6 +34,14 @@ struct Cli {
     // Optional argument to specify the baud rate
     #[clap(short = 'b', long)]
     baud: Option<u32>,
+
+    // Logging of serial data
+    #[arg(short = 'l', long)]
+    pub log: bool,
+
+    // Log folder - default is ./logs
+    #[arg(short = 'g', long, default_value = "./logs")]
+    pub log_folder: Option<String>,
 }
 
 // Check the target folder is valid
@@ -83,10 +91,10 @@ async fn main() {
             let json_config = serde_json::from_str(&json_config_str.unwrap()).unwrap();
 
             // Validate target folder
-            check_target_folder_valid(&args.folder_base, args.clean);
+            check_target_folder_valid(&args.base_folder, args.clean);
 
             // Generate a new app
-            let result = generate_new_app(&args.folder_base, json_config).unwrap();
+            let result = generate_new_app(&args.base_folder, json_config).unwrap();
             println!("{:?}", result);
 
         }
@@ -94,9 +102,11 @@ async fn main() {
             // Extract port and buad rate arguments
             let port = args.port.unwrap_or(serial_monitor::get_default_port());
             let baud = args.baud.unwrap_or(115200);
+            let log = args.log;
+            let log_folder = args.log_folder.unwrap_or("./logs".to_string());
 
             // Start the serial monitor
-            let result = serial_monitor::start(port, baud).await;
+            let result = serial_monitor::start(port, baud, log, log_folder).await;
             match result {
                 Ok(()) => std::process::exit(0),
                 Err(e) => {

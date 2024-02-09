@@ -5,7 +5,7 @@ use crossterm::{
     execute,
     event::{poll, read, Event, KeyCode},
     terminal::{self, Clear, ClearType, enable_raw_mode, disable_raw_mode},
-    cursor::{MoveTo, SavePosition, MoveToNextLine, RestorePosition},
+    cursor::{MoveTo, MoveToNextLine},
 };
 use futures::stream::StreamExt;
 use std::{str, io};
@@ -19,6 +19,25 @@ use std::sync::Arc;
 use bytes::{BufMut, BytesMut};
 use tokio_serial::SerialPortBuilderExt;
 struct LineCodec;
+
+// Logging to file
+pub fn open_log_file(log_to_file: bool, log_folder: String) -> Result<Option<std::fs::File>, std::io::Error> {
+    if log_to_file && log_folder.len() > 0 && log_folder != "none" {
+        // Create a log file
+        // name YYYYMMDD-HHMMSS.log (eg. 20210923-123456.log)
+        let name = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+        let log_file_name = format!("{}/{}.log", log_folder, name);
+        std::fs::create_dir_all(log_folder)?;
+        // Open the log file
+        return Ok(Some(
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(log_file_name)?,
+        ));
+    }
+    Ok(None)
+}
 
 // Convert key codes to terminal sequences
 fn key_code_to_terminal_sequence(key_code: KeyCode) -> String {
@@ -69,10 +88,18 @@ impl Encoder<String> for LineCodec {
 }
 
 // Start the serial monitor
-pub async fn start(port: String, baud: u32) -> tokio_serial::Result<()> {
+pub async fn start(port: String, baud: u32, log: bool, log_folder: String) -> tokio_serial::Result<()> {
 
     // Debug
     println!("Starting serial monitor on port: {} at baud: {}", port, baud);
+
+    // Open log file if required
+    let log_file = if log {
+        let file = open_log_file(log, log_folder.clone())?.map(|file| Arc::new(Mutex::new(file)));
+        file
+    } else {
+        None
+    };
 
     // Enter crossterm raw mode (characters are not automatically echoed to the terminal)
     enable_raw_mode()?;
@@ -97,10 +124,21 @@ pub async fn start(port: String, baud: u32) -> tokio_serial::Result<()> {
     // Clone the user input buffer for use in the serial_rx task
     let serial_rx_buffer_clone = user_input_buffer.clone();
 
+    // Clone the log file for use in the serial_rx task
+    let log_file_clone = log_file.clone();
+
     // Create a separate task to read from the serial port and send to the terminal
     tokio::spawn(async move {
         loop {
             if let Some(item) = serial_rx.next().await.transpose().expect("Failed to read from RX stream") {
+
+                // Log to file if required
+                if let Some(file) = &log_file_clone {
+                    let mut file = file.lock().await;
+                    if let Err(e) = write!(file, "{item}") {
+                        eprintln!("Failed to write to log file: {}", e);
+                    }
+                }
 
                 // Get the terminal output
                 let mut stdout = stdout();
@@ -115,22 +153,17 @@ pub async fn start(port: String, baud: u32) -> tokio_serial::Result<()> {
                         execute!(stdout, MoveToNextLine(1), Clear(ClearType::CurrentLine)).unwrap();
                     }
 
-                    // // Save the current cursor position before printing the received item
-                    // execute!(stdout, SavePosition).unwrap();
-
                     // Print the received serial data
                     print!("{item}");
 
                     // Check if the user input buffer is not empty
                     if !buf.is_empty() {
-                        // If the user input buffer is not empty, add an additional linefeed to create a blank line
-                        execute!(stdout, MoveToNextLine(1), RestorePosition).unwrap();
+
                         // Move to the start of the line
                         execute!(stdout, MoveTo(0, terminal::size().unwrap().1 - 1)).unwrap();
+
                         // Output the user input buffer to the blank line
                         print!("{}", buf);
-                        // // Move the cursor back to the previous position to ensure new data continues above the input buffer
-                        // execute!(stdout, RestorePosition).unwrap();
                     }
                 } // Release the lock on the user input buffer
     
@@ -191,9 +224,6 @@ pub async fn start(port: String, baud: u32) -> tokio_serial::Result<()> {
 
                                     // Clear the user input buffer
                                     buf.clear();
-
-                                    // // Redisplay the updated buffer.
-                                    // execute!(stdout, MoveTo(0, terminal::size().unwrap().1 - 1), Clear(ClearType::CurrentLine)).unwrap();
                                 },
                                 // Handle backspace
                                 KeyCode::Backspace => {
