@@ -44,8 +44,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: raft_${{ matrix.target }}
-        path: target/${{ matrix.target }}/release/raft_${{ matrix.target }}*
-
+        path: target/${{ matrix.target }}/release/raft*
   upload-release-assets:
     needs: build
     runs-on: ubuntu-latest
