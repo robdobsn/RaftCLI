@@ -21,7 +21,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-x64-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
@@ -36,27 +36,22 @@ jobs:
       uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
         target: ${{ matrix.target }}
-        override: true
 
     - name: Build
       run: cargo build --release --target ${{ matrix.target }}
 
-    - name: Rename and Move Executable (Linux & macOS)
-      if: matrix.os != 'windows-latest'
+    - name: Prepare Artifacts
       run: |
-        mv target/${{ matrix.target }}/release/raft target/${{ matrix.target }}/release/raft_${{ matrix.target }}
-    
-    - name: Rename and Move Executable (Windows)
-      if: matrix.os == 'windows-latest'
-      run: |
-        mv target/${{ matrix.target }}/release/raft.exe target/${{ matrix.target }}/release/raft_${{ matrix.target }}.exe
-    
+        mkdir -p ./artifacts/${{ matrix.target }}
+        # Assuming executable name is 'raft' or 'raft.exe'
+        find target/${{ matrix.target }}/release/ -type f \( -name 'raft' -o -name 'raft.exe' \) -exec cp {} ./artifacts/${{ matrix.target }}/ \;
+
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: raft_${{ matrix.target }}
-        path: target/${{ matrix.target }}/release/raft_${{ matrix.target }}*
-
+        path: ./artifacts/${{ matrix.target }}/
+        
   upload-release-assets:
     needs: build
     runs-on: ubuntu-latest
@@ -64,11 +59,13 @@ jobs:
     - name: Download all artifacts
       uses: actions/download-artifact@v4
       with:
-        path: artifacts
-        
+        path: artifacts2
+    - name: Display structure of downloaded files
+      run: ls -R
+  
     - name: Upload artifacts to Release
       uses: softprops/action-gh-release@v1
       with:
-        files: artifacts/**/*
+        files: artifacts2/*
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
