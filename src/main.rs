@@ -12,15 +12,15 @@ mod serial_monitor;
 
 // Define the command line arguments
 #[derive(Parser, Debug)]
-#[clap(name = "Raft", version = "0.1.0", author = "Rob Dobson", about = "Raft CLI")]
+#[clap(name = "Raft", version = "0.2.0", author = "Rob Dobson", about = "Raft CLI")]
 struct Cli {
     // action is a required argument and can be "new", "monitor"
     action: String,
 
-    // base_folder is an optional argument
-    // when creating a new app a folder is created here for the app
-    #[clap(short = 'f', long, default_value = ".")]
-    base_folder: String,
+    // action_param is an optional argument
+    // when creating a new app this is the base folder in which the app is created
+    // when monitoring this is an alternative way to set the serial port
+    action_param: Option<String>,
 
     // Optional argument to clean contents of target folder
     /// Force clean of target folder contents
@@ -88,20 +88,23 @@ async fn main() {
 
             // Validate target folder - doing this first so that any errors in the folder
             // defintion are handled first
-            check_target_folder_valid(&args.base_folder, args.clean);
+            let default_folder: String = "./".to_string();
+            let base_folder = args.action_param.as_ref().unwrap_or(&default_folder);
+            check_target_folder_valid(&base_folder, args.clean);
 
             // Get configuration
             let json_config_str = get_user_input();
             let json_config = serde_json::from_str(&json_config_str.unwrap()).unwrap();
 
             // Generate a new app
-            let result = generate_new_app(&args.base_folder, json_config).unwrap();
+            let result = generate_new_app(&base_folder, json_config).unwrap();
             println!("{:?}", result);
 
         }
         "monitor" => {
-            // Extract port and buad rate arguments
-            let port = args.port.unwrap_or(serial_monitor::get_default_port());
+            // Extract port - which can be specified by the action_param or the port flagged parameter
+            let port = args.action_param.unwrap_or(args.port.unwrap_or(serial_monitor::get_default_port()));
+            // Extract other arguments
             let baud = args.baud.unwrap_or(115200);
             let log = args.log;
             let log_folder = args.log_folder.unwrap_or("./logs".to_string());
