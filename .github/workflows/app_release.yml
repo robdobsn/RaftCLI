@@ -40,11 +40,18 @@ jobs:
     - name: Build
       run: cargo build --release --target ${{ matrix.target }}
 
+    - name: Prepare Artifacts
+      run: |
+        mkdir -p ./artifacts/${{ matrix.target }}
+        # Assuming executable name is 'raft' or 'raft.exe'
+        find target/${{ matrix.target }}/release/ -type f \( -name 'raft' -o -name 'raft.exe' \) -exec cp {} ./artifacts/${{ matrix.target }}/ \;
+
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: raft_${{ matrix.target }}
-        path: target/${{ matrix.target }}/release/raft*
+        path: ./artifacts/${{ matrix.target }}/
+        
   upload-release-assets:
     needs: build
     runs-on: ubuntu-latest
@@ -52,11 +59,13 @@ jobs:
     - name: Download all artifacts
       uses: actions/download-artifact@v4
       with:
-        path: artifacts
-        
+        path: artifacts2
+    - name: Display structure of downloaded files
+      run: ls -R
+  
     - name: Upload artifacts to Release
       uses: softprops/action-gh-release@v1
       with:
-        files: artifacts/**/*
+        files: artifacts2/*
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
