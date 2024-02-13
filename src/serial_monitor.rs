@@ -141,10 +141,7 @@ pub async fn start(port: String, baud: u32, log: bool, log_folder: String) -> to
    
     // Handle errors in opening the serial port
     let serial_port = match serial_port {
-        #[cfg(not(unix))]
         Ok(serial_port) => serial_port,
-        #[cfg(unix)]
-        Ok(mut serial_port) => serial_port,
         Err(err) => {
             match err.kind() {
                 tokio_serial::ErrorKind::NoDevice => {
@@ -158,6 +155,8 @@ pub async fn start(port: String, baud: u32, log: bool, log_folder: String) -> to
         }
     };
 
+    #[cfg(unix)]
+    let mut serial_port = serial_port;
     #[cfg(unix)]
     serial_port.set_exclusive(false).expect("Failed to set port non-exclusive");
 
