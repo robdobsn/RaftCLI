@@ -13,13 +13,13 @@ fn process_dir(handlebars: &mut Handlebars, in_dir: &Dir, target_folder: &str, c
                             Result<(), Box<dyn std::error::Error>> {
     // Iterate through the embedded folders
     for folder in in_dir.dirs() {
-        println!("Folder: {}", folder.path().display());
+        // println!("Folder: {}", folder.path().display());
         process_dir(handlebars, folder, target_folder, context)?;
     }
 
     // Iterate through the embedded files
     for file in in_dir.files() {
-        println!("File: {}", file.path().display());
+        // println!("File: {}", file.path().display());
         let path: std::string::String;
         if let Some(found_path) = file.path().to_str() {
 
@@ -45,7 +45,7 @@ fn process_dir(handlebars: &mut Handlebars, in_dir: &Dir, target_folder: &str, c
             // Decide to render or copy file based on its content or extension
             if content.contains("{{") && content.contains("}}") {
 
-                println!("Rendering file from {} to: {}", path, dest_path);
+                // println!("Rendering file from {} to: {}", path, dest_path);
 
                 // File likely contains Handlebars syntax; attempt to register it and then render it
                 handlebars.register_template_string(path.as_str(), content)?;
@@ -54,7 +54,7 @@ fn process_dir(handlebars: &mut Handlebars, in_dir: &Dir, target_folder: &str, c
 
             } else {
 
-                println!("Copying file from {} to: {}", path, dest_path);
+                // println!("Copying file from {} to: {}", path, dest_path);
 
                 // File does not contain Handlebars syntax; copy as is
                 fs::write(dest_path, content)?;
@@ -72,5 +72,7 @@ pub fn generate_new_app(target_folder: &str, context: serde_json::Value) -> Resu
     let mut handlebars = Handlebars::new();
     process_dir(&mut handlebars, &RAFT_TEMPLATES_DIR, &target_folder, &context)?;
 
+    // Success
+    println!("Successfully generated a new raft app in: {}", target_folder);
     Ok(())
 }

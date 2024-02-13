@@ -10,38 +10,40 @@ mod app_config;
 use app_config::get_user_input;
 mod serial_monitor;
 
-// Define the command line arguments
-#[derive(Parser, Debug)]
-#[clap(name = "Raft", version = "0.1.0", author = "Rob Dobson", about = "Raft CLI")]
-struct Cli {
-    // action is a required argument and can be "new", "monitor"
-    action: String,
+#[derive(Clone, Parser, Debug)]
+enum Action {
+    #[clap(name = "new", about = "Create a new raft app")]
+    New(NewCmd),
+    #[clap(name = "monitor", about = "Monitor a serial port")]
+    Monitor(MonitorCmd),
+}
 
-    // base_folder is an optional argument
-    // when creating a new app a folder is created here for the app
-    #[clap(short = 'f', long, default_value = ".")]
-    base_folder: String,
-
-    // Optional argument to clean contents of target folder
-    /// Force clean of target folder contents
-    #[clap(short = 'c', long)]
+// Define arguments specific to the `new` subcommand
+#[derive(Clone, Parser, Debug)]
+struct NewCmd {
+    base_folder: Option<String>,
+    #[clap(short = 'c', long, help = "Clean the target folder")]
     clean: bool,
+}
 
-    // Optional argument to specify the serial port
-    #[clap(short = 'p', long)]
+// Define arguments specific to the `monitor` subcommand
+#[derive(Clone, Parser, Debug)]
+struct MonitorCmd {
     port: Option<String>,
-
-    // Optional argument to specify the baud rate
-    #[clap(short = 'b', long)]
+    #[clap(short = 'b', long, help = "Baud rate")]
     baud: Option<u32>,
+    #[arg(short = 'l', long, help = "Log serial data to file")]
+    log: bool,
+    #[arg(short = 'g', long, default_value = "./logs", help = "Folder for log files")]
+    log_folder: Option<String>,
+}
 
-    // Logging of serial data
-    #[arg(short = 'l', long)]
-    pub log: bool,
-
-    // Log folder - default is ./logs
-    #[arg(short = 'g', long, default_value = "./logs")]
-    pub log_folder: Option<String>,
+// Main CLI struct that includes the subcommands
+#[derive(Parser, Debug)]
+#[clap(name = "Raft", version = "0.2.0", author = "Rob Dobson", about = "Raft CLI")]
+struct Cli {
+    #[clap(subcommand)]
+    action: Action,
 }
 
 // Check the target folder is valid
@@ -80,30 +82,31 @@ fn check_target_folder_valid(target_folder: &str, clean: bool) {
 #[tokio::main]
 async fn main() {
     let args = Cli::parse();
-    println!("{:?}", args);
+    // println!("{:?}", args);
 
     // Call the function to test the templates
-    match args.action.as_str() {
-        "new" => {
+    match args.action {
+        Action::New(cmd) => {
 
+            // Validate target folder (before user input to avoid unnecessary input)
+            let base_folder = cmd.base_folder.unwrap_or(".".to_string());
+            check_target_folder_valid(&base_folder, cmd.clean);
+            
             // Get configuration
             let json_config_str = get_user_input();
             let json_config = serde_json::from_str(&json_config_str.unwrap()).unwrap();
 
-            // Validate target folder
-            check_target_folder_valid(&args.base_folder, args.clean);
-
             // Generate a new app
-            let result = generate_new_app(&args.base_folder, json_config).unwrap();
-            println!("{:?}", result);
+            let _result = generate_new_app(&base_folder, json_config).unwrap();
+            // println!("{:?}", result);
 
         }
-        "monitor" => {
+        Action::Monitor(cmd) => {
             // Extract port and buad rate arguments
-            let port = args.port.unwrap_or(serial_monitor::get_default_port());
-            let baud = args.baud.unwrap_or(115200);
-            let log = args.log;
-            let log_folder = args.log_folder.unwrap_or("./logs".to_string());
+            let port = cmd.port.unwrap_or(serial_monitor::get_default_port());
+            let baud = cmd.baud.unwrap_or(115200);
+            let log = cmd.log;
+            let log_folder = cmd.log_folder.unwrap_or("./logs".to_string());
 
             // Start the serial monitor
             let result = serial_monitor::start(port, baud, log, log_folder).await;
@@ -115,6 +118,5 @@ async fn main() {
                 }
             }
         }
-        _ => {}
     }
 }
