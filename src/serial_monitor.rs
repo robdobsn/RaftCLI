@@ -142,7 +142,7 @@ pub async fn start(port: String, baud: u32, log: bool, log_folder: String) -> to
 
     // // Open serial port and set to non-exclusive mode on Unix
     #[cfg(unix)]
-    let serial_port = tokio_serial::new(&port, baud).open_native_async();
+    let mut serial_port = tokio_serial::new(&port, baud).open_native_async();
     
     // Handle errors in opening the serial port
     let serial_port = match serial_port {
