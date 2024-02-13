@@ -21,51 +21,59 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [linux-latest, windows-latest, macos-latest]
         include:
-          - os: ubuntu-latest
+          - os: linux-latest
             target: x86_64-unknown-linux-gnu
+            name: raft-linux-x86_64-musl.tar.gz
+            bin: raft
           - os: windows-latest
             target: x86_64-pc-windows-msvc
+            name: raft-windows-x86_64-msvc.zip
+            bin: raft.exe
           - os: macos-latest
             target: x86_64-apple-darwin
+            name: raft-macos-x86_64.tar.gz
+            bin: raft
 
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout
+      uses: actions/checkout@v4
+
     - name: Setup Rust
       uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
         target: ${{ matrix.target }}
 
+    - name: Install musl tools for Linux
+      if: matrix.os == 'linux-latest'
+      run: sudo apt-get update --yes && sudo ap install -y musl-tools
+
     - name: Build
       run: cargo build --release --target ${{ matrix.target }}
 
-    - name: Prepare Artifacts
+    - name: Package as archive
+      shell: bash
+      if: matrix.os == 'linux-latest' || matrix.os == 'macos-latest'
       run: |
-        mkdir -p ./artifacts/${{ matrix.target }}
-        # Assuming executable name is 'raft' or 'raft.exe'
-        find target/${{ matrix.target }}/release/ -type f \( -name 'raft' -o -name 'raft.exe' \) -exec cp {} ./artifacts/${{ matrix.target }}/ \;
+        cd target/${{ matrix.target }}/release/
+        if [[ ${{ matrix.os }} == 'windows-latest' ]]; then
+          7z a ../../../raft-${{ matrix.target }}.zip ${{ matrix.bin }}
+        else
+          tar -czf ../../../raft-${{ matrix.target }}.tar.gz -C target/${{ matrix.target }}/release/ ${{ matrix.bin }}
+        fi
 
-    - name: Upload artifact
+    - name: Publish release artifacts
       uses: actions/upload-artifact@v4
       with:
         name: raft_${{ matrix.target }}
-        path: ./artifacts/${{ matrix.target }}/
-        
-  upload-release-assets:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-    - name: Download all artifacts
-      uses: actions/download-artifact@v4
-      with:
-        path: artifacts2
-    - name: Display structure of downloaded files
-      run: ls -R
-  
-    - name: Upload artifacts to Release
+        path: "raft*"
+
+    - name: Publish GitHub release
       uses: softprops/action-gh-release@v1
       with:
-        files: artifacts2/*
+        files: raft*
+        draft: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
