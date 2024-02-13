@@ -136,17 +136,15 @@ pub async fn start(port: String, baud: u32, log: bool, log_folder: String) -> to
     // Setup signaling mechanism
     let (oneshot_exit_send, oneshot_exit_get) = oneshot::channel();
 
-    // Open serial port - non-Unix
-    #[cfg(not(unix))]
+    // Open serial port
     let serial_port = tokio_serial::new(&port, baud).open_native_async();
-
-    // // Open serial port and set to non-exclusive mode on Unix
-    #[cfg(unix)]
-    let mut serial_port = tokio_serial::new(&port, baud).open_native_async();
-    
+   
     // Handle errors in opening the serial port
     let serial_port = match serial_port {
+        #[cfg(not(unix))]
         Ok(serial_port) => serial_port,
+        #[cfg(unix)]
+        Ok(mut serial_port) => serial_port,
         Err(err) => {
             match err.kind() {
                 tokio_serial::ErrorKind::NoDevice => {
