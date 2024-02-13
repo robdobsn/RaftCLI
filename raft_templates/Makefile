@@ -1,8 +1,7 @@
 # Build Project
 DOCKER ?= 1
-WSL ?= 1
+WSL ?= $(if $(findstring Windows_NT,$(OS)),1,0)
 ESP_IDF_PATH ?= ~/esp/esp-idf-v{{esp_idf_version}}
-MONITOR ?= SerialMonitor.py
 BUILD_BASE_FOLDER ?= build
 BUILD_CONFIG_BASE_DIR = systypes
 SYSTYPE ?= $(notdir $(firstword $(filter-out $(BUILD_CONFIG_BASE_DIR)/Common, $(wildcard $(BUILD_CONFIG_BASE_DIR)/*))))
@@ -20,10 +19,12 @@ LOCAL_EXEC = . $(ESP_IDF_PATH)/export.sh
 CMD ?= idf.py -B $(BUILD_DIR) build
 
 ifeq ($(WSL),1)
-	PYTHON_FOR_FLASH_MONITOR ?= python.exe
+	SERIAL_MONITOR ?= "raft.exe monitor"
+	PYTHON_FOR_FLASH ?= python.exe
 	PORT ?= COM3
 else
-	PYTHON_FOR_FLASH_MONITOR ?= python3
+	SERIAL_MONITOR ?= "./raft monitor"
+	PYTHON_FOR_FLASH ?= python3
 	PORT ?= /dev/ttyUSB0
 endif
 
@@ -56,18 +57,13 @@ clean:
 build: $(TARGET_BINARY)
 	@$(BUILD_TARGET)
 
-ifeq ($(MONITOR),SerialMonitor.py)
+ifneq ($(SERIAL_MONITOR),)
 flash: build
 	@$(PYTHON_FOR_FLASH_MONITOR) $(BUILD_DIR)/_deps/raftcore-src/scripts/flashUsingPartitionCSV.py $(BUILD_RAFT_ARTEFACTS_DIR)/partitions.csv $(BUILD_DIR) $(SYSTYPE).bin $(PORT) -s $(SDKCONFIG_FILE) -f fs.bin
-	@$(PYTHON_FOR_FLASH_MONITOR) $(BUILD_DIR)/_deps/raftcore-src/scripts/SerialMonitor.py $(PORT) -g
-else ifeq ($(MONITOR),serial-monitor)
-flash: build
-	@$(PYTHON_FOR_FLASH_MONITOR) $(BUILD_DIR)/_deps/raftcore-src/scripts/flashUsingPartitionCSV.py $(BUILD_RAFT_ARTEFACTS_DIR)/partitions.csv $(BUILD_DIR) $(SYSTYPE).bin $(PORT) -s $(SDKCONFIG_FILE) -f fs.bin
-	serial-monitor -p $(PORT)
+	$(SERIAL_MONITOR) $(PORT) -l
 else
 flash: build
 	@$(PYTHON_FOR_FLASH_MONITOR) $(BUILD_DIR)/_deps/raftcore-src/scripts/flashUsingPartitionCSV.py $(BUILD_RAFT_ARTEFACTS_DIR)/partitions.csv $(BUILD_DIR) $(SYSTYPE).bin $(PORT) -s $(SDKCONFIG_FILE) -f fs.bin
 endif
 
 .PHONY: build clean flash test
-

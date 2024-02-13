@@ -5,3 +5,4 @@ build_raft_artefacts
 managed_components
 compile_commands.json
 *.pyc
+node_modules
