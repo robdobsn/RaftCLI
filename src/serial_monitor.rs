@@ -140,13 +140,10 @@ pub async fn start(port: String, baud: u32, log: bool, log_folder: String) -> to
     #[cfg(not(unix))]
     let serial_port = tokio_serial::new(&port, baud).open_native_async();
 
-    // Open serial port and set to non-exclusive mode on Unix
+    // // Open serial port and set to non-exclusive mode on Unix
     #[cfg(unix)]
-    let mut serial_port = tokio_serial::new(&port, baud).open_native_async();
+    let serial_port = tokio_serial::new(&port, baud).open_native_async();
     
-    #[cfg(unix)]
-    serial_port.set_exclusive(false).expect("Failed to set port non-exclusive");
-
     // Handle errors in opening the serial port
     let serial_port = match serial_port {
         Ok(serial_port) => serial_port,
@@ -162,6 +159,9 @@ pub async fn start(port: String, baud: u32, log: bool, log_folder: String) -> to
             return Ok(());
         }
     };
+
+    #[cfg(unix)]
+    serial_port.set_exclusive(false).expect("Failed to set port non-exclusive");
 
     // Create a stream from the serial port
     let stream = LineCodec.framed(serial_port);
