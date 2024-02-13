@@ -4,6 +4,17 @@ on:
   release:
     types: [created]
 
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  actions: write
+  deployments: write
+  packages: write
+  repository-projects: write
+  security-events: write
+  statuses: write
+
 jobs:
   build:
     name: Build and release for ${{ matrix.os }}
@@ -22,17 +33,39 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Setup Rust
-      uses: actions-rs/toolchain@v1
+      uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
-        toolchain: stable
         target: ${{ matrix.target }}
-        override: true
 
     - name: Build
       run: cargo build --release --target ${{ matrix.target }}
 
+    - name: Prepare Artifacts
+      run: |
+        mkdir -p ./artifacts/${{ matrix.target }}
+        # Assuming executable name is 'raft' or 'raft.exe'
+        find target/${{ matrix.target }}/release/ -type f \( -name 'raft' -o -name 'raft.exe' \) -exec cp {} ./artifacts/${{ matrix.target }}/ \;
+
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ matrix.target }}
-        path: target/${{ matrix.target }}/release/*
+        name: raft_${{ matrix.target }}
+        path: ./artifacts/${{ matrix.target }}/
+        
+  upload-release-assets:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts2
+    - name: Display structure of downloaded files
+      run: ls -R
+  
+    - name: Upload artifacts to Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: artifacts2/*
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
