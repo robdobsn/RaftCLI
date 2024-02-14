@@ -59,11 +59,11 @@ build: $(TARGET_BINARY)
 
 ifneq ($(SERIAL_MONITOR),)
 flash: build
-	@$(PYTHON_FOR_FLASH_MONITOR) $(BUILD_DIR)/_deps/raftcore-src/scripts/flashUsingPartitionCSV.py $(BUILD_RAFT_ARTEFACTS_DIR)/partitions.csv $(BUILD_DIR) $(SYSTYPE).bin $(PORT) -s $(SDKCONFIG_FILE) -f fs.bin
+	@$(PYTHON_FOR_FLASH) $(BUILD_DIR)/_deps/raftcore-src/scripts/flashUsingPartitionCSV.py $(BUILD_RAFT_ARTEFACTS_DIR)/partitions.csv $(BUILD_DIR) $(SYSTYPE).bin $(PORT) -s $(SDKCONFIG_FILE) -f fs.bin
 	$(SERIAL_MONITOR) $(PORT) -l
 else
 flash: build
-	@$(PYTHON_FOR_FLASH_MONITOR) $(BUILD_DIR)/_deps/raftcore-src/scripts/flashUsingPartitionCSV.py $(BUILD_RAFT_ARTEFACTS_DIR)/partitions.csv $(BUILD_DIR) $(SYSTYPE).bin $(PORT) -s $(SDKCONFIG_FILE) -f fs.bin
+	@$(PYTHON_FOR_FLASH) $(BUILD_DIR)/_deps/raftcore-src/scripts/flashUsingPartitionCSV.py $(BUILD_RAFT_ARTEFACTS_DIR)/partitions.csv $(BUILD_DIR) $(SYSTYPE).bin $(PORT) -s $(SDKCONFIG_FILE) -f fs.bin
 endif
 
 .PHONY: build clean flash test
