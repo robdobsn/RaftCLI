@@ -19,11 +19,11 @@ LOCAL_EXEC = . $(ESP_IDF_PATH)/export.sh
 CMD ?= idf.py -B $(BUILD_DIR) build
 
 ifeq ($(WSL),1)
-	SERIAL_MONITOR ?= "raft.exe monitor"
+	SERIAL_MONITOR ?= raft.exe monitor
 	PYTHON_FOR_FLASH ?= python.exe
 	PORT ?= COM3
 else
-	SERIAL_MONITOR ?= "./raft monitor"
+	SERIAL_MONITOR ?= raft monitor
 	PYTHON_FOR_FLASH ?= python3
 	PORT ?= /dev/ttyUSB0
 endif
