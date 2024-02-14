@@ -6,6 +6,18 @@ The simplest way to build this application depends on your operating system. In 
 
 Building with Docker is generally the best option as it removes the necessity to install the Espressif ESP IDF framework (and associated toolchain). In addition, if you are building a web-ui at the same time then it's dependencies are also simplified when building with Docker.
 
+However, when using Docker, the esptool utility program must be installed in the host operating system. You can do this using python on linux/mac with:
+
+```
+$ pip3 install esptool
+```
+
+And on Windows with:
+
+```
+> pip install esptool
+```
+
 ### Using make to build with a Docker image
 If your operating system also has [make installed (or you are happy to install it)](https://www.gnu.org/software/make/)  then a build can be started simply with:
 
