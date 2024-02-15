@@ -173,6 +173,9 @@ pub async fn start(port: String, baud: u32, log: bool, log_folder: String) -> to
     // Clone the log file for use in the serial_rx task
     let log_file_clone = log_file.clone();
 
+    // Write welcome message to the termainal
+    println!("Raft Serial Monitor - press Esc (or Ctrl+X) to exit");
+
     // Create a separate task to read from the serial port and send to the terminal
     tokio::spawn(async move {
         loop {
@@ -241,8 +244,12 @@ pub async fn start(port: String, baud: u32, log: bool, log_folder: String) -> to
 
                             // Handle key press
                             match key.code {
-                                // Break out of the serial monitor on Esc key
+                                // Break out of the serial monitor on Esc key or Ctrl+X
                                 KeyCode::Esc => {
+                                    let _ = oneshot_exit_send.send(());
+                                    break;
+                                },
+                                KeyCode::Char('x') if key.modifiers == crossterm::event::KeyModifiers::CONTROL => {
                                     let _ = oneshot_exit_send.send(());
                                     break;
                                 },

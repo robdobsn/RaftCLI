@@ -69,6 +69,8 @@ Options:
   -h, --help                     Print help
 ```
 
+To exit the app press ESC
+
 ## Installation
 
 You can either install this app from the crates.io package registry (which is part of the Rust ecosystem) or build from source code.
