@@ -54,13 +54,18 @@ jobs:
 
     - name: Package as archive
       shell: bash
-      if: matrix.os == 'linux-latest' || matrix.os == 'macos-latest'
       run: |
-        cd target/${{ matrix.target }}/release/
+        mkdir -p archives
+        ls -al .
+        ls -al target
+        ls -al target/${{ matrix.target }}
+        ls -al target/${{ matrix.target }}/release
         if [[ ${{ matrix.os }} == 'windows-latest' ]]; then
-          7z a ../../../raft-${{ matrix.target }}.zip ${{ matrix.bin }}
+          # For Windows, use 7z to create a zip archive of raft.exe
+          7z a archives/raft_${{ matrix.target }}.zip target/${{ matrix.target }}/${{ matrix.bin }}
         else
-          tar -czf ../../../raft-${{ matrix.target }}.tar.gz -C target/${{ matrix.target }}/release/ ${{ matrix.bin }}
+          # For Unix-like OSes, use tar to create a gzipped archive of raft
+          tar -czf archives/raft_${{ matrix.target }}.tar.gz -C target/${{ matrix.target }} ${{ matrix.bin }}
         fi
 
     - name: Publish release artifacts
