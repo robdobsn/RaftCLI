@@ -71,26 +71,17 @@ Options:
 
 ## Installation
 
-There are several ways to install this app as it depends somewhat on the operating system you are using.
+You can either install this app from the crates.io package registry (which is part of the Rust ecosystem) or build from source code.
 
-* Maybe you already have the rust language installed or are happy to install it - since you are here I assume you are interested in embedded development rust may be in your future in any case :) If so follow the "I like Rust" method below
-* Or maybe you prefer download a binary and put it on your OS path so you can run it on your machine
-
-### I like Rust
+Either way you first need to install Rust (since you are here I assume you are interested in embedded development and Rust may be in your future in any case :)
 
 Follow the steps to [install rust](https://www.rust-lang.org/tools/install)
 
-Then install the app directly with:
+Then install the app with:
 
 ```
 cargo install raftcli
 ```
-
-### Install a pre-build binary
-
-Select a binary executable from the [releases folder](https://github.com/robdobsn/RaftCLI/releases)
-
-Download the compressed archive and uncompress. Then copy the binary executable to a folder which is on the PATH of your operating system.
 
 ### Build from source
 
