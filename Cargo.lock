@@ -811,7 +811,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "raft"
+name = "raftcli"
 version = "1.0.0"
 dependencies = [
  "bytes",
