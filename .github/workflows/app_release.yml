@@ -55,14 +55,17 @@ jobs:
     - name: Package as archive
       shell: bash
       run: |
+        mkdir -p archives
         ls -al .
         ls -al target
-        ls -al ${{ matrix.target }}
-        cd ${{ matrix.target }}/release/
+        ls -al target/${{ matrix.target }}
+        ls -al target/${{ matrix.target }}/release
         if [[ ${{ matrix.os }} == 'windows-latest' ]]; then
-          7z a ../../raft_${{ matrix.target }}.zip ${{ matrix.bin }}
+          # For Windows, use 7z to create a zip archive of raft.exe
+          7z a archives/raft_${{ matrix.target }}.zip target/${{ matrix.target }}/${{ matrix.bin }}
         else
-          tar -czf ../../raft_${{ matrix.target }}.tar.gz -C ${{ matrix.target }}/release/ ${{ matrix.bin }}
+          # For Unix-like OSes, use tar to create a gzipped archive of raft
+          tar -czf archives/raft_${{ matrix.target }}.tar.gz -C target/${{ matrix.target }} ${{ matrix.bin }}
         fi
 
     - name: Publish release artifacts
