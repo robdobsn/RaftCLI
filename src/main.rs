@@ -40,7 +40,7 @@ struct MonitorCmd {
 
 // Main CLI struct that includes the subcommands
 #[derive(Parser, Debug)]
-#[clap(name = "Raft", version = "0.2.0", author = "Rob Dobson", about = "Raft CLI")]
+#[clap(version, author, about)]
 struct Cli {
     #[clap(subcommand)]
     action: Action,

@@ -173,45 +173,63 @@ pub async fn start(port: String, baud: u32, log: bool, log_folder: String) -> to
     // Clone the log file for use in the serial_rx task
     let log_file_clone = log_file.clone();
 
-    // Write welcome message to the termainal
-    println!("Raft Serial Monitor - press Esc (or Ctrl+X) to exit");
+    // Write welcome message to the terminal
+    let version = env!("CARGO_PKG_VERSION");  
+    println!("Raft Serial Monitor {} - press Esc (or Ctrl+X) to exit", version);
 
     // Create a separate task to read from the serial port and send to the terminal
     tokio::spawn(async move {
         loop {
-            if let Some(item) = serial_rx.next().await.transpose().expect("Failed to read from RX stream") {
-
-                // Log to file if required
-                write_and_maybe_rotate_log(&log_file_clone, &item).await.expect("Failed to write to log file");
-
-                // Get the terminal output
-                let mut stdout = stdout();
-
-                // Check if the user input buffer is not empty and display it
-                {
-                    // Lock the user input buffer
-                    let buf = serial_rx_buffer_clone.lock().await;
-
-                    // If it isn't empty then delete the bottom row before continuing
-                    if !buf.is_empty() {
-                        execute!(stdout, MoveToNextLine(1), Clear(ClearType::CurrentLine)).unwrap();
+            match serial_rx.next().await {
+                Some(Ok(item)) => {
+                    // Log to file if required
+                    if let Err(e) = write_and_maybe_rotate_log(&log_file_clone, &item).await {
+                        eprintln!("Failed to write to log file: {}", e);
+                        // Ignore errors for now
                     }
 
-                    // Print the received serial data
-                    print!("{item}");
+                    // Get the terminal output
+                    let mut stdout = stdout();
 
-                    // Check if the user input buffer is not empty
-                    if !buf.is_empty() {
+                    // Check if the user input buffer is not empty and display it
+                    {
+                        // Lock the user input buffer
+                        let buf = serial_rx_buffer_clone.lock().await;
 
-                        // Move to the start of the line
-                        execute!(stdout, MoveTo(0, terminal::size().unwrap().1 - 1)).unwrap();
+                        // If it isn't empty then delete the bottom row before continuing
+                        if !buf.is_empty() {
+                            execute!(stdout, MoveToNextLine(1), Clear(ClearType::CurrentLine)).unwrap();
+                        }
 
-                        // Output the user input buffer to the blank line
-                        print!("{}", buf);
+                        // Print the received serial data
+                        print!("{item}");
+
+                        // Check if the user input buffer is not empty
+                        if !buf.is_empty() {
+
+                            // Move to the start of the line
+                            execute!(stdout, MoveTo(0, terminal::size().unwrap().1 - 1)).unwrap();
+
+                            // Output the user input buffer to the blank line
+                            print!("{}", buf);
+                        }
+                    } // Release the lock on the user input buffer
+
+                    if stdout.flush().is_err() {
+                        eprintln!("Failed to flush stdout");
+                        // Handle the error as needed
                     }
-                } // Release the lock on the user input buffer
-    
-                stdout.flush().unwrap();
+                },
+                Some(Err(_e)) => {
+                    // eprintln!("Failed to read from RX stream: {}", _e);
+                    // Ignore errors
+                    continue;
+                },
+                None => {
+                    // eprintln!("RX stream ended");
+                    // Ignore errors
+                    continue;
+                },
             }
         }
     });
