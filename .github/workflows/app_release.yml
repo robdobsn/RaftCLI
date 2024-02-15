@@ -54,13 +54,15 @@ jobs:
 
     - name: Package as archive
       shell: bash
-      if: matrix.os == 'linux-latest' || matrix.os == 'macos-latest'
       run: |
-        cd target/${{ matrix.target }}/release/
+        ls -al .
+        ls -al target
+        ls -al ${{ matrix.target }}
+        cd ${{ matrix.target }}/release/
         if [[ ${{ matrix.os }} == 'windows-latest' ]]; then
-          7z a ../../../raft-${{ matrix.target }}.zip ${{ matrix.bin }}
+          7z a ../../raft_${{ matrix.target }}.zip ${{ matrix.bin }}
         else
-          tar -czf ../../../raft-${{ matrix.target }}.tar.gz -C target/${{ matrix.target }}/release/ ${{ matrix.bin }}
+          tar -czf ../../raft_${{ matrix.target }}.tar.gz -C ${{ matrix.target }}/release/ ${{ matrix.bin }}
         fi
 
     - name: Publish release artifacts
