@@ -62,7 +62,7 @@ jobs:
         ls -al target/${{ matrix.target }}/release
         if [[ ${{ matrix.os }} == 'windows-latest' ]]; then
           # For Windows, use 7z to create a zip archive of raft.exe
-          7z a archives/raft_${{ matrix.target }}.zip target/${{ matrix.target }}/${{ matrix.bin }}
+          7z a archives/raft_${{ matrix.target }}.zip target/${{ matrix.target }}/release/${{ matrix.bin }}
         else
           # For Unix-like OSes, use tar to create a gzipped archive of raft
           tar -czf archives/raft_${{ matrix.target }}.tar.gz -C target/${{ matrix.target }} ${{ matrix.bin }}
@@ -72,7 +72,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: raft_${{ matrix.target }}
-        path: "raft*"
+        path: "archives/*"
 
     - name: Publish GitHub release
       uses: softprops/action-gh-release@v1
