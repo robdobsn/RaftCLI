@@ -81,6 +81,7 @@ fn check_target_folder_valid(target_folder: &str, clean: bool) {
 // Main function
 #[tokio::main]
 async fn main() {
+    // Parse the command line arguments
     let args = Cli::parse();
     // println!("{:?}", args);
 
