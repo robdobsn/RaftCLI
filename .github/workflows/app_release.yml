@@ -25,16 +25,22 @@ jobs:
         include:
           - os: linux-latest
             target: x86_64-unknown-linux-gnu
-            name: raft-linux-x86_64-musl.tar.gz
+            name: Linux X64 (GNU) Release
+            asset_name: raft-linux-x86_64-musl.tar.gz
             bin: raft
+            asset_content_type: application/gzip
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            name: raft-windows-x86_64-msvc.zip
+            name: Windows X64 (MSVC) Release
+            asset_name: raft-windows-x86_64-msvc.zip
             bin: raft.exe
+            asset_content_type: application/zip
           - os: macos-latest
             target: x86_64-apple-darwin
-            name: raft-macos-x86_64.tar.gz
+            name: MacOS X64 (Darwin) Release
+            asset_name: raft-macos-x86_64.tar.gz
             bin: raft
+            asset_content_type: application/gzip
 
     steps:
     - name: Checkout
@@ -62,10 +68,10 @@ jobs:
         ls -al target/${{ matrix.target }}/release
         if [[ ${{ matrix.os }} == 'windows-latest' ]]; then
           # For Windows, use 7z to create a zip archive of raft.exe
-          7z a archives/raft_${{ matrix.target }}.zip target/${{ matrix.target }}/release/${{ matrix.bin }}
+          7z a archives/raft_${{ matrix.asset_name }} target/${{ matrix.target }}/release/${{ matrix.bin }}
         else
           # For Unix-like OSes, use tar to create a gzipped archive of raft
-          tar -czf archives/raft_${{ matrix.target }}.tar.gz -C target/${{ matrix.target }} ${{ matrix.bin }}
+          tar -czf archives/raft_${{ matrix.asset_name }} -C target/${{ matrix.target }} release/${{ matrix.bin }}
         fi
 
     - name: Publish release artifacts
@@ -74,11 +80,12 @@ jobs:
         name: raft_${{ matrix.target }}
         path: "archives/*"
 
-    - name: Publish GitHub release
-      uses: softprops/action-gh-release@v1
-      with:
-        files: raft*
-        draft: true
+    - name: Upload Release Asset
+      uses: actions/upload-release-asset@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: ./archives/${{ matrix.asset_name }}
+        asset_name: ${{ matrix.name }}
+        asset_content_type: ${{ matrix.asset_content_type }}
