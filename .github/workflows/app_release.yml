@@ -67,18 +67,20 @@ jobs:
         ls -al target/${{ matrix.target }}
         ls -al target/${{ matrix.target }}/release
         if [[ ${{ matrix.os }} == 'windows-latest' ]]; then
-          # For Windows, use 7z to create a zip archive of raft.exe
-          7z a archives/raft_${{ matrix.asset_name }} target/${{ matrix.target }}/release/${{ matrix.bin }}
+          echo For Windows, use 7z to create a zip archive of raft.exe
+          7z a archives/${{ matrix.asset_name }} target/${{ matrix.target }}/release/${{ matrix.bin }}
+          ls -al archives
         else
-          # For Unix-like OSes, use tar to create a gzipped archive of raft
-          tar -czf archives/raft_${{ matrix.asset_name }} -C target/${{ matrix.target }} release/${{ matrix.bin }}
+          echo For Unix-like OSes, use tar to create a gzipped archive of raft
+          tar -czf archives/${{ matrix.asset_name }} -C target/${{ matrix.target }} release/${{ matrix.bin }}
+          ls -al archives
         fi
 
     - name: Publish release artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: raft_${{ matrix.target }}
-        path: "archives/*"
+        name: ${{ matrix.asset_name }}
+        path: "archives/${{ matrix.asset_name }}"
 
     - name: Upload Release Asset
       uses: actions/upload-release-asset@v1
