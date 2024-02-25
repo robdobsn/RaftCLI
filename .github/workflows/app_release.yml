@@ -69,7 +69,7 @@ jobs:
         if [[ ${{ matrix.os }} == 'windows-latest' ]]; then
           echo For Windows, use 7z to create a zip archive of raft.exe
           cd target/${{ matrix.target }}/release
-          7z a ../../../../archives/${{ matrix.asset_name }} ${{ matrix.bin }}
+          7z a ../../../archives/${{ matrix.asset_name }} ${{ matrix.bin }}
           cd -
           ls -al archives
         else
