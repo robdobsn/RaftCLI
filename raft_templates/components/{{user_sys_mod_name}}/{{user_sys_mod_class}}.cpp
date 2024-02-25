@@ -27,7 +27,7 @@ void {{user_sys_mod_class}}::setup()
     // The following code is an example of how to use the config object to
     // get a parameter from SysType (JSON) file for this system module
     // Replace this with your own setup code
-    String configValue = _config.getString("exampleGroup/exampleKey", "This Should Not Happen!");
+    String configValue = config.getString("exampleGroup/exampleKey", "This Should Not Happen!");
     LOG_I(MODULE_PREFIX, "%s", configValue.c_str());
 }
 

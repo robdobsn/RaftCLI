@@ -9,11 +9,15 @@ use app_new::generate_new_app;
 mod app_config;
 use app_config::get_user_input;
 mod serial_monitor;
+mod app_build;
+use app_build::build_raft_app;
 
 #[derive(Clone, Parser, Debug)]
 enum Action {
     #[clap(name = "new", about = "Create a new raft app")]
     New(NewCmd),
+    #[clap(name = "build", about = "Build a raft app")]
+    Build(BuildCmd),    
     #[clap(name = "monitor", about = "Monitor a serial port")]
     Monitor(MonitorCmd),
 }
@@ -24,6 +28,20 @@ struct NewCmd {
     base_folder: Option<String>,
     #[clap(short = 'c', long, help = "Clean the target folder")]
     clean: bool,
+}
+
+// Define arguments specific to the `build` subcommand
+#[derive(Clone, Parser, Debug)]
+struct BuildCmd {
+    sys_type: Option<String>,
+    #[clap(short = 'c', long, help = "Clean the target folder")]
+    clean: bool,
+    // Add an option to specify the app folder
+    #[clap(short = 'a', long, help = "Application base folder")]
+    app_folder: Option<String>,
+    // Add an option to specify whether docker is to be used for the build
+    #[clap(short = 'n', long, help = "Don't use docker for build")]
+    no_docker: bool,
 }
 
 // Define arguments specific to the `monitor` subcommand
@@ -99,9 +117,18 @@ async fn main() {
 
             // Generate a new app
             let _result = generate_new_app(&base_folder, json_config).unwrap();
-            // println!("{:?}", result);
+            // println!("{:?}", _result);
 
         }
+
+        Action::Build(cmd) => {
+            // Get the app folder (or default to current folder)
+            let app_folder = cmd.app_folder.unwrap_or(".".to_string());
+            let _result = build_raft_app(cmd.sys_type, cmd.clean, 
+                        app_folder, cmd.no_docker);
+            // println!("{:?}", _result);
+        }
+        
         Action::Monitor(cmd) => {
             // Extract port and buad rate arguments
             let port = cmd.port.unwrap_or(serial_monitor::get_default_port());
