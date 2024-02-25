@@ -68,11 +68,13 @@ jobs:
         ls -al target/${{ matrix.target }}/release
         if [[ ${{ matrix.os }} == 'windows-latest' ]]; then
           echo For Windows, use 7z to create a zip archive of raft.exe
-          7z a archives/${{ matrix.asset_name }} target/${{ matrix.target }}/release/${{ matrix.bin }}
+          cd target/${{ matrix.target }}/release
+          7z a ../../../../archives/${{ matrix.asset_name }} ${{ matrix.bin }}
+          cd -
           ls -al archives
         else
           echo For Unix-like OSes, use tar to create a gzipped archive of raft
-          tar -czf archives/${{ matrix.asset_name }} -C target/${{ matrix.target }} release/${{ matrix.bin }}
+          tar -czf archives/${{ matrix.asset_name }} -C target/${{ matrix.target }}/release ${{ matrix.bin }}
           ls -al archives
         fi
 
@@ -89,5 +91,5 @@ jobs:
       with:
         upload_url: ${{ github.event.release.upload_url }}
         asset_path: ./archives/${{ matrix.asset_name }}
-        asset_name: ${{ matrix.name }}
+        asset_name: ${{ matrix.asset_name }}
         asset_content_type: ${{ matrix.asset_content_type }}
