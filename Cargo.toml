@@ -1,6 +1,6 @@
 [package]
 name = "raftcli"
-version = "1.0.4"
+version = "1.0.5"
 authors = ["Rob Dobson <rob@dobson.com>"]
 license = "MIT"
 keywords = ["cli", "esp32", "espressif", "raft", "framework"]
@@ -34,3 +34,5 @@ bytes = "1.5.0"
 futures = "0.3.21"
 remove_dir_all = "0.8.2"
 chrono = "0.4.33"
+crossbeam = "0.8.4"
+espflash = { version = "2.1", default-features = false }

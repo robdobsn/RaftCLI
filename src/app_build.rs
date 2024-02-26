@@ -3,6 +3,9 @@ use std::fs;
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::path::PathBuf;
+use std::io::{self, BufRead, BufReader};
+use std::sync::{Arc, Mutex};
+use crossbeam::thread;
 
 pub fn build_raft_app(build_sys_type: Option<String>, clean: bool, app_folder: String,
             no_docker_arg: bool) 
@@ -144,8 +147,7 @@ fn build_with_docker(project_dir: &str, systype_name: &str, clean: bool,
     }
 
     // Execute the Docker command to build the app
-    let build_dir = format!("build/{}", systype_name);
-    let fail_run_msg = format!("Docker run command failed");
+    let build_dir = format!("./build/{}", systype_name);
     let absolute_project_dir = fs::canonicalize(project_dir)?;
     let docker_compatible_project_dir = convert_path_for_docker(absolute_project_dir);
     let project_dir_full = format!("{}:/project", docker_compatible_project_dir?);
@@ -154,7 +156,7 @@ fn build_with_docker(project_dir: &str, systype_name: &str, clean: bool,
     let mut command_sequence = String::new();
 
     if delete_build_folder {
-        command_sequence += "rm -rf ./build; ";
+        command_sequence += &build_dir;
     }
     if delete_raft_artifacts_folder {
         command_sequence += "rm -rf ./build_raft_artifacts; ";
@@ -178,21 +180,21 @@ fn build_with_docker(project_dir: &str, systype_name: &str, clean: bool,
     // Print args
     println!("Docker run args: {:?}", docker_run_args);
 
-    // Run the command
-    let run_status = Command::new("docker")
-        .current_dir(project_dir) // Set the working directory to project_dir
-        .args(docker_run_args)
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .status()
-        .expect(&fail_run_msg);
-
-    if !run_status.success() {
-        eprintln!("Docker run command failed");
-        return Err(std::io::Error::new(std::io::ErrorKind::Other, "Docker run command failed"));
-    }
-    else {
-        println!("Docker run command succeeded");
+    // Execute the Docker command and capture its output
+    let docker_command = "docker";
+    match execute_and_capture_output(docker_command, &docker_run_args, project_dir) {
+        Ok(output) => {
+            // The output contains the command to flash the app which will look something like:
+            // /opt/esp/python_env/idf5.1_py3.8_env/bin/python ../opt/esp/idf/components/esptool_py/esptool/esptool.py -p (PORT) -b 460800 --before default_reset --after hard_reset --chip esp32  write_flash --flash_mode dio --flash_size 4MB --flash_freq 40m 0x1000 build/SysTypeMain/bootloader/bootloader.bin 0x8000 build/SysTypeMain/partition_table/partition-table.bin 0x1e000 build/SysTypeMain/ota_data_initial.bin 0x20000 build/SysTypeMain/SysTypeMain.bin 0x380000 build/SysTypeMain/fs.bin
+            // Extract the command to flash the app using the esptool.py as the keyword to locate the start of the command
+            let flash_command_start = output.find("esptool.py -p").unwrap();
+            let flash_command = &output[flash_command_start..];
+            println!("Flash command: {}", flash_command);
+        },
+        Err(e) => {
+            eprintln!("Docker run failed: {}", e);
+            return Err(e);
+        }
     }
 
     Ok(())
@@ -205,19 +207,52 @@ fn build_without_docker(project_dir: &str, systype_name: &str, clean: bool,
     // Build without docker
     println!("Building without docker in {} for SysType {} clean {}", project_dir, systype_name, clean);
     
+    // Folders
+    let build_dir = format!("{}/build/{}", project_dir, systype_name);
+    let build_raft_artifacts_folder = format!("{}/build_raft_artifacts", project_dir);
+
     // Delete the build folder if required
     if delete_build_folder {
-        let build_folder = format!("{}/build", project_dir);
-        if Path::new(&build_folder).exists() {
-            fs::remove_dir_all(&build_folder)?;
+        if Path::new(&build_dir).exists() {
+            fs::remove_dir_all(&build_dir)?;
         }
     }
 
     // Delete the "build_raft_artifacts" folder if required
     if delete_raft_artifacts_folder {
-        let build_raft_artifacts_folder = format!("{}/build_raft_artifacts", project_dir);
         if Path::new(&build_raft_artifacts_folder).exists() {
             fs::remove_dir_all(&build_raft_artifacts_folder)?;
+        }
+    }
+
+    // Command sequence
+    let mut command_sequence = String::new();
+    command_sequence += "idf.py -B ";
+    command_sequence += &build_dir;
+    if clean {
+        command_sequence += " fullclean";
+    }
+    command_sequence += " build";
+
+    // Args
+    let idf_run_args: Vec<&str> = vec![
+        &command_sequence,
+    ];
+
+    // Execute
+    let idf_command = "idf.py";
+    match execute_and_capture_output(idf_command, &idf_run_args, project_dir) {
+        Ok(output) => {
+            // The output contains the command to flash the app which will look something like:
+            // /opt/esp/python_env/idf5.1_py3.8_env/bin/python ../opt/esp/idf/components/esptool_py/esptool/esptool.py -p (PORT) -b 460800 --before default_reset --after hard_reset --chip esp32  write_flash --flash_mode dio --flash_size 4MB --flash_freq 40m 0x1000 build/SysTypeMain/bootloader/bootloader.bin 0x8000 build/SysTypeMain/partition_table/partition-table.bin 0x1e000 build/SysTypeMain/ota_data_initial.bin 0x20000 build/SysTypeMain/SysTypeMain.bin 0x380000 build/SysTypeMain/fs.bin
+            // Extract the command to flash the app using the esptool.py as the keyword to locate the start of the command
+            let flash_command_start = output.find("esptool.py -p").unwrap();
+            let flash_command = &output[flash_command_start..];
+            println!("Flash command: {}", flash_command);
+        },
+        Err(e) => {
+            eprintln!("idf.py build failed {}", e);
+            return Err(e);
         }
     }
 
@@ -263,4 +298,57 @@ fn convert_path_for_docker(path: PathBuf) -> Result<String, std::io::Error> {
     let docker_path = trimmed_path.replace("\\", "/");
 
     Ok(docker_path)
+}
+
+fn execute_and_capture_output(command: &str, args: &[&str], cur_dir: &str) -> io::Result<String> {
+    let process = Command::new(command)
+        .current_dir(cur_dir)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+
+    let stdout = process.stdout.expect("failed to capture stdout");
+    let stderr = process.stderr.expect("failed to capture stderr");
+
+    let stdout_reader = BufReader::new(stdout);
+    let stderr_reader = BufReader::new(stderr);
+
+    let captured_output = Arc::new(Mutex::new(String::new()));
+
+    // Using crossbeam to handle threads easily
+    thread::scope(|s| {
+        let captured = Arc::clone(&captured_output);
+        s.spawn(move |_| {
+            for line in stdout_reader.lines() {
+                match line {
+                    Ok(line) => {
+                        println!("{}", line); // Print to console
+                        let mut captured = captured.lock().unwrap();
+                        captured.push_str(&line);
+                        captured.push('\n');
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+
+        let captured = Arc::clone(&captured_output);
+        s.spawn(move |_| {
+            for line in stderr_reader.lines() {
+                match line {
+                    Ok(line) => {
+                        eprintln!("{}", line); // Print to console
+                        let mut captured = captured.lock().unwrap();
+                        captured.push_str(&line);
+                        captured.push('\n');
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+    }).unwrap();
+
+    let output = captured_output.lock().unwrap().clone();
+    Ok(output)
 }
