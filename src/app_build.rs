@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use crossbeam::thread;
 
 pub fn build_raft_app(build_sys_type: Option<String>, clean: bool, app_folder: String,
-            no_docker_arg: bool) 
+            no_docker_arg: bool, idf_path_full: Option<String>) 
                             -> Result<(), Box<dyn std::error::Error>> {
 
     // systypes folder name
@@ -80,9 +80,12 @@ pub fn build_raft_app(build_sys_type: Option<String>, clean: bool, app_folder: S
 
     // Handle building with or without docker
     if no_docker {
+        // Get idf path
+        let idf_path = idf_path_full.unwrap_or("idf.py".to_string());
+
         // Build without docker
         let build_result = build_without_docker(&app_folder, &sys_type, clean, 
-                    delete_build_folder, delete_build_raft_artifacts_folder);
+                    delete_build_folder, delete_build_raft_artifacts_folder, idf_path);
         if build_result.is_err() {
             return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "Build failed")));
         }
@@ -202,19 +205,21 @@ fn build_with_docker(project_dir: &str, systype_name: &str, clean: bool,
 
 // Build without docker
 fn build_without_docker(project_dir: &str, systype_name: &str, clean: bool,
-    delete_build_folder: bool, delete_raft_artifacts_folder: bool) -> Result<(), std::io::Error> {
+    delete_build_folder: bool, delete_raft_artifacts_folder: bool,
+    idf_path: String) -> Result<(), std::io::Error> {
     
     // Build without docker
     println!("Building without docker in {} for SysType {} clean {}", project_dir, systype_name, clean);
     
     // Folders
-    let build_dir = format!("{}/build/{}", project_dir, systype_name);
+    let build_dir = format!("build/{}", systype_name);
     let build_raft_artifacts_folder = format!("{}/build_raft_artifacts", project_dir);
 
     // Delete the build folder if required
     if delete_build_folder {
-        if Path::new(&build_dir).exists() {
-            fs::remove_dir_all(&build_dir)?;
+        let build_dir_full = format!("{}/{}", project_dir, build_dir);
+        if Path::new(&build_dir_full).exists() {
+            fs::remove_dir_all(&build_dir_full)?;
         }
     }
 
@@ -227,7 +232,7 @@ fn build_without_docker(project_dir: &str, systype_name: &str, clean: bool,
 
     // Command sequence
     let mut command_sequence = String::new();
-    command_sequence += "idf.py -B ";
+    command_sequence += "-B ";
     command_sequence += &build_dir;
     if clean {
         command_sequence += " fullclean";
@@ -240,7 +245,10 @@ fn build_without_docker(project_dir: &str, systype_name: &str, clean: bool,
     ];
 
     // Execute
-    let idf_command = "idf.py";
+    let idf_command = idf_path.as_str();
+
+    println!("idf.py command: {} run args: {:?}", idf_command, idf_run_args);
+    
     match execute_and_capture_output(idf_command, &idf_run_args, project_dir) {
         Ok(output) => {
             // The output contains the command to flash the app which will look something like:
@@ -254,31 +262,6 @@ fn build_without_docker(project_dir: &str, systype_name: &str, clean: bool,
             eprintln!("idf.py build failed {}", e);
             return Err(e);
         }
-    }
-
-    // Arguments for the idf.py command
-    let build_folder = format!("{}/build", project_dir);
-    let mut idf_args = vec!["-B", &build_folder];
-    if clean {
-        idf_args.push("fullclean");
-    }
-    idf_args.push("build");
-
-    // Execute the idf.py command to build the app
-    let build_status = Command::new("idf.py")
-        .current_dir(project_dir)
-        .args(idf_args)
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .status()
-        .expect("Error: idf.py build command failed");
-
-    if !build_status.success() {
-        eprintln!("Error: idf.py build command failed");
-        return Err(std::io::Error::new(std::io::ErrorKind::Other, "idf.py build command failed"));
-    }
-    else {
-        println!("idf.py build command succeeded");
     }
 
     Ok(())

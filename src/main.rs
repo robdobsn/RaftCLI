@@ -33,15 +33,18 @@ struct NewCmd {
 // Define arguments specific to the `build` subcommand
 #[derive(Clone, Parser, Debug)]
 struct BuildCmd {
+    // Add an option to specify the app folder
+    app_folder: Option<String>,
+    // Option to clean the target folder
     sys_type: Option<String>,
     #[clap(short = 'c', long, help = "Clean the target folder")]
     clean: bool,
-    // Add an option to specify the app folder
-    #[clap(short = 'a', long, help = "Application base folder")]
-    app_folder: Option<String>,
-    // Add an option to specify whether docker is to be used for the build
-    #[clap(short = 'n', long, help = "Don't use docker for build")]
+    // Option to specify whether docker is to be used for the build
+    #[clap(short = 'd', long, help = "Don't use docker for build")]
     no_docker: bool,
+    // Option to specify path to idf.py
+    #[clap(short = 'i', long, help = "Full path to idf.py (when not using docker)")]
+    idf_path: Option<String>,
 }
 
 // Define arguments specific to the `monitor` subcommand
@@ -125,7 +128,7 @@ async fn main() {
             // Get the app folder (or default to current folder)
             let app_folder = cmd.app_folder.unwrap_or(".".to_string());
             let _result = build_raft_app(cmd.sys_type, cmd.clean, 
-                        app_folder, cmd.no_docker);
+                        app_folder, cmd.no_docker, cmd.idf_path);
             // println!("{:?}", _result);
         }
         
