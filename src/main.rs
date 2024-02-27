@@ -11,6 +11,9 @@ use app_config::get_user_input;
 mod serial_monitor;
 mod app_build;
 use app_build::build_raft_app;
+mod app_flash;
+use app_flash::flash_raft_app;
+mod raft_cli_utils;
 
 #[derive(Clone, Parser, Debug)]
 enum Action {
@@ -20,6 +23,8 @@ enum Action {
     Build(BuildCmd),    
     #[clap(name = "monitor", about = "Monitor a serial port")]
     Monitor(MonitorCmd),
+    #[clap(name = "run", about = "Build, flash and monitor a raft app")]
+    Run(RunCmd),
 }
 
 // Define arguments specific to the `new` subcommand
@@ -51,6 +56,30 @@ struct BuildCmd {
 #[derive(Clone, Parser, Debug)]
 struct MonitorCmd {
     port: Option<String>,
+    #[clap(short = 'b', long, help = "Baud rate")]
+    baud: Option<u32>,
+    #[arg(short = 'l', long, help = "Log serial data to file")]
+    log: bool,
+    #[arg(short = 'g', long, default_value = "./logs", help = "Folder for log files")]
+    log_folder: Option<String>,
+}
+
+// Define arguments for the 'run' subcommand
+#[derive(Clone, Parser, Debug)]
+struct RunCmd {
+    port: Option<String>,
+    // Add an option to specify the app folder
+    app_folder: Option<String>,
+    // Option to clean the target folder
+    sys_type: Option<String>,
+    #[clap(short = 'c', long, help = "Clean the target folder")]
+    clean: bool,
+    // Option to specify whether docker is to be used for the build
+    #[clap(short = 'd', long, help = "Don't use docker for build")]
+    no_docker: bool,
+    // Option to specify path to idf.py
+    #[clap(short = 'i', long, help = "Full path to idf.py (when not using docker)")]
+    idf_path: Option<String>,    
     #[clap(short = 'b', long, help = "Baud rate")]
     baud: Option<u32>,
     #[arg(short = 'l', long, help = "Log serial data to file")]
@@ -127,7 +156,7 @@ async fn main() {
         Action::Build(cmd) => {
             // Get the app folder (or default to current folder)
             let app_folder = cmd.app_folder.unwrap_or(".".to_string());
-            let _result = build_raft_app(cmd.sys_type, cmd.clean, 
+            let _result = build_raft_app(&cmd.sys_type, cmd.clean, 
                         app_folder, cmd.no_docker, cmd.idf_path);
             // println!("{:?}", _result);
         }
@@ -141,6 +170,36 @@ async fn main() {
 
             // Start the serial monitor
             let result = serial_monitor::start(port, baud, log, log_folder).await;
+            match result {
+                Ok(()) => std::process::exit(0),
+                Err(e) => {
+                    println!("Error: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        Action::Run(cmd) => {
+
+            // Get the app folder (or default to current folder)
+            let app_folder = cmd.app_folder.unwrap_or(".".to_string());
+
+            // Build the app
+            let _result = build_raft_app(&cmd.sys_type, cmd.clean, 
+                        app_folder.clone(), cmd.no_docker, cmd.idf_path);
+            // println!("{:?}", _result);
+
+            // Extract port and buad rate arguments
+            let port = cmd.port.unwrap_or(serial_monitor::get_default_port());
+            let baud = cmd.baud.unwrap_or(115200);
+            let log = cmd.log;
+            let log_folder = cmd.log_folder.unwrap_or("./logs".to_string());
+
+            // Flash the app
+            let _result = flash_raft_app(&cmd.sys_type, app_folder.clone(), port.clone(), baud);
+
+            // Start the serial monitor
+            let result = serial_monitor::start(port.clone(), baud, log, log_folder).await;
             match result {
                 Ok(()) => std::process::exit(0),
                 Err(e) => {
