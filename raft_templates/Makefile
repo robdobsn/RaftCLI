@@ -14,7 +14,7 @@ ESP_IDF_PATH ?= ~/esp/esp-idf-v{{esp_idf_version}}
 # Set the build base folders
 BUILD_BASE_FOLDER ?= build
 BUILD_CONFIG_BASE_DIR = systypes
-BUILD_RAFT_ARTEFACTS_DIR ?= build_raft_artefacts
+BUILD_RAFT_ARTIFACTS_DIR ?= build_raft_artifacts
 
 # Set the SysType
 SYSTYPE ?= $(notdir $(firstword $(filter-out $(BUILD_CONFIG_BASE_DIR)/Common, $(wildcard $(BUILD_CONFIG_BASE_DIR)/*))))
@@ -29,7 +29,7 @@ ROOTDIR = $(realpath $(CURDIR))
 
 # Set the sdkconfig files
 SDKCONFIG_DEFAULTS_FILE ?= $(BUILD_CONFIG_DIR)/sdkconfig.defaults
-SDKCONFIG_FILE ?= $(BUILD_RAFT_ARTEFACTS_DIR)/sdkconfig
+SDKCONFIG_FILE ?= $(BUILD_RAFT_ARTIFACTS_DIR)/sdkconfig
 
 # Set the target binary
 TARGET_BINARY = $(BUILD_DIR)/$(SYSTYPE).bin
@@ -54,14 +54,14 @@ endif
 ifeq ($(DOCKER),1)
 DELETE_BUILD_FOLDERS=\
 	@echo "-------------------- Deleting build folders --------------------"; \
-	$(DOCKER_EXEC) rm -rf ./build/ ./build_raft_artefacts/ || true
+	$(DOCKER_EXEC) rm -rf ./build/ ./build_raft_artifacts/ || true
 BUILD_TARGET=\
 	@echo "-------------------- Building in Docker --------------------"; \
 	$(DOCKER_EXEC) $(CMD)
 else
 DELETE_BUILD_FOLDERS=\
 	@echo "-------------------- Deleting build folders --------------------"; \
-	rm -rf ./build/ ./build_raft_artefacts/ || true
+	rm -rf ./build/ ./build_raft_artifacts/ || true
 BUILD_TARGET=\
 	@echo "-------------------- Building Locally --------------------"; \
 	$(LOCAL_EXEC) && $(CMD)
@@ -85,11 +85,11 @@ build: $(TARGET_BINARY)
 # Flash the project
 ifneq ($(SERIAL_MONITOR),)
 flash: build
-	@$(PYTHON_FOR_FLASH) $(BUILD_DIR)/_deps/raftcore-src/scripts/flashUsingPartitionCSV.py $(BUILD_RAFT_ARTEFACTS_DIR)/partitions.csv $(BUILD_DIR) $(SYSTYPE).bin $(PORT) -s $(SDKCONFIG_FILE) -f fs.bin
+	@$(PYTHON_FOR_FLASH) $(BUILD_DIR)/_deps/raftcore-src/scripts/flashUsingPartitionCSV.py $(BUILD_RAFT_ARTIFACTS_DIR)/partitions.csv $(BUILD_DIR) $(SYSTYPE).bin $(PORT) -s $(SDKCONFIG_FILE) -f fs.bin
 	$(SERIAL_MONITOR) $(PORT) -l
 else
 flash: build
-	@$(PYTHON_FOR_FLASH) $(BUILD_DIR)/_deps/raftcore-src/scripts/flashUsingPartitionCSV.py $(BUILD_RAFT_ARTEFACTS_DIR)/partitions.csv $(BUILD_DIR) $(SYSTYPE).bin $(PORT) -s $(SDKCONFIG_FILE) -f fs.bin
+	@$(PYTHON_FOR_FLASH) $(BUILD_DIR)/_deps/raftcore-src/scripts/flashUsingPartitionCSV.py $(BUILD_RAFT_ARTIFACTS_DIR)/partitions.csv $(BUILD_DIR) $(SYSTYPE).bin $(PORT) -s $(SDKCONFIG_FILE) -f fs.bin
 endif
 
 # Phony targets to avoid name clashes with files
