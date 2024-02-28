@@ -57,7 +57,7 @@ struct BuildCmd {
 struct MonitorCmd {
     port: Option<String>,
     #[clap(short = 'b', long, help = "Baud rate")]
-    baud: Option<u32>,
+    monitor_baud: Option<u32>,
     #[arg(short = 'l', long, help = "Log serial data to file")]
     log: bool,
     #[arg(short = 'g', long, default_value = "./logs", help = "Folder for log files")]
@@ -80,8 +80,12 @@ struct RunCmd {
     // Option to specify path to idf.py
     #[clap(short = 'i', long, help = "Full path to idf.py (when not using docker)")]
     idf_path: Option<String>,    
-    #[clap(short = 'b', long, help = "Baud rate")]
-    baud: Option<u32>,
+    // Option to specify the monitor baud rate
+    #[clap(short = 'b', long, help = "Monitor baud rate")]
+    monitor_baud: Option<u32>,
+    // Option to specify flash baud rate
+    #[clap(short = 'f', long, help = "Flash baud rate")]
+    flash_baud: Option<u32>,
     #[arg(short = 'l', long, help = "Log serial data to file")]
     log: bool,
     #[arg(short = 'g', long, default_value = "./logs", help = "Folder for log files")]
@@ -164,12 +168,12 @@ async fn main() {
         Action::Monitor(cmd) => {
             // Extract port and buad rate arguments
             let port = cmd.port.unwrap_or(serial_monitor::get_default_port());
-            let baud = cmd.baud.unwrap_or(115200);
+            let monitor_baud = cmd.monitor_baud.unwrap_or(115200);
             let log = cmd.log;
             let log_folder = cmd.log_folder.unwrap_or("./logs".to_string());
 
             // Start the serial monitor
-            let result = serial_monitor::start(port, baud, log, log_folder).await;
+            let result = serial_monitor::start(port, monitor_baud, log, log_folder).await;
             match result {
                 Ok(()) => std::process::exit(0),
                 Err(e) => {
@@ -191,15 +195,16 @@ async fn main() {
 
             // Extract port and buad rate arguments
             let port = cmd.port.unwrap_or(serial_monitor::get_default_port());
-            let baud = cmd.baud.unwrap_or(115200);
+            let monitor_baud = cmd.monitor_baud.unwrap_or(115200);
+            let flash_baud = cmd.flash_baud.unwrap_or(2000000);
             let log = cmd.log;
             let log_folder = cmd.log_folder.unwrap_or("./logs".to_string());
 
             // Flash the app
-            let _result = flash_raft_app(&cmd.sys_type, app_folder.clone(), port.clone(), baud);
+            let _result = flash_raft_app(&cmd.sys_type, app_folder.clone(), port.clone(), flash_baud);
 
             // Start the serial monitor
-            let result = serial_monitor::start(port.clone(), baud, log, log_folder).await;
+            let result = serial_monitor::start(port.clone(), monitor_baud, log, log_folder).await;
             match result {
                 Ok(()) => std::process::exit(0),
                 Err(e) => {

@@ -12,14 +12,11 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, app_folder: 
             no_docker_arg: bool, idf_path_full: Option<String>) 
                             -> Result<(), Box<dyn std::error::Error>> {
 
-    // systypes folder name
-    let sys_types_base_folder_rel = "systypes";
-
     // Check the app folder is valid
-    check_app_folder_valid(&app_folder, sys_types_base_folder_rel);
+    check_app_folder_valid(&app_folder);
 
     // Determine the Systype to build
-    let sys_type = utils_get_sys_type(build_sys_type, &app_folder, sys_types_base_folder_rel);
+    let sys_type = utils_get_sys_type(build_sys_type, &app_folder);
 
     // Flags indicating the build folder and "build_raft_artifacts" folder should be deleted
     let mut delete_build_folder = false;

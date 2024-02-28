@@ -6,8 +6,7 @@ use std::io::{self, BufRead, BufReader};
 use std::sync::{Arc, Mutex};
 use crossbeam::thread;
 
-pub fn utils_get_sys_type(build_sys_type: &Option<String>, app_folder: &str,
-            sys_types_base_folder_rel: &str) -> String {
+pub fn utils_get_sys_type(build_sys_type: &Option<String>, app_folder: &str) -> String {
 
     // Determine the Systype to build - this is either the SysType passed in or
     // the first SysType found in the systypes folder (excluding Common)
@@ -16,7 +15,7 @@ pub fn utils_get_sys_type(build_sys_type: &Option<String>, app_folder: &str,
         sys_type = build_sys_type.to_string();
     } else {
         let sys_types = fs::read_dir(
-            format!("{}/{}", app_folder, sys_types_base_folder_rel)
+            format!("{}/{}", app_folder, get_systypes_folder_name())
         );
         if sys_types.is_err() {
             println!("Error reading the systypes folder: {}", sys_types.err().unwrap());
@@ -40,7 +39,7 @@ pub fn utils_get_sys_type(build_sys_type: &Option<String>, app_folder: &str,
 }
 
 // Check the app folder is valid
-pub fn check_app_folder_valid(app_folder: &str, sys_types_base_folder_rel: &str) {
+pub fn check_app_folder_valid(app_folder: &str) {
     // The app folder is valid if it exists and contains a CMakeLists.txt file
     // and a folder called systypes 
     let cmake_file = format!("{}/CMakeLists.txt", app_folder);
@@ -50,7 +49,7 @@ pub fn check_app_folder_valid(app_folder: &str, sys_types_base_folder_rel: &str)
     } else if !Path::new(&cmake_file).exists() {
         println!("Error: app folder does not contain a CMakeLists.txt file: {}", app_folder);
         std::process::exit(1);
-    } else if !Path::new(&format!("{}/{}", app_folder, sys_types_base_folder_rel)).exists() {
+    } else if !Path::new(&format!("{}/{}", app_folder, get_systypes_folder_name())).exists() {
         println!("Error: app folder does not contain a systypes folder: {}", app_folder);
         std::process::exit(1);
     }
@@ -154,4 +153,9 @@ pub fn execute_and_capture_output(command: &str, args: &[&str], cur_dir: &str) -
 
     let output = captured_output.lock().unwrap().clone();
     Ok(output)
+}
+
+fn get_systypes_folder_name() -> &'static str {
+    // systypes folder name
+    "systypes"
 }

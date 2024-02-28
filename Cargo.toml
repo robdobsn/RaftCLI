@@ -35,4 +35,4 @@ futures = "0.3.21"
 remove_dir_all = "0.8.2"
 chrono = "0.4.33"
 crossbeam = "0.8.4"
-espflash = { version = "2.1", default-features = false }
+espflash = { version = "2.1", default-features = true }
