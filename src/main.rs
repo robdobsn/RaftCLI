@@ -74,6 +74,9 @@ struct RunCmd {
     sys_type: Option<String>,
     #[clap(short = 'c', long, help = "Clean the target folder")]
     clean: bool,
+    // Option to disable build step
+    #[clap(short = 'n', long, help = "No build step - flash/monitor only")]
+    no_build: bool,
     // Option to specify whether docker is to be used for the build
     #[clap(short = 'd', long, help = "Don't use docker for build")]
     no_docker: bool,
@@ -86,6 +89,10 @@ struct RunCmd {
     // Option to specify flash baud rate
     #[clap(short = 'f', long, help = "Flash baud rate")]
     flash_baud: Option<u32>,
+    // Option to specify flashing tool
+    #[clap(short = 't', long, help = "Flash tool (e.g. esptool)")]
+    flash_tool: Option<String>,
+    // Logging options
     #[arg(short = 'l', long, help = "Log serial data to file")]
     log: bool,
     #[arg(short = 'g', long, default_value = "./logs", help = "Folder for log files")]
@@ -189,9 +196,11 @@ async fn main() {
             let app_folder = cmd.app_folder.unwrap_or(".".to_string());
 
             // Build the app
-            let _result = build_raft_app(&cmd.sys_type, cmd.clean, 
-                        app_folder.clone(), cmd.no_docker, cmd.idf_path);
-            // println!("{:?}", _result);
+            if !cmd.no_build {
+                let _result = build_raft_app(&cmd.sys_type, cmd.clean, 
+                            app_folder.clone(), cmd.no_docker, cmd.idf_path);
+                // println!("{:?}", _result);
+            }
 
             // Extract port and buad rate arguments
             let port = cmd.port.unwrap_or(serial_monitor::get_default_port());
@@ -201,7 +210,8 @@ async fn main() {
             let log_folder = cmd.log_folder.unwrap_or("./logs".to_string());
 
             // Flash the app
-            let _result = flash_raft_app(&cmd.sys_type, app_folder.clone(), port.clone(), flash_baud);
+            let _result = flash_raft_app(&cmd.sys_type, 
+                        app_folder.clone(), port.clone(), flash_baud, cmd.flash_tool);
 
             // Start the serial monitor
             let result = serial_monitor::start(port.clone(), monitor_baud, log, log_folder).await;

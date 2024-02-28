@@ -215,4 +215,3 @@ fn build_without_docker(project_dir: &str, systype_name: &str, clean: bool,
 
     Ok(())
 }
-

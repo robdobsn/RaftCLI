@@ -136,8 +136,12 @@ pub async fn start(port: String, baud: u32, log: bool, log_folder: String) -> to
     // Setup signaling mechanism
     let (oneshot_exit_send, oneshot_exit_get) = oneshot::channel();
 
+    // Serial port builder
+
     // Open serial port
-    let serial_port = tokio_serial::new(&port, baud).open_native_async();
+    let mut serial_port_builder = tokio_serial::new(&port, baud);
+    serial_port_builder = serial_port_builder.stop_bits(tokio_serial::StopBits::One);    
+    let serial_port = serial_port_builder.open_native_async();
    
     // Handle errors in opening the serial port
     let serial_port = match serial_port {
