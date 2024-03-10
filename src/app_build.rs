@@ -179,33 +179,35 @@ fn build_without_docker(project_dir: &str, systype_name: &str, clean: bool,
         }
     }
 
-    // Command sequence
-    let mut command_sequence = String::new();
-    command_sequence += "-B ";
-    command_sequence += &build_dir;
+    // IDF args in a vector
+    let mut idf_run_args = vec!["-B", &build_dir];
     if clean {
-        command_sequence += " fullclean";
+        idf_run_args.push("fullclean");
     }
-    command_sequence += " build";
+    idf_run_args.push("build");
 
-    // Args
-    let idf_run_args: Vec<&str> = vec![
-        &command_sequence,
-    ];
-
-    // Execute
+    // Command
     let idf_command = idf_path.as_str();
-
-    println!("idf.py command: {} run args: {:?}", idf_command, idf_run_args);
     
+    // Debug
+    println!("Build app command: {} {:?}", idf_command, idf_run_args);
+    
+    // Execute the command and capture its output
     match execute_and_capture_output(idf_command, &idf_run_args, project_dir) {
         Ok(output) => {
             // The output contains the command to flash the app which will look something like:
             // /opt/esp/python_env/idf5.1_py3.8_env/bin/python ../opt/esp/idf/components/esptool_py/esptool/esptool.py -p (PORT) -b 460800 --before default_reset --after hard_reset --chip esp32  write_flash --flash_mode dio --flash_size 4MB --flash_freq 40m 0x1000 build/SysTypeMain/bootloader/bootloader.bin 0x8000 build/SysTypeMain/partition_table/partition-table.bin 0x1e000 build/SysTypeMain/ota_data_initial.bin 0x20000 build/SysTypeMain/SysTypeMain.bin 0x380000 build/SysTypeMain/fs.bin
             // Extract the command to flash the app using the esptool.py as the keyword to locate the start of the command
-            let flash_command_start = output.find("esptool.py -p").unwrap();
-            let flash_command = &output[flash_command_start..];
-            println!("Flash command: {}", flash_command);
+            let flash_command_start = output.find("esptool.py -p");
+            match flash_command_start {
+                Some(start) => {
+                    let flash_command = &output[start..];
+                    println!("Flash command: {}", flash_command);
+                },
+                None => {
+                    eprintln!("Flash command not found in output");
+                }
+            }
         },
         Err(e) => {
             eprintln!("idf.py build failed {}", e);

@@ -103,15 +103,22 @@ pub fn convert_path_for_docker(path: PathBuf) -> Result<String, std::io::Error> 
 }
 
 pub fn execute_and_capture_output(command: &str, args: &[&str], cur_dir: &str) -> io::Result<String> {
+
+    // Create the process
     let process = Command::new(command)
         .current_dir(cur_dir)
         .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .spawn()?;
+        .spawn();
 
-    let stdout = process.stdout.expect("failed to capture stdout");
-    let stderr = process.stderr.expect("failed to capture stderr");
+    if process.is_err() {
+        return Err(process.err().unwrap());
+    }
+
+    let mut process = process.unwrap();
+    let stdout = process.stdout.take().unwrap();
+    let stderr = process.stderr.take().unwrap();
 
     let stdout_reader = BufReader::new(stdout);
     let stderr_reader = BufReader::new(stderr);
@@ -150,7 +157,7 @@ pub fn execute_and_capture_output(command: &str, args: &[&str], cur_dir: &str) -
             }
         });
     }).unwrap();
-
+    
     let output = captured_output.lock().unwrap().clone();
     Ok(output)
 }
