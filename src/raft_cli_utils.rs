@@ -2,11 +2,12 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::fs;
+use std::env;
 use std::io::{self, BufRead, BufReader};
 use std::sync::{Arc, Mutex};
 use crossbeam::thread;
 
-pub fn utils_get_sys_type(build_sys_type: &Option<String>, app_folder: &str) -> String {
+pub fn utils_get_sys_type(build_sys_type: &Option<String>, app_folder: &str) -> Result<String, Box<dyn std::error::Error>> {
 
     // Determine the Systype to build - this is either the SysType passed in or
     // the first SysType found in the systypes folder (excluding Common)
@@ -19,13 +20,13 @@ pub fn utils_get_sys_type(build_sys_type: &Option<String>, app_folder: &str) -> 
         );
         if sys_types.is_err() {
             println!("Error reading the systypes folder: {}", sys_types.err().unwrap());
-            std::process::exit(1);
+            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "Error reading the systypes folder")));
         }
         for sys_type_dir_entry in sys_types.unwrap() {
             let sys_type_dir = sys_type_dir_entry;
             if sys_type_dir.is_err() {
                 println!("Error reading the systypes folder: {}", sys_type_dir.err().unwrap());
-                std::process::exit(1);
+                return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "Error reading the systypes folder")));
             }
             let sys_type_name = sys_type_dir.unwrap().file_name().into_string().unwrap();
             if sys_type_name != "Common" {
@@ -35,23 +36,25 @@ pub fn utils_get_sys_type(build_sys_type: &Option<String>, app_folder: &str) -> 
         }
     }
 
-    sys_type
+    Ok(sys_type)
 }
 
 // Check the app folder is valid
-pub fn check_app_folder_valid(app_folder: &str) {
+pub fn check_app_folder_valid(app_folder: &str) -> bool {
     // The app folder is valid if it exists and contains a CMakeLists.txt file
     // and a folder called systypes 
     let cmake_file = format!("{}/CMakeLists.txt", app_folder);
     if !Path::new(&app_folder).exists() {
         println!("Error: app folder does not exist: {}", app_folder);
-        std::process::exit(1);
+        false
     } else if !Path::new(&cmake_file).exists() {
         println!("Error: app folder does not contain a CMakeLists.txt file: {}", app_folder);
-        std::process::exit(1);
+        false
     } else if !Path::new(&format!("{}/{}", app_folder, get_systypes_folder_name())).exists() {
         println!("Error: app folder does not contain a systypes folder: {}", app_folder);
-        std::process::exit(1);
+        false
+    } else {
+        true
     }
 }
 
@@ -102,17 +105,16 @@ pub fn convert_path_for_docker(path: PathBuf) -> Result<String, std::io::Error> 
     Ok(docker_path)
 }
 
-pub fn execute_and_capture_output(command: &str, args: &[&str], cur_dir: &str) -> io::Result<String> {
+pub fn execute_and_capture_output(command: &str, args: &Vec<String>, cur_dir: &str) -> io::Result<String> {
 
-    // Create the process
     let process = Command::new(command)
         .current_dir(cur_dir)
         .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn();
-
     if process.is_err() {
+        println!("Error executing command: {}", &process.as_ref().err().unwrap());
         return Err(process.err().unwrap());
     }
 
@@ -125,7 +127,7 @@ pub fn execute_and_capture_output(command: &str, args: &[&str], cur_dir: &str) -
 
     let captured_output = Arc::new(Mutex::new(String::new()));
 
-    // Using crossbeam to handle threads easily
+    // Using crossbeam to handle threads
     thread::scope(|s| {
         let captured = Arc::clone(&captured_output);
         s.spawn(move |_| {
@@ -165,4 +167,87 @@ pub fn execute_and_capture_output(command: &str, args: &[&str], cur_dir: &str) -
 fn get_systypes_folder_name() -> &'static str {
     // systypes folder name
     "systypes"
+}
+
+// Check if running on WSL
+pub fn is_wsl() -> bool {
+    // Check if running under WSL by looking for WSL-specific environment variable or file content
+    env::var("WSL_DISTRO_NAME").is_ok() || fs::read_to_string("/proc/version")
+        .map(|contents| contents.contains("Microsoft") || contents.contains("WSL"))
+        .unwrap_or(false)
+}
+
+pub fn get_flash_tool_cmd(flash_tool_opt: Option<String>) -> String {
+
+    // If the tool is specified then use it, otherwise determine the tool from the platform
+    match flash_tool_opt {
+        Some(tool) => tool,
+        None => {
+            if is_wsl() {
+                "esptool.py.exe".to_string()
+            } else {
+                "esptool.py".to_string()
+            }
+        }
+    }
+}
+
+pub fn extract_flash_cmd_args(output: String, port: &str, flash_baud: u32) -> 
+                    Result<Vec<String>, Box<dyn std::error::Error>> {
+
+    // The result contains the command to flash the app which will look something like:
+    // /opt/esp/python_env/idf5.1_py3.8_env/bin/python ../opt/esp/idf/components/esptool_py/esptool/esptool.py -p (PORT) -b 460800 --before default_reset --after hard_reset --chip esp32  write_flash --flash_mode dio --flash_size 4MB --flash_freq 40m 0x1000 build/SysTypeMain/bootloader/bootloader.bin 0x8000 build/SysTypeMain/partition_table/partition-table.bin 0x1e000 build/SysTypeMain/ota_data_initial.bin 0x20000 build/SysTypeMain/SysTypeMain.bin 0x380000 build/SysTypeMain/fs.bin
+    // Extract the command to flash the app using the esptool.py as the keyword to locate the start of the command
+    let flash_command_start = output.find("-p (PORT)");
+    let mut flash_command: String;
+    match flash_command_start {
+        Some(start) => {
+            flash_command = output[start..].to_string();
+            // Truncase the string at the first newline character
+            let flash_command_end = flash_command.find("\n");
+            if !flash_command_end.is_none() {
+                flash_command.truncate(flash_command_end.unwrap());
+            }
+        },
+        None => {
+            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "Flash command not found in output")));
+        }
+    }
+
+    // The required arguments for flashing the app will look something like this
+    // -p {{port}} -b {{flash_baud}} --before default_reset --after hard_reset --chip esp32  write_flash --flash_mode dio --flash_size 4MB --flash_freq 40m 0x1000 build/SysTypeMain/bootloader/bootloader.bin 0x8000 build/SysTypeMain/partition_table/partition-table.bin 0x1e000 build/SysTypeMain/ota_data_initial.bin 0x20000 build/SysTypeMain/SysTypeMain.bin 0x380000 build/SysTypeMain/fs.bin
+
+    // Replace the placeholders with the actual values
+    let flash_command = flash_command
+                                    .replace("(PORT)", port)
+                                    .replace("-b 460800", &format!("-b {}", flash_baud.to_string()));
+
+    // Create a vector by splitting the string on whitespace
+    let flash_command_parts: Vec<String> = flash_command.split_whitespace().map(|s| s.to_string()).collect();
+
+    // Debug
+    println!("Flash command parts: {:?}", flash_command_parts);
+
+    Ok(flash_command_parts)
+}
+
+// TODO - make these default to value read from config file in project folder
+
+#[cfg(target_os = "macos")]
+pub fn get_default_port() -> String {
+    "/dev/tty.usbserial".to_string()
+}
+
+#[cfg(target_os = "windows")]
+pub fn get_default_port() -> String {
+    "COM3".to_string()
+}
+
+#[cfg(target_os = "linux")]
+pub fn get_default_port() -> String {
+    if is_wsl() {
+        "COM3".to_string()
+    } else {
+        "/dev/ttyUSB0".to_string()
+    }
 }

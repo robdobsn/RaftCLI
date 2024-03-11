@@ -40,11 +40,13 @@ struct NewCmd {
 struct BuildCmd {
     // Add an option to specify the app folder
     app_folder: Option<String>,
-    // Option to clean the target folder
+    // Add an option to specify the system type
+    #[clap(short = 's', long, help = "System type to build")]
     sys_type: Option<String>,
+    // Option to clean the target folder
     #[clap(short = 'c', long, help = "Clean the target folder")]
     clean: bool,
-    // Option to specify whether docker is to be used for the build
+    // Option to specify that docker is not to be used for the build
     #[clap(short = 'd', long, help = "Don't use docker for build")]
     no_docker: bool,
     // Option to specify path to idf.py
@@ -55,9 +57,13 @@ struct BuildCmd {
 // Define arguments specific to the `monitor` subcommand
 #[derive(Clone, Parser, Debug)]
 struct MonitorCmd {
+    // Add an option to specify the serial port
+    #[clap(short = 'p', long, help = "Serial port")]
     port: Option<String>,
+    // Option to specify the monitor baud rate
     #[clap(short = 'b', long, help = "Baud rate")]
     monitor_baud: Option<u32>,
+    // Logging options
     #[arg(short = 'l', long, help = "Log serial data to file")]
     log: bool,
     #[arg(short = 'g', long, default_value = "./logs", help = "Folder for log files")]
@@ -67,22 +73,23 @@ struct MonitorCmd {
 // Define arguments for the 'run' subcommand
 #[derive(Clone, Parser, Debug)]
 struct RunCmd {
-    port: Option<String>,
     // Add an option to specify the app folder
     app_folder: Option<String>,
-    // Option to clean the target folder
+    // Option to clean the system type
+    #[clap(short = 's', long, help = "System type to build")]
     sys_type: Option<String>,
+    // Option to clean the target folder
     #[clap(short = 'c', long, help = "Clean the target folder")]
     clean: bool,
-    // Option to disable build step
-    #[clap(short = 'n', long, help = "No build step - flash/monitor only")]
-    no_build: bool,
     // Option to specify whether docker is to be used for the build
     #[clap(short = 'd', long, help = "Don't use docker for build")]
     no_docker: bool,
     // Option to specify path to idf.py
     #[clap(short = 'i', long, help = "Full path to idf.py (when not using docker)")]
     idf_path: Option<String>,    
+    // Add an option to specify the serial port
+    #[clap(short = 'p', long, help = "Serial port")]
+    port: Option<String>,
     // Option to specify the monitor baud rate
     #[clap(short = 'b', long, help = "Monitor baud rate")]
     monitor_baud: Option<u32>,
@@ -108,7 +115,7 @@ struct Cli {
 }
 
 // Check the target folder is valid
-fn check_target_folder_valid(target_folder: &str, clean: bool) {
+fn check_target_folder_valid(target_folder: &str, clean: bool) -> bool{
     // Check the target folder exists
     if !Path::new(&target_folder).exists() {
         // Create the folder if possible
@@ -116,7 +123,7 @@ fn check_target_folder_valid(target_folder: &str, clean: bool) {
             Ok(_) => println!("Created folder: {}", target_folder),
             Err(e) => {
                 println!("Error creating folder: {}", e);
-                std::process::exit(1);
+                return false;
             }
         }
     } else {
@@ -128,15 +135,16 @@ fn check_target_folder_valid(target_folder: &str, clean: bool) {
                     Ok(_) => println!("Deleted folder contents: {}", target_folder),
                     Err(e) => {
                         println!("Error deleting folder contents: {}", e);
-                        std::process::exit(1);
+                        return false;
                     }
                 }
             } else {
                 println!("Error: target folder must be empty: {}", target_folder);
-                std::process::exit(1);
+                return false;
             }
         }
     }
+    true
 }
 
 // Main function
@@ -152,7 +160,11 @@ async fn main() {
 
             // Validate target folder (before user input to avoid unnecessary input)
             let base_folder = cmd.base_folder.unwrap_or(".".to_string());
-            check_target_folder_valid(&base_folder, cmd.clean);
+            let folder_valid = check_target_folder_valid(&base_folder, cmd.clean);
+            if !folder_valid {
+                println!("Error: target folder is not valid");
+                std::process::exit(1);
+            }
             
             // Get configuration
             let json_config_str = get_user_input();
@@ -174,7 +186,7 @@ async fn main() {
         
         Action::Monitor(cmd) => {
             // Extract port and buad rate arguments
-            let port = cmd.port.unwrap_or(serial_monitor::get_default_port());
+            let port = cmd.port.unwrap_or(raft_cli_utils::get_default_port());
             let monitor_baud = cmd.monitor_baud.unwrap_or(115200);
             let log = cmd.log;
             let log_folder = cmd.log_folder.unwrap_or("./logs".to_string());
@@ -196,22 +208,35 @@ async fn main() {
             let app_folder = cmd.app_folder.unwrap_or(".".to_string());
 
             // Build the app
-            if !cmd.no_build {
-                let _result = build_raft_app(&cmd.sys_type, cmd.clean, 
-                            app_folder.clone(), cmd.no_docker, cmd.idf_path);
-                // println!("{:?}", _result);
+            let result = build_raft_app(&cmd.sys_type, cmd.clean, 
+                        app_folder.clone(), cmd.no_docker, cmd.idf_path);
+
+            // Check for build error
+            if result.is_err() {
+                println!("Build failed {:?}", result);
+                std::process::exit(1);
             }
 
-            // Extract port and buad rate arguments
-            let port = cmd.port.unwrap_or(serial_monitor::get_default_port());
-            let monitor_baud = cmd.monitor_baud.unwrap_or(115200);
-            let flash_baud = cmd.flash_baud.unwrap_or(2000000);
+            // Exract the port
+            let port = cmd.port.unwrap_or(raft_cli_utils::get_default_port());
+
+            // Flash the app
+            let result = flash_raft_app(app_folder.clone(), 
+                        port.clone(),
+                        cmd.flash_baud.unwrap_or(2000000),
+                        cmd.flash_tool,
+                        result.unwrap());
+            if result.is_err() {
+                println!("Flash failed {:?}", result);
+                std::process::exit(1);
+            }
+
+            // Extract logging options
             let log = cmd.log;
             let log_folder = cmd.log_folder.unwrap_or("./logs".to_string());
 
-            // Flash the app
-            let _result = flash_raft_app(&cmd.sys_type, 
-                        app_folder.clone(), port.clone(), flash_baud, cmd.flash_tool);
+            // Extract monitor baud rate
+            let monitor_baud = cmd.monitor_baud.unwrap_or(115200);
 
             // Start the serial monitor
             let result = serial_monitor::start(port.clone(), monitor_baud, log, log_folder).await;
@@ -224,4 +249,5 @@ async fn main() {
             }
         }
     }
+    std::process::exit(0);
 }

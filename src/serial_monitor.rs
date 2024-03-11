@@ -130,12 +130,6 @@ pub async fn start(port: String, baud: u32, log: bool, log_folder: String) -> to
         Arc::new(Mutex::new(None))
     };
 
-    // Enter crossterm raw mode (characters are not automatically echoed to the terminal)
-    enable_raw_mode()?;
-
-    // Setup signaling mechanism
-    let (oneshot_exit_send, oneshot_exit_get) = oneshot::channel();
-
     // Serial port builder
 
     // Open serial port
@@ -177,6 +171,12 @@ pub async fn start(port: String, baud: u32, log: bool, log_folder: String) -> to
     // Clone the log file for use in the serial_rx task
     let log_file_clone = log_file.clone();
 
+    // Enter crossterm raw mode (characters are not automatically echoed to the terminal)
+    enable_raw_mode()?;
+
+    // Setup signaling mechanism
+    let (oneshot_exit_send, oneshot_exit_get) = oneshot::channel();
+    
     // Write welcome message to the terminal
     let version = env!("CARGO_PKG_VERSION");  
     println!("Raft Serial Monitor {} - press Esc (or Ctrl+X) to exit", version);
@@ -329,19 +329,4 @@ pub async fn start(port: String, baud: u32, log: bool, log_folder: String) -> to
     disable_raw_mode()?;
 
     Ok(())
-}
-
-#[cfg(target_os = "macos")]
-pub fn get_default_port() -> String {
-    "/dev/tty.usbserial".to_string()
-}
-
-#[cfg(target_os = "windows")]
-pub fn get_default_port() -> String {
-    "COM3".to_string()
-}
-
-#[cfg(target_os = "linux")]
-pub fn get_default_port() -> String {
-    "/dev/ttyUSB0".to_string()
 }

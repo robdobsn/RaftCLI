@@ -10,13 +10,19 @@ use crate::raft_cli_utils::convert_path_for_docker;
 
 pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, app_folder: String,
             no_docker_arg: bool, idf_path_full: Option<String>) 
-                            -> Result<(), Box<dyn std::error::Error>> {
+                            -> Result<String, Box<dyn std::error::Error>> {
 
     // Check the app folder is valid
-    check_app_folder_valid(&app_folder);
+    if !check_app_folder_valid(&app_folder) {
+        return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "Invalid app folder")));
+    }
 
     // Determine the Systype to build
     let sys_type = utils_get_sys_type(build_sys_type, &app_folder);
+    if sys_type.is_err() {
+        return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "Error determining SysType")));
+    }
+    let sys_type = sys_type.unwrap();
 
     // Flags indicating the build folder and "build_raft_artifacts" folder should be deleted
     let mut delete_build_folder = false;
@@ -45,23 +51,22 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, app_folder: 
     }
 
     // Handle building with or without docker
-    if no_docker {
+    let build_result = if no_docker {
         // Get idf path
         let idf_path = idf_path_full.unwrap_or("idf.py".to_string());
 
         // Build without docker
-        let build_result = build_without_docker(&app_folder, &sys_type, clean, 
-                    delete_build_folder, delete_build_raft_artifacts_folder, idf_path);
-        if build_result.is_err() {
-            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "Build failed")));
-        }
+        build_without_docker(&app_folder, &sys_type, clean, 
+                    delete_build_folder, delete_build_raft_artifacts_folder, idf_path)
     } else {
         // Build with docker
-        let build_result = build_with_docker(&app_folder, &sys_type, 
-                    clean, delete_build_folder, delete_build_raft_artifacts_folder);
-        if build_result.is_err() {
-            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "Build failed")));
-        }
+        build_with_docker(&app_folder, &sys_type, 
+                    clean, delete_build_folder, delete_build_raft_artifacts_folder)
+    };
+
+    // Check for build error
+    if build_result.is_err() {
+        return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "Build failed")));
     }
 
     // Store a file in the "build_raft_artifacts" folder to indicate the SysType
@@ -70,12 +75,12 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, app_folder: 
     fs::create_dir_all(&build_raft_artifacts_folder)?;
     fs::write(format!("{}/cursystype.txt", build_raft_artifacts_folder), sys_type)?;
 
-    Ok(())
+    Ok(build_result.unwrap().to_string())
 }
 
-// Build with docker
+// Build with docker and return output as a string
 fn build_with_docker(project_dir: &str, systype_name: &str, clean: bool,
-            delete_build_folder: bool, delete_raft_artifacts_folder: bool) -> Result<(), std::io::Error> {
+            delete_build_folder: bool, delete_raft_artifacts_folder: bool) -> Result<String, std::io::Error> {
     // Build with docker
     println!("Building with docker in {} for SysType {} clean {}", project_dir, systype_name, clean);
 
@@ -93,9 +98,6 @@ fn build_with_docker(project_dir: &str, systype_name: &str, clean: bool,
     if !docker_image_build_status.success() {
         eprintln!("Docker image build command failed");
         return Err(std::io::Error::new(std::io::ErrorKind::Other, "Docker image build command failed"));
-    }
-    else {
-        println!("Docker image build command succeeded");
     }
 
     // Execute the Docker command to build the app
@@ -129,6 +131,9 @@ fn build_with_docker(project_dir: &str, systype_name: &str, clean: bool,
         "/bin/bash", "-c", &command_sequence,
     ];
 
+    // Convert to string vector
+    let docker_run_args: Vec<String> = docker_run_args.iter().map(|s| s.to_string()).collect();
+
     // Print args
     println!("Docker run args: {:?}", docker_run_args);
 
@@ -136,26 +141,19 @@ fn build_with_docker(project_dir: &str, systype_name: &str, clean: bool,
     let docker_command = "docker";
     match execute_and_capture_output(docker_command, &docker_run_args, project_dir) {
         Ok(output) => {
-            // The output contains the command to flash the app which will look something like:
-            // /opt/esp/python_env/idf5.1_py3.8_env/bin/python ../opt/esp/idf/components/esptool_py/esptool/esptool.py -p (PORT) -b 460800 --before default_reset --after hard_reset --chip esp32  write_flash --flash_mode dio --flash_size 4MB --flash_freq 40m 0x1000 build/SysTypeMain/bootloader/bootloader.bin 0x8000 build/SysTypeMain/partition_table/partition-table.bin 0x1e000 build/SysTypeMain/ota_data_initial.bin 0x20000 build/SysTypeMain/SysTypeMain.bin 0x380000 build/SysTypeMain/fs.bin
-            // Extract the command to flash the app using the esptool.py as the keyword to locate the start of the command
-            let flash_command_start = output.find("esptool.py -p").unwrap();
-            let flash_command = &output[flash_command_start..];
-            println!("Flash command: {}", flash_command);
+            return Ok(output);
         },
         Err(e) => {
             eprintln!("Docker run failed: {}", e);
             return Err(e);
         }
     }
-
-    Ok(())
 }
 
 // Build without docker
 fn build_without_docker(project_dir: &str, systype_name: &str, clean: bool,
     delete_build_folder: bool, delete_raft_artifacts_folder: bool,
-    idf_path: String) -> Result<(), std::io::Error> {
+    idf_path: String) -> Result<String, std::io::Error> {
     
     // Build without docker
     println!("Building without docker in {} for SysType {} clean {}", project_dir, systype_name, clean);
@@ -179,12 +177,12 @@ fn build_without_docker(project_dir: &str, systype_name: &str, clean: bool,
         }
     }
 
-    // IDF args in a vector
-    let mut idf_run_args = vec!["-B", &build_dir];
+    // IDF args in a vector of Strings
+    let mut idf_run_args = vec!["-B".to_string(), build_dir];
     if clean {
-        idf_run_args.push("fullclean");
+        idf_run_args.push("fullclean".to_string());
     }
-    idf_run_args.push("build");
+    idf_run_args.push("build".to_string());
 
     // Command
     let idf_command = idf_path.as_str();
@@ -195,25 +193,11 @@ fn build_without_docker(project_dir: &str, systype_name: &str, clean: bool,
     // Execute the command and capture its output
     match execute_and_capture_output(idf_command, &idf_run_args, project_dir) {
         Ok(output) => {
-            // The output contains the command to flash the app which will look something like:
-            // /opt/esp/python_env/idf5.1_py3.8_env/bin/python ../opt/esp/idf/components/esptool_py/esptool/esptool.py -p (PORT) -b 460800 --before default_reset --after hard_reset --chip esp32  write_flash --flash_mode dio --flash_size 4MB --flash_freq 40m 0x1000 build/SysTypeMain/bootloader/bootloader.bin 0x8000 build/SysTypeMain/partition_table/partition-table.bin 0x1e000 build/SysTypeMain/ota_data_initial.bin 0x20000 build/SysTypeMain/SysTypeMain.bin 0x380000 build/SysTypeMain/fs.bin
-            // Extract the command to flash the app using the esptool.py as the keyword to locate the start of the command
-            let flash_command_start = output.find("esptool.py -p");
-            match flash_command_start {
-                Some(start) => {
-                    let flash_command = &output[start..];
-                    println!("Flash command: {}", flash_command);
-                },
-                None => {
-                    eprintln!("Flash command not found in output");
-                }
-            }
+            return Ok(output);
         },
         Err(e) => {
             eprintln!("idf.py build failed {}", e);
             return Err(e);
         }
     }
-
-    Ok(())
 }
