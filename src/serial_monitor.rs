@@ -101,13 +101,12 @@ fn open_serial_port(port: &str, baud: u32) -> tokio_serial::Result<tokio_serial:
         Ok(serial_port) => {
 
             // This is to get around mutability issues
+            #[cfg(unix)]
             let mut serial_port = serial_port;
 
             // Set the port to non-exclusive mode on unix-based OSs
             #[cfg(unix)]
-            {
-                serial_port.set_exclusive(false).expect("Failed to set port non-exclusive");
-            }
+            serial_port.set_exclusive(false).expect("Failed to set port non-exclusive");
 
             // Return the serial port
             Ok(serial_port)
