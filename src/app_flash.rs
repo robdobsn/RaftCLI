@@ -2,12 +2,13 @@ use crate::raft_cli_utils::extract_flash_cmd_args;
 use crate::raft_cli_utils::get_flash_tool_cmd;
 use crate::raft_cli_utils::execute_and_capture_output;
 
-pub fn flash_raft_app(app_folder: String, port: String, flash_baud: u32, 
+pub fn flash_raft_app(app_folder: String, port: String,
+                force_native_serial_port: bool, flash_baud: u32, 
                 flash_tool_opt: Option<String>, build_cmd_output: String)
                     -> Result<(), Box<dyn std::error::Error>> {
 
     // Get flash tool
-    let flash_cmd = get_flash_tool_cmd(flash_tool_opt);
+    let flash_cmd = get_flash_tool_cmd(flash_tool_opt, force_native_serial_port);
 
     // Extract the arguments for the flash command
     let flash_cmd_args = extract_flash_cmd_args(build_cmd_output, &port, flash_baud);

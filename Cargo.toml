@@ -1,6 +1,6 @@
 [package]
 name = "raftcli"
-version = "1.0.8"
+version = "1.0.9"
 authors = ["Rob Dobson <rob@dobson.com>"]
 license = "MIT"
 keywords = ["cli", "esp32", "espressif", "raft", "framework"]

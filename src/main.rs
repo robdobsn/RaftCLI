@@ -63,6 +63,9 @@ struct MonitorCmd {
     // Option to specify the monitor baud rate
     #[clap(short = 'b', long, help = "Baud rate")]
     monitor_baud: Option<u32>,
+    // Option to force native serial port when in WSL
+    #[clap(short = 'n', long, help = "Force native serial port when in WSL")]
+    force_native_serial_port: bool,
     // Logging options
     #[arg(short = 'l', long, help = "Log serial data to file")]
     log: bool,
@@ -93,6 +96,9 @@ struct RunCmd {
     // Option to specify the monitor baud rate
     #[clap(short = 'b', long, help = "Monitor baud rate")]
     monitor_baud: Option<u32>,
+    // Force native serial port when in WSL
+    #[clap(short = 'n', long, help = "Force native serial port when in WSL")]
+    force_native_serial_port: bool,
     // Option to specify flash baud rate
     #[clap(short = 'f', long, help = "Flash baud rate")]
     flash_baud: Option<u32>,
@@ -186,13 +192,15 @@ async fn main() {
         
         Action::Monitor(cmd) => {
             // Extract port and buad rate arguments
-            let port = cmd.port.unwrap_or(raft_cli_utils::get_default_port());
+            let force_native_serial_port = cmd.force_native_serial_port;
+            let port = cmd.port.unwrap_or(raft_cli_utils::get_default_port(force_native_serial_port));
             let monitor_baud = cmd.monitor_baud.unwrap_or(115200);
             let log = cmd.log;
             let log_folder = cmd.log_folder.unwrap_or("./logs".to_string());
 
             // Start the serial monitor
-            let result = serial_monitor::start(port, monitor_baud, log, log_folder).await;
+            let result = serial_monitor::start(port, force_native_serial_port, 
+                            monitor_baud, log, log_folder).await;
             match result {
                 Ok(()) => std::process::exit(0),
                 Err(e) => {
@@ -217,12 +225,14 @@ async fn main() {
                 std::process::exit(1);
             }
 
-            // Exract the port
-            let port = cmd.port.unwrap_or(raft_cli_utils::get_default_port());
+            // Extract the port and force native serial port arguments
+            let force_native_serial_port = cmd.force_native_serial_port;
+            let port = cmd.port.unwrap_or(raft_cli_utils::get_default_port(force_native_serial_port));
 
             // Flash the app
             let result = flash_raft_app(app_folder.clone(), 
                         port.clone(),
+                        force_native_serial_port,
                         cmd.flash_baud.unwrap_or(2000000),
                         cmd.flash_tool,
                         result.unwrap());
@@ -239,7 +249,8 @@ async fn main() {
             let monitor_baud = cmd.monitor_baud.unwrap_or(115200);
 
             // Start the serial monitor
-            let result = serial_monitor::start(port.clone(), monitor_baud, log, log_folder).await;
+            let result = serial_monitor::start(port.clone(), force_native_serial_port, 
+                            monitor_baud, log, log_folder).await;
             match result {
                 Ok(()) => std::process::exit(0),
                 Err(e) => {

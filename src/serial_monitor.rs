@@ -20,6 +20,7 @@ use futures::stream::{SplitSink, StreamExt};
 use futures::stream::SplitStream;
 use futures::SinkExt;
 struct LineCodec;
+use crate::raft_cli_utils::is_wsl;
 
 struct LogFileInfo {
     file: std::fs::File,
@@ -98,11 +99,13 @@ fn open_serial_port(port: &str, baud: u32) -> tokio_serial::Result<tokio_serial:
     // Handle errors in opening the serial port
     match serial_port {
         Ok(serial_port) => {
-   
+
+            // This is to get around mutability issues
+            let mut serial_port = serial_port;
+
             // Set the port to non-exclusive mode on unix-based OSs
             #[cfg(unix)]
             {
-                let mut serial_port = serial_port;
                 serial_port.set_exclusive(false).expect("Failed to set port non-exclusive");
             }
 
@@ -315,13 +318,40 @@ fn read_from_terminal_and_write_to_serial_port(user_input_buffer: &Arc<Mutex<Str
     });
 }
 
-
-// Serial monitor main loop
-
-
 // Start the serial monitor
-pub async fn start(port: String, baud: u32, log: bool, log_folder: String) -> tokio_serial::Result<()> {
+pub async fn start(port: String, force_native_serial_port: bool, baud: u32, log: bool, log_folder: String) -> tokio_serial::Result<()> {
 
+    // Determine if we should be using a native serial port or running another process in WSL
+    if !force_native_serial_port && is_wsl() {
+
+        // Run the serial monitor in WSL
+        let mut cmd = std::process::Command::new("wsl");
+        cmd.arg("raft.exe");
+        cmd.arg("monitor");
+        cmd.arg("--port");
+        cmd.arg(port);
+        cmd.arg("--baud");
+        cmd.arg(baud.to_string());
+        if log {
+            cmd.arg("--log");
+            cmd.arg(log_folder);
+        }
+        let status = cmd.status().expect("Failed to run serial monitor in WSL");
+        if !status.success() {
+            return Err(tokio_serial::Error::new(tokio_serial::ErrorKind::NoDevice, "Failed to run serial monitor in WSL"));
+        }
+        return Ok(());
+    }
+
+    // TODO - move
+
+    // Open serial port
+    let serial_port = open_serial_port(&port, baud)?;
+
+    // Create a stream from the serial port
+    let stream = LineCodec.framed(serial_port);
+    let (serial_tx, serial_rx) = stream.split();
+    
     // Debug
     // println!("Starting serial monitor on port: {} at baud: {}", port, baud);
 
@@ -346,13 +376,6 @@ pub async fn start(port: String, baud: u32, log: bool, log_folder: String) -> to
     let version = env!("CARGO_PKG_VERSION");  
     println!("Raft Serial Monitor {} - press Esc (or Ctrl+X) to exit", version);
     
-    // Open serial port
-    let serial_port = open_serial_port(&port, baud)?;
-
-    // Create a stream from the serial port
-    let stream = LineCodec.framed(serial_port);
-    let (serial_tx, serial_rx) = stream.split();
-
     // Start the process to read from serial port and write to terminal
     read_from_serial_port_and_write_terminal(&user_input_buffer, serial_rx, log_file);
 
