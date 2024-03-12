@@ -21,6 +21,7 @@ use futures::stream::SplitStream;
 use futures::SinkExt;
 struct LineCodec;
 use crate::raft_cli_utils::is_wsl;
+use std::process::{Command, Stdio};
 
 struct LogFileInfo {
     file: std::fs::File,
@@ -323,23 +324,31 @@ pub async fn start(port: String, force_native_serial_port: bool, baud: u32, log:
     // Determine if we should be using a native serial port or running another process in WSL
     if !force_native_serial_port && is_wsl() {
 
-        // Run the serial monitor in WSL
-        let mut cmd = std::process::Command::new("wsl");
-        cmd.arg("raft.exe");
-        cmd.arg("monitor");
-        cmd.arg("--port");
-        cmd.arg(port);
-        cmd.arg("--baud");
-        cmd.arg(baud.to_string());
+        // Setup args
+        let mut args = vec!["monitor".to_string(), "-p".to_string(), port, "-b".to_string(), baud.to_string()];
         if log {
-            cmd.arg("--log");
-            cmd.arg(log_folder);
+            args.push("--log".to_string());
+            args.push(log_folder);
+        } 
+        
+        // Run the serial monitor
+        let process = Command::new("raft.exe")
+            .args(args)
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .spawn();
+
+        // Handle errors
+        match process {
+            Ok(mut child) => {
+                let _ = child.wait();
+                return Ok(());
+            },
+            Err(e) => {
+                eprintln!("Error starting serial monitor in WSL: {:?}", e);
+                return Err(tokio_serial::Error::new(tokio_serial::ErrorKind::NoDevice, "Error starting serial monitor in WSL"));
+            }
         }
-        let status = cmd.status().expect("Failed to run serial monitor in WSL");
-        if !status.success() {
-            return Err(tokio_serial::Error::new(tokio_serial::ErrorKind::NoDevice, "Failed to run serial monitor in WSL"));
-        }
-        return Ok(());
     }
 
     // TODO - move

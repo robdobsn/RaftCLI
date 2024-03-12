@@ -177,13 +177,13 @@ pub fn is_wsl() -> bool {
         .unwrap_or(false)
 }
 
-pub fn get_flash_tool_cmd(flash_tool_opt: Option<String>, force_native_serial_port: bool) -> String {
+pub fn get_flash_tool_cmd(flash_tool_opt: Option<String>, native_serial_port: bool) -> String {
 
     // If the tool is specified then use it, otherwise determine the tool from the platform
     match flash_tool_opt {
         Some(tool) => tool,
         None => {
-            if !force_native_serial_port && is_wsl() {
+            if !native_serial_port && is_wsl() {
                 "esptool.py.exe".to_string()
             } else {
                 "esptool.py".to_string()
@@ -234,18 +234,18 @@ pub fn extract_flash_cmd_args(output: String, port: &str, flash_baud: u32) ->
 // TODO - make these default to value read from config file in project folder
 
 #[cfg(target_os = "macos")]
-pub fn get_default_port(_force_native_serial_port: bool) -> String {
+pub fn get_default_port(_native_serial_port: bool) -> String {
     "/dev/tty.usbserial".to_string()
 }
 
 #[cfg(target_os = "windows")]
-pub fn get_default_port(_force_native_serial_port: bool) -> String {
+pub fn get_default_port(_native_serial_port: bool) -> String {
     "COM3".to_string()
 }
 
 #[cfg(target_os = "linux")]
-pub fn get_default_port(_force_native_serial_port: bool) -> String {
-    if !_force_native_serial_port && is_wsl() {
+pub fn get_default_port(_native_serial_port: bool) -> String {
+    if !_native_serial_port && is_wsl() {
         "COM3".to_string()
     } else {
         "/dev/ttyUSB0".to_string()
