@@ -7,16 +7,18 @@ use crossterm::{
     terminal::{self, Clear, ClearType, enable_raw_mode, disable_raw_mode},
     cursor::{MoveTo, MoveToNextLine},
 };
-use futures::stream::StreamExt;
 use std::{str, io};
 use std::io::{stdout, Write};
+use std::sync::Arc;
+use bytes::{BufMut, BytesMut};
 use tokio_util::codec::{Decoder, Encoder};
 use tokio::sync::{oneshot, Mutex};
-use futures::SinkExt;
-use std::sync::Arc;
-
-use bytes::{BufMut, BytesMut};
+use tokio_util::codec::Framed;
 use tokio_serial::SerialPortBuilderExt;
+use tokio_serial::SerialStream;
+use futures::stream::{SplitSink, StreamExt};
+use futures::stream::SplitStream;
+use futures::SinkExt;
 struct LineCodec;
 
 struct LogFileInfo {
@@ -85,6 +87,42 @@ fn key_code_to_terminal_sequence(key_code: KeyCode) -> String {
     }
 }
 
+// Open serial port
+fn open_serial_port(port: &str, baud: u32) -> tokio_serial::Result<tokio_serial::SerialStream> {
+
+    // Serial port builder
+    let mut serial_port_builder = tokio_serial::new(port, baud);
+    serial_port_builder = serial_port_builder.stop_bits(tokio_serial::StopBits::One);
+    let serial_port = serial_port_builder.open_native_async();
+
+    // Handle errors in opening the serial port
+    match serial_port {
+        Ok(serial_port) => {
+   
+            // Set the port to non-exclusive mode on unix-based OSs
+            #[cfg(unix)]
+            {
+                let mut serial_port = serial_port;
+                serial_port.set_exclusive(false).expect("Failed to set port non-exclusive");
+            }
+
+            // Return the serial port
+            Ok(serial_port)
+        }
+        Err(err) => {
+            match err.kind() {
+                tokio_serial::ErrorKind::NoDevice => {
+                    println!("Error opening serial port {} - is the device connected?", port);
+                },
+                _ => {
+                    println!("Error opening serial port {} {:?}", port, err);
+                }
+            }
+            Err(err)
+        }
+    }
+}
+
 // Implement the tokio codec decoder for line-based communication
 impl Decoder for LineCodec {
     type Item = String;
@@ -116,54 +154,12 @@ impl Encoder<String> for LineCodec {
     }
 }
 
-// Start the serial monitor
-pub async fn start(port: String, baud: u32, log: bool, log_folder: String) -> tokio_serial::Result<()> {
-
-    // Debug
-    // println!("Starting serial monitor on port: {} at baud: {}", port, baud);
-
-    // Open log file if required
-    let log_file = if log {
-        let file = open_log_file(log, log_folder.clone())?;
-        file
-    } else {
-        Arc::new(Mutex::new(None))
-    };
-
-    // Serial port builder
-
-    // Open serial port
-    let mut serial_port_builder = tokio_serial::new(&port, baud);
-    serial_port_builder = serial_port_builder.stop_bits(tokio_serial::StopBits::One);    
-    let serial_port = serial_port_builder.open_native_async();
-   
-    // Handle errors in opening the serial port
-    let serial_port = match serial_port {
-        Ok(serial_port) => serial_port,
-        Err(err) => {
-            match err.kind() {
-                tokio_serial::ErrorKind::NoDevice => {
-                    println!("Error opening serial port {} - is the device connected?", &port);
-                },
-                _ => {
-                    println!("Error opening serial port {} {:?}", &port, err);
-                }
-            }
-            return Ok(());
-        }
-    };
-
-    #[cfg(unix)]
-    let mut serial_port = serial_port;
-    #[cfg(unix)]
-    serial_port.set_exclusive(false).expect("Failed to set port non-exclusive");
-
-    // Create a stream from the serial port
-    let stream = LineCodec.framed(serial_port);
-    let (mut serial_tx, mut serial_rx) = stream.split();
-
-    // User input buffer
-    let user_input_buffer = Arc::new(Mutex::new(String::new()));
+// Serial monitor read from serial port and write to terminal
+fn read_from_serial_port_and_write_terminal(
+    user_input_buffer: &Arc<Mutex<String>>,
+    mut serial_rx: SplitStream<Framed<SerialStream, LineCodec>>,
+    log_file: SharedLogFile,
+) {
 
     // Clone the user input buffer for use in the serial_rx task
     let serial_rx_buffer_clone = user_input_buffer.clone();
@@ -171,17 +167,7 @@ pub async fn start(port: String, baud: u32, log: bool, log_folder: String) -> to
     // Clone the log file for use in the serial_rx task
     let log_file_clone = log_file.clone();
 
-    // Enter crossterm raw mode (characters are not automatically echoed to the terminal)
-    enable_raw_mode()?;
-
-    // Setup signaling mechanism
-    let (oneshot_exit_send, oneshot_exit_get) = oneshot::channel();
-    
-    // Write welcome message to the terminal
-    let version = env!("CARGO_PKG_VERSION");  
-    println!("Raft Serial Monitor {} - press Esc (or Ctrl+X) to exit", version);
-
-    // Create a separate task to read from the serial port and send to the terminal
+    // Create a task to read from the serial port and send to the terminal
     tokio::spawn(async move {
         loop {
             match serial_rx.next().await {
@@ -236,12 +222,18 @@ pub async fn start(port: String, baud: u32, log: bool, log_folder: String) -> to
                 },
             }
         }
-    });
+    });    
+}
+
+// Read from the terminal and write to the serial port
+fn read_from_terminal_and_write_to_serial_port(user_input_buffer: &Arc<Mutex<String>>, 
+    mut serial_tx: SplitSink<Framed<SerialStream, LineCodec>, String>,
+    oneshot_exit_send: oneshot::Sender<()>) {
 
     // Clone the user input buffer for use in the serial_tx task
     let serial_tx_buffer_clone = user_input_buffer.clone();
 
-    // Create a separate task to read from the terminal and send to the serial port
+    // Create a task to read from the terminal and send to the serial port
     tokio::spawn(async move {
 
         // Stdout
@@ -321,6 +313,51 @@ pub async fn start(port: String, baud: u32, log: bool, log_folder: String) -> to
             }
         }
     });
+}
+
+
+// Serial monitor main loop
+
+
+// Start the serial monitor
+pub async fn start(port: String, baud: u32, log: bool, log_folder: String) -> tokio_serial::Result<()> {
+
+    // Debug
+    // println!("Starting serial monitor on port: {} at baud: {}", port, baud);
+
+    // Open log file if required
+    let log_file = if log {
+        let file = open_log_file(log, log_folder.clone())?;
+        file
+    } else {
+        Arc::new(Mutex::new(None))
+    };
+
+    // User input buffer
+    let user_input_buffer = Arc::new(Mutex::new(String::new()));
+
+    // Enter crossterm raw mode (characters are not automatically echoed to the terminal)
+    enable_raw_mode()?;
+
+    // Setup signaling mechanism
+    let (oneshot_exit_send, oneshot_exit_get) = oneshot::channel();
+    
+    // Write welcome message to the terminal
+    let version = env!("CARGO_PKG_VERSION");  
+    println!("Raft Serial Monitor {} - press Esc (or Ctrl+X) to exit", version);
+    
+    // Open serial port
+    let serial_port = open_serial_port(&port, baud)?;
+
+    // Create a stream from the serial port
+    let stream = LineCodec.framed(serial_port);
+    let (serial_tx, serial_rx) = stream.split();
+
+    // Start the process to read from serial port and write to terminal
+    read_from_serial_port_and_write_terminal(&user_input_buffer, serial_rx, log_file);
+
+    // Start the process to read from terminal and write to serial port
+    read_from_terminal_and_write_to_serial_port(&user_input_buffer, serial_tx, oneshot_exit_send);
 
     // Wait here for the oneshot signal to exit
     let _ = oneshot_exit_get.await;
