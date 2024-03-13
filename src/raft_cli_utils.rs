@@ -7,6 +7,9 @@ use std::sync::{Arc, Mutex};
 use remove_dir_all::remove_dir_contents;
 use crossbeam::thread;
 
+#[cfg(not(target_os = "windows"))]
+use std::env;
+
 pub fn utils_get_sys_type(build_sys_type: &Option<String>, app_folder: &str) -> Result<String, Box<dyn std::error::Error>> {
 
     // Determine the Systype to build - this is either the SysType passed in or
@@ -190,8 +193,9 @@ pub fn is_wsl() -> bool {
         // Linux version 5.15.146.1-microsoft-standard-WSL2 (root@65c757a075e2) (gcc (GCC) 11.2.0, GNU ld (GNU Binutils) 2.37) #1 SMP Thu Jan 11 04:09:03 UTC 2024
         let proc_version = fs::read_to_string("/proc/version");
         if proc_version.is_ok() {
-            return proc_version.unwrap().contains("Microsoft") || proc_version.unwrap().contains("WSL");
+            return proc_version.as_ref().unwrap().contains("Microsoft") || proc_version.unwrap().contains("WSL");
         }
+        return false;
     }
 }
 
