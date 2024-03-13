@@ -191,12 +191,17 @@ async fn main() {
         }
         
         Action::Monitor(cmd) => {
+
             // Extract port and buad rate arguments
             let native_serial_port = cmd.native_serial_port;
             let port = cmd.port.unwrap_or(raft_cli_utils::get_default_port(native_serial_port));
             let monitor_baud = cmd.monitor_baud.unwrap_or(115200);
             let log = cmd.log;
             let log_folder = cmd.log_folder.unwrap_or("./logs".to_string());
+
+            // Debug and show the args
+            println!("Monitor port: {} baud: {} nativeSerialPort: {} log: {} logFolder: {}", 
+                        port, monitor_baud, native_serial_port, log, log_folder);
 
             // Start the serial monitor
             let result = serial_monitor::start(port, native_serial_port, 
