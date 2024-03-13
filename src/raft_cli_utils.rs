@@ -179,10 +179,21 @@ pub fn is_wsl() -> bool {
         return false;
     }
 
-    // Check if running under WSL by looking for WSL-specific environment variable or file content
-    env::var("WSL_DISTRO_NAME").is_ok() || fs::read_to_string("/proc/version")
-        .map(|contents| contents.contains("Microsoft") || contents.contains("WSL"))
-        .unwrap_or(false)
+    #[cfg(not(target_os = "windows"))]
+    {
+        // If the WSL_DISTRO_NAME environment variable is set then return true
+        if env::var("WSL_DISTRO_NAME").is_ok() {
+            return true;
+        }
+
+        // If the /proc/version file contains "Microsoft" or "WSL" then return true
+        // For instance this may be the string returned ...
+        // Linux version 5.15.146.1-microsoft-standard-WSL2 (root@65c757a075e2) (gcc (GCC) 11.2.0, GNU ld (GNU Binutils) 2.37) #1 SMP Thu Jan 11 04:09:03 UTC 2024
+        let proc_version = fs::read_to_string("/proc/version");
+        if proc_version.is_ok() {
+            return proc_version.unwrap().contains("Microsoft") || proc_version.unwrap().contains("WSL");
+        }
+    }
 }
 
 pub fn get_flash_tool_cmd(flash_tool_opt: Option<String>, native_serial_port: bool) -> String {
