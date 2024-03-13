@@ -14,6 +14,7 @@ use app_build::build_raft_app;
 mod app_flash;
 use app_flash::flash_raft_app;
 mod raft_cli_utils;
+use raft_cli_utils::is_wsl;
 
 #[derive(Clone, Parser, Debug)]
 enum Action {
@@ -204,8 +205,18 @@ async fn main() {
                         port, monitor_baud, native_serial_port, log, log_folder);
 
             // Start the serial monitor
-            let result = serial_monitor::start(port, native_serial_port, 
-                            monitor_baud, log, log_folder).await;
+            if !native_serial_port && is_wsl() {
+                let result = serial_monitor::start_non_native(port, monitor_baud, log, log_folder);
+                match result {
+                    Ok(()) => std::process::exit(0),
+                    Err(e) => {
+                        println!("Error: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+            }
+
+            let result = serial_monitor::start_native(port, monitor_baud, log, log_folder).await;
             match result {
                 Ok(()) => std::process::exit(0),
                 Err(e) => {
@@ -254,7 +265,7 @@ async fn main() {
             let monitor_baud = cmd.monitor_baud.unwrap_or(115200);
 
             // Start the serial monitor
-            let result = serial_monitor::start(port.clone(), native_serial_port, 
+            let result = serial_monitor::start_native(port.clone(), 
                             monitor_baud, log, log_folder).await;
             match result {
                 Ok(()) => std::process::exit(0),

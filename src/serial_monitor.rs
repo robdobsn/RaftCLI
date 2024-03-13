@@ -20,7 +20,6 @@ use futures::stream::{SplitSink, StreamExt};
 use futures::stream::SplitStream;
 use futures::SinkExt;
 struct LineCodec;
-use crate::raft_cli_utils::is_wsl;
 use std::process::{Command, Stdio};
 
 struct LogFileInfo {
@@ -319,37 +318,7 @@ fn read_from_terminal_and_write_to_serial_port(user_input_buffer: &Arc<Mutex<Str
 }
 
 // Start the serial monitor
-pub async fn start(port: String, force_native_serial_port: bool, baud: u32, log: bool, log_folder: String) -> tokio_serial::Result<()> {
-
-    // Determine if we should be using a native serial port or running another process in WSL
-    if !force_native_serial_port && is_wsl() {
-
-        // Setup args
-        let mut args = vec!["monitor".to_string(), "-p".to_string(), port, "-b".to_string(), baud.to_string()];
-        if log {
-            args.push("--log".to_string());
-            args.push(log_folder);
-        } 
-        
-        // Run the serial monitor
-        let process = Command::new("raft.exe")
-            .args(args)
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .spawn();
-
-        // Handle errors
-        match process {
-            Ok(mut child) => {
-                let _ = child.wait();
-                return Ok(());
-            },
-            Err(e) => {
-                eprintln!("Error starting serial monitor in WSL: {:?}", e);
-                return Err(tokio_serial::Error::new(tokio_serial::ErrorKind::NoDevice, "Error starting serial monitor in WSL"));
-            }
-        }
-    }
+pub async fn start_native(port: String, baud: u32, log: bool, log_folder: String) -> tokio_serial::Result<()> {
 
     // TODO - move
 
@@ -395,6 +364,37 @@ pub async fn start(port: String, force_native_serial_port: bool, baud: u32, log:
 
     // Exit crossterm raw mode
     disable_raw_mode()?;
+
+    Ok(())
+}
+
+pub fn start_non_native(port: String, baud: u32, log: bool, log_folder: String) -> Result<(), Box<dyn std::error::Error>> {
+
+    // Setup args
+    let mut args = vec!["monitor".to_string(), "-p".to_string(), port, "-b".to_string(), baud.to_string()];
+    if log {
+        args.push("--log".to_string());
+        args.push(log_folder);
+    } 
+    
+    // Run the serial monitor
+    let process = Command::new("raft.exe")
+        .args(args)
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .spawn();
+
+    // Check for error
+    match process {
+        Ok(mut child) => {
+            // Wait for the process to complete
+            match child.wait() {
+                Ok(status) => println!("Process exited with status: {}", status),
+                Err(e) => println!("Error waiting for serial monitor: {:?}", e),
+            }
+        },
+        Err(e) => println!("Error starting serial monitor: {:?}", e),
+    }
 
     Ok(())
 }
