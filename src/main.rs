@@ -63,6 +63,9 @@ struct MonitorCmd {
     // Option to specify the monitor baud rate
     #[clap(short = 'b', long, help = "Baud rate")]
     monitor_baud: Option<u32>,
+    // Option to disable serial port reconnection when monitoring
+    #[clap(short = 'r', long, help = "Disable serial port reconnection when monitoring")]
+    no_reconnect: bool,
     // Option to force native serial port when in WSL
     #[clap(short = 'n', long, help = "Native serial port when in WSL")]
     native_serial_port: bool,
@@ -96,6 +99,9 @@ struct RunCmd {
     // Option to specify the monitor baud rate
     #[clap(short = 'b', long, help = "Monitor baud rate")]
     monitor_baud: Option<u32>,
+    // Option to disable serial port reconnection when monitoring
+    #[clap(short = 'r', long, help = "Disable serial port reconnection when monitoring")]
+    no_reconnect: bool,  
     // Force native serial port when in WSL
     #[clap(short = 'n', long, help = "Native serial port when in WSL")]
     native_serial_port: bool,
@@ -168,7 +174,7 @@ async fn main() {
 
             // Start the serial monitor
             if !native_serial_port && is_wsl() {
-                let result = serial_monitor::start_non_native(port, monitor_baud, log, log_folder);
+                let result = serial_monitor::start_non_native(port, monitor_baud, cmd.no_reconnect, log, log_folder);
                 match result {
                     Ok(()) => std::process::exit(0),
                     Err(e) => {
@@ -178,7 +184,7 @@ async fn main() {
                 }
             }
 
-            let result = serial_monitor::start_native(port, monitor_baud, log, log_folder).await;
+            let result = serial_monitor::start_native(port, monitor_baud, cmd.no_reconnect, log, log_folder).await;
             match result {
                 Ok(()) => std::process::exit(0),
                 Err(e) => {
@@ -227,8 +233,18 @@ async fn main() {
             let monitor_baud = cmd.monitor_baud.unwrap_or(115200);
 
             // Start the serial monitor
-            let result = serial_monitor::start_native(port.clone(), 
-                            monitor_baud, log, log_folder).await;
+            if !native_serial_port && is_wsl() {
+                let result = serial_monitor::start_non_native(port, monitor_baud, cmd.no_reconnect, log, log_folder);
+                match result {
+                    Ok(()) => std::process::exit(0),
+                    Err(e) => {
+                        println!("Error: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+            }
+
+            let result = serial_monitor::start_native(port, monitor_baud, cmd.no_reconnect, log, log_folder).await;
             match result {
                 Ok(()) => std::process::exit(0),
                 Err(e) => {

@@ -106,7 +106,12 @@ fn open_serial_port(port: &str, baud: u32) -> tokio_serial::Result<tokio_serial:
 
             // Set the port to non-exclusive mode on unix-based OSs
             #[cfg(unix)]
-            serial_port.set_exclusive(false).expect("Failed to set port non-exclusive");
+            {
+                let rslt = serial_port.set_exclusive(false);
+                if rslt.is_err() {
+                    println!("Error setting serial port to non-exclusive mode: {:?}", rslt);
+                }
+            }
 
             // Return the serial port
             Ok(serial_port)
@@ -156,11 +161,46 @@ impl Encoder<String> for LineCodec {
     }
 }
 
+// Monitor terminal for events and return exit indication if the user presses one of the exit keys/combinations
+// Return a tuple indicating whether the user wants to exit and the key pressed
+pub async fn monitor_terminal_for_events() -> (bool, KeyCode) {
+    loop {
+        // Monitor terminal for exit
+        if poll(tokio::time::Duration::from_millis(100)).expect("Error polling for event") {
+            let evt = read().expect("Error reading event");
+            match evt {
+                Event::Key(key) => {
+                    // Check for key press (release events are also available)
+                    if key.kind != crossterm::event::KeyEventKind::Press {
+                        continue;
+                    }
+                    // Handle key press
+                    match key.code {
+                        // Break out of the serial monitor on Esc key or Ctrl+X
+                        KeyCode::Esc => {
+                            return (true, key.code);
+                        },
+                        KeyCode::Char('x') if key.modifiers == crossterm::event::KeyModifiers::CONTROL => {
+                            return (true, key.code);
+                        },
+                        _ => {
+                            return (false, key.code);
+                        }
+                    };
+                }
+                _ => {
+                    continue; 
+                }
+            }
+        }
+    }
+}
+
 // Serial monitor read from serial port and write to terminal
 fn read_from_serial_port_and_write_terminal(
     user_input_buffer: &Arc<Mutex<String>>,
     mut serial_rx: SplitStream<Framed<SerialStream, LineCodec>>,
-    log_file: SharedLogFile,
+    log_file: &SharedLogFile,
 ) {
 
     // Clone the user input buffer for use in the serial_rx task
@@ -244,107 +284,72 @@ fn read_from_terminal_and_write_to_serial_port(user_input_buffer: &Arc<Mutex<Str
         // Main serial monitor loop
         loop {
 
-            if poll(tokio::time::Duration::from_millis(100)).expect("Error polling for event") {
-                let evt = read().expect("Error reading event");
-                match evt {
-                    Event::Key(key) => {
-                        // Check for key press (release events are also available)
-                        if key.kind != crossterm::event::KeyEventKind::Press {
-                            continue;
-                        }
+            // Monitor terminal for events
+            let (exit, key_code) = monitor_terminal_for_events().await;
 
-                        // Handle key press
-                        {
-                            // Lock the user input buffer
-                            let mut buf = serial_tx_buffer_clone.lock().await;
+            // Handle exit
+            if exit {
+                let _ = oneshot_exit_send.send(());
+                break;
+            }
+            
+            // Lock the user input buffer
+            let mut buf = serial_tx_buffer_clone.lock().await;
 
-                            // Handle key press
-                            match key.code {
-                                // Break out of the serial monitor on Esc key or Ctrl+X
-                                KeyCode::Esc => {
-                                    let _ = oneshot_exit_send.send(());
-                                    break;
-                                },
-                                KeyCode::Char('x') if key.modifiers == crossterm::event::KeyModifiers::CONTROL => {
-                                    let _ = oneshot_exit_send.send(());
-                                    break;
-                                },
-                                // Check for Enter key and send the user input buffer
-                                KeyCode::Enter => {
-                                    // Clear the user input display line before sending.
-                                    execute!(stdout, MoveTo(0, terminal::size().unwrap().1 - 1), Clear(ClearType::CurrentLine)).unwrap();
+            // Handle key press
+            match key_code {
+                // Check for Enter key and send the user input buffer
+                KeyCode::Enter => {
+                    // Clear the user input display line before sending.
+                    execute!(stdout, MoveTo(0, terminal::size().unwrap().1 - 1), Clear(ClearType::CurrentLine)).unwrap();
 
-                                    // Add a carriage return to the user input buffer
-                                    buf.push_str("\r");
+                    // Add a carriage return to the user input buffer
+                    buf.push_str("\r");
 
-                                    // Send the user input buffer to the serial port
-                                    let write_result = serial_tx
-                                        .send(buf.clone())
-                                        .await;
-                                    match write_result {
-                                        Ok(_) => (),
-                                        Err(err) => println!("{:?}", err),
-                                    }
+                    // Send the user input buffer to the serial port
+                    let write_result = serial_tx
+                        .send(buf.clone())
+                        .await;
+                    match write_result {
+                        Ok(_) => (),
+                        Err(err) => println!("{:?}", err),
+                    }
 
-                                    // Clear the user input buffer
-                                    buf.clear();
-                                },
-                                // Handle backspace
-                                KeyCode::Backspace => {
-                                    // Pop the last character from the buffer
-                                    buf.pop();
-                                    // Clear the user input display line
-                                    execute!(stdout, MoveTo(0, terminal::size().unwrap().1 - 1), Clear(ClearType::CurrentLine)).unwrap();
-                                    // Display the buffer as the user types.
-                                    print!("{}", buf);
-                                },
-                                // Handle other characters
-                                _ => {
-                                    buf.push_str(key_code_to_terminal_sequence(key.code).as_str());
-                                    // Display the buffer as the user types.
-                                    print!("{}", key_code_to_terminal_sequence(key.code));
-                                }
-                            }
-                        } // Release the lock on the user input buffer
-
-                        // Ensure the user's typing appears at the bottom line.
-                        stdout.flush().unwrap();
-                    },
-                    _ => {} // Handle other events here
+                    // Clear the user input buffer
+                    buf.clear();
+                },
+                // Handle backspace
+                KeyCode::Backspace => {
+                    // Pop the last character from the buffer
+                    buf.pop();
+                    // Clear the user input display line
+                    execute!(stdout, MoveTo(0, terminal::size().unwrap().1 - 1), Clear(ClearType::CurrentLine)).unwrap();
+                    // Display the buffer as the user types.
+                    print!("{}", buf);
+                },
+                // Handle other characters
+                _ => {
+                    buf.push_str(key_code_to_terminal_sequence(key_code).as_str());
+                    // Display the buffer as the user types.
+                    print!("{}", key_code_to_terminal_sequence(key_code));
                 }
             }
-        }
+        } // Release the lock on the user input buffer
+
+        // Ensure the user's typing appears at the bottom line.
+        stdout.flush().unwrap();
     });
 }
 
-// Start the serial monitor
-pub async fn start_native(port: String, baud: u32, log: bool, log_folder: String) -> tokio_serial::Result<()> {
-
-    // TODO - move
-
-    // Open serial port
-    let serial_port = open_serial_port(&port, baud)?;
+// Handle serial connection
+async fn handle_serial_connection(serial_port: tokio_serial::SerialStream, log_file: &SharedLogFile) -> bool {
 
     // Create a stream from the serial port
     let stream = LineCodec.framed(serial_port);
     let (serial_tx, serial_rx) = stream.split();
-    
-    // Debug
-    // println!("Starting serial monitor on port: {} at baud: {}", port, baud);
-
-    // Open log file if required
-    let log_file = if log {
-        let file = open_log_file(log, log_folder.clone())?;
-        file
-    } else {
-        Arc::new(Mutex::new(None))
-    };
 
     // User input buffer
     let user_input_buffer = Arc::new(Mutex::new(String::new()));
-
-    // Enter crossterm raw mode (characters are not automatically echoed to the terminal)
-    enable_raw_mode()?;
 
     // Setup signaling mechanism
     let (oneshot_exit_send, oneshot_exit_get) = oneshot::channel();
@@ -352,6 +357,12 @@ pub async fn start_native(port: String, baud: u32, log: bool, log_folder: String
     // Write welcome message to the terminal
     let version = env!("CARGO_PKG_VERSION");  
     println!("Raft Serial Monitor {} - press Esc (or Ctrl+X) to exit", version);
+
+    // Enter crossterm raw mode (characters are not automatically echoed to the terminal)
+    let rslt = enable_raw_mode();
+    if rslt.is_err() {
+        println!("Error entering raw mode: {:?}", rslt);
+    }
     
     // Start the process to read from serial port and write to terminal
     read_from_serial_port_and_write_terminal(&user_input_buffer, serial_rx, log_file);
@@ -363,20 +374,101 @@ pub async fn start_native(port: String, baud: u32, log: bool, log_folder: String
     let _ = oneshot_exit_get.await;
 
     // Exit crossterm raw mode
-    disable_raw_mode()?;
-
-    Ok(())
+    let rslt = disable_raw_mode();
+    if rslt.is_err() {
+        println!("Error exiting raw mode: {:?}", rslt);
+    }
 }
 
-pub fn start_non_native(port: String, baud: u32, log: bool, log_folder: String) -> Result<(), Box<dyn std::error::Error>> {
+// Start the serial monitor
+pub async fn start_native(port: String, baud: u32, no_reconnect: bool, 
+                log: bool, log_folder: String) -> tokio_serial::Result<()> {
+
+    // Debug
+    // println!("Starting serial monitor on port: {} at baud: {}", port, baud);
+
+    // Open log file if required
+    let log_file = if log {
+        let file = open_log_file(log, log_folder.clone())?;
+        file
+    } else {
+        Arc::new(Mutex::new(None))
+    };
+
+    // println!("Starting serial monitor on port {} at baud {} no_reconnect: {} log: {} log_folder: {}",
+    //                 port, baud, no_reconnect, log, log_folder);
+
+    loop {
+
+        // Open serial port
+        let serial_port = open_serial_port(&port, baud);
+
+        // Handle errors in opening the serial port
+        let serial_port = match serial_port {
+            Ok(serial_port) => serial_port,
+            Err(err) => {
+                match err.kind() {
+                    tokio_serial::ErrorKind::NoDevice => {
+                        println!("Error opening serial port {} - is the device connected?", port);
+                    },
+                    _ => {
+                        println!("Error opening serial port {} {:?}", port, err);
+                    }
+                }
+
+                // If no reconnect then exit
+                if no_reconnect {
+                    return Err(err);
+                }
+
+                // Enter crossterm raw mode (characters are not automatically echoed to the terminal)
+                let rslt = enable_raw_mode();
+                if rslt.is_err() {
+                    println!("Error entering raw mode: {:?}", rslt);
+                }
+
+                // Retry serial connection after a time but checking for user exit
+                let (exit, _key_code) = monitor_terminal_for_events().await;
+
+                // Exit crossterm raw mode
+                let rslt = disable_raw_mode();
+                if rslt.is_err() {
+                    println!("Error exiting raw mode: {:?}", rslt);
+                }
+
+                // Check for exit
+                if exit {
+                    return Ok(());
+                }
+
+                // Retry
+                continue;
+            }
+        };
+
+        // Handle serial connection
+        let is_user_exit = handle_serial_connection(serial_port, &log_file).await;
+
+        // If no reconnect then exit
+        if no_reconnect {
+            return Ok(());
+        }        
+    }
+}
+
+pub fn start_non_native(port: String, baud: u32, no_reconnect: bool,
+                 log: bool, log_folder: String) -> Result<(), Box<dyn std::error::Error>> {
 
     // Setup args
     let mut args = vec!["monitor".to_string(), "-p".to_string(), port, "-b".to_string(), baud.to_string()];
+    if no_reconnect {
+        args.push("-n".to_string());
+    }
     if log {
         args.push("-l".to_string());
         args.push("-g".to_string());
         args.push(log_folder);
-    } 
+    }
     
     // Run the serial monitor
     let process = Command::new("raft.exe")
