@@ -170,8 +170,15 @@ fn get_systypes_folder_name() -> &'static str {
     "systypes"
 }
 
-// Check if running on WSL
+// Check if running a linux binary under WSL
 pub fn is_wsl() -> bool {
+
+    // If this is a windows binary then return false
+    #[cfg(target_os = "windows")]
+    {
+        return false;
+    }
+
     // Check if running under WSL by looking for WSL-specific environment variable or file content
     env::var("WSL_DISTRO_NAME").is_ok() || fs::read_to_string("/proc/version")
         .map(|contents| contents.contains("Microsoft") || contents.contains("WSL"))
