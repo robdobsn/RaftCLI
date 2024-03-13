@@ -868,7 +868,7 @@ dependencies = [
 
 [[package]]
 name = "raftcli"
-version = "1.0.18"
+version = "1.0.19"
 dependencies = [
  "bytes",
  "chrono",

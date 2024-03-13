@@ -8,7 +8,7 @@ use crate::raft_cli_utils::check_for_raft_artifacts_deletion;
 use crate::raft_cli_utils::execute_and_capture_output;
 use crate::raft_cli_utils::convert_path_for_docker;
 
-pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, app_folder: String,
+pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: bool, app_folder: String,
             no_docker_arg: bool, idf_path_full: Option<String>) 
                             -> Result<String, Box<dyn std::error::Error>> {
 
@@ -28,9 +28,9 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, app_folder: 
     let mut delete_build_folder = false;
     let mut delete_build_raft_artifacts_folder = false;
 
-    // If clean is true, delete the build folder for the SysType to built and
+    // If clean or clean_only is true, delete the build folder for the SysType to built and
     // the "build_raft_artifacts" folder
-    if clean {
+    if clean || clean_only {
         delete_build_folder = true;
         delete_build_raft_artifacts_folder = true;
     } else {
@@ -38,6 +38,11 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, app_folder: 
         if check_for_raft_artifacts_deletion(&app_folder, &sys_type) {
             delete_build_raft_artifacts_folder = true;
         }
+    }
+
+    // Check if clean_only is true
+    if clean_only {
+        return Ok("Clean completed".to_string());
     }
 
     // Build the app

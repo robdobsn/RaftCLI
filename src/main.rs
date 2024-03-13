@@ -46,6 +46,9 @@ struct BuildCmd {
     // Option to clean the target folder
     #[clap(short = 'c', long, help = "Clean the target folder")]
     clean: bool,
+    // Option to only clean and not build
+    #[clap(short = 'n', long, help = "Clean only")]
+    clean_only: bool,
     // Option to specify that docker is not to be used for the build
     #[clap(short = 'd', long, help = "Don't use docker for build")]
     no_docker: bool,
@@ -159,7 +162,7 @@ async fn main() {
             // Get the app folder (or default to current folder)
             let app_folder = cmd.app_folder.unwrap_or(".".to_string());
             let _result = build_raft_app(&cmd.sys_type, cmd.clean, 
-                        app_folder, cmd.no_docker, cmd.idf_path);
+                        cmd.clean_only, app_folder, cmd.no_docker, cmd.idf_path);
             // println!("{:?}", _result);
         }
         
@@ -200,7 +203,7 @@ async fn main() {
             let app_folder = cmd.app_folder.unwrap_or(".".to_string());
 
             // Build the app
-            let result = build_raft_app(&cmd.sys_type, cmd.clean, 
+            let result = build_raft_app(&cmd.sys_type, cmd.clean, false,
                         app_folder.clone(), cmd.no_docker, cmd.idf_path);
 
             // Check for build error
@@ -217,7 +220,7 @@ async fn main() {
             let result = flash_raft_app(app_folder.clone(), 
                         port.clone(),
                         native_serial_port,
-                        cmd.flash_baud.unwrap_or(2000000),
+                        cmd.flash_baud.unwrap_or(1000000),
                         cmd.flash_tool,
                         result.unwrap());
             if result.is_err() {
