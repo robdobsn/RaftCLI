@@ -12,7 +12,7 @@ use std::io::{stdout, Write};
 use std::sync::Arc;
 use bytes::{BufMut, BytesMut};
 use tokio_util::codec::{Decoder, Encoder};
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::{Mutex};
 use tokio_util::codec::Framed;
 use tokio_serial::SerialPortBuilderExt;
 use tokio_serial::SerialStream;
@@ -27,6 +27,11 @@ struct LogFileInfo {
     last_write: std::time::Instant
 }
 type SharedLogFile = Arc<Mutex<Option<LogFileInfo>>>;
+
+enum ExitReason {
+    UserRequested,
+    ConnectionError,
+}
 
 // Logging to file
 fn open_log_file(log_to_file: bool, log_folder: String) -> Result<SharedLogFile, std::io::Error> {
@@ -270,7 +275,7 @@ fn read_from_serial_port_and_write_terminal(
 // Read from the terminal and write to the serial port
 fn read_from_terminal_and_write_to_serial_port(user_input_buffer: &Arc<Mutex<String>>, 
     mut serial_tx: SplitSink<Framed<SerialStream, LineCodec>, String>,
-    oneshot_exit_send: oneshot::Sender<()>) {
+    exit_send: tokio::sync::mpsc::Sender<ExitReason>) {
 
     // Clone the user input buffer for use in the serial_tx task
     let serial_tx_buffer_clone = user_input_buffer.clone();
@@ -289,7 +294,7 @@ fn read_from_terminal_and_write_to_serial_port(user_input_buffer: &Arc<Mutex<Str
 
             // Handle exit
             if exit {
-                let _ = oneshot_exit_send.send(());
+                let _ = exit_send.send(ExitReason::UserRequested).await;
                 break;
             }
             
@@ -312,7 +317,10 @@ fn read_from_terminal_and_write_to_serial_port(user_input_buffer: &Arc<Mutex<Str
                         .await;
                     match write_result {
                         Ok(_) => (),
-                        Err(err) => println!("{:?}", err),
+                        Err(_err) => {
+                            // println!("{:?}", err)
+                            let _ = exit_send.send(ExitReason::ConnectionError).await;
+                        },
                     }
 
                     // Clear the user input buffer
@@ -352,7 +360,7 @@ async fn handle_serial_connection(serial_port: tokio_serial::SerialStream, log_f
     let user_input_buffer = Arc::new(Mutex::new(String::new()));
 
     // Setup signaling mechanism
-    let (oneshot_exit_send, oneshot_exit_get) = oneshot::channel();
+    let (exit_send, mut exit_recv) = tokio::sync::mpsc::channel::<ExitReason>(1);
     
     // Write welcome message to the terminal
     let version = env!("CARGO_PKG_VERSION");  
@@ -368,15 +376,22 @@ async fn handle_serial_connection(serial_port: tokio_serial::SerialStream, log_f
     read_from_serial_port_and_write_terminal(&user_input_buffer, serial_rx, log_file);
 
     // Start the process to read from terminal and write to serial port
-    read_from_terminal_and_write_to_serial_port(&user_input_buffer, serial_tx, oneshot_exit_send);
+    read_from_terminal_and_write_to_serial_port(&user_input_buffer, serial_tx, exit_send);
 
-    // Wait here for the oneshot signal to exit
-    let _ = oneshot_exit_get.await;
-
-    // Exit crossterm raw mode
-    let rslt = disable_raw_mode();
-    if rslt.is_err() {
-        println!("Error exiting raw mode: {:?}", rslt);
+    // Wait here for the signal to exit
+    match exit_recv.recv().await {
+        Some(ExitReason::UserRequested) => {
+            let _rslt = disable_raw_mode();
+            return true;
+        },
+        Some(ExitReason::ConnectionError) => {
+            let _rslt = disable_raw_mode();
+            return false;
+        },
+        None => {
+            let _rslt = disable_raw_mode();
+            return false;
+        }
     }
 }
 
@@ -446,13 +461,15 @@ pub async fn start_native(port: String, baud: u32, no_reconnect: bool,
             }
         };
 
-        // Handle serial connection
-        let is_user_exit = handle_serial_connection(serial_port, &log_file).await;
+        // Handle serial connection - returns true if user requested exit
+        if handle_serial_connection(serial_port, &log_file).await {
+            return Ok(());
+        }
 
         // If no reconnect then exit
         if no_reconnect {
             return Ok(());
-        }        
+        }
     }
 }
 
