@@ -166,10 +166,6 @@ async fn main() {
             let log = cmd.log;
             let log_folder = cmd.log_folder.unwrap_or("./logs".to_string());
 
-            // Debug and show the args
-            println!("Monitor port: {} baud: {} nativeSerialPort: {} log: {} logFolder: {}", 
-                        port, monitor_baud, native_serial_port, log, log_folder);
-
             // Start the serial monitor
             if !native_serial_port && is_wsl() {
                 let result = serial_monitor::start_non_native(port, monitor_baud, log, log_folder);
