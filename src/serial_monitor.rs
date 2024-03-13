@@ -499,8 +499,10 @@ pub fn start_non_native(port: String, baud: u32, no_reconnect: bool,
         Ok(mut child) => {
             // Wait for the process to complete
             match child.wait() {
-                Ok(status) => println!("Process exited with status: {}", status),
-                Err(e) => println!("Error waiting for serial monitor: {:?}", e),
+                Ok(_status) => {
+                    // println!("Process exited with status: {}", _status)
+                    },
+                Err(e) => println!("Error in serial monitor: {:?}", e),
             }
         },
         Err(e) => println!("Error starting serial monitor: {:?}", e),
