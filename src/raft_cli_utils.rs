@@ -2,7 +2,6 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::fs;
-use std::env;
 use std::io::{self, BufRead, BufReader};
 use std::sync::{Arc, Mutex};
 use remove_dir_all::remove_dir_contents;
