@@ -5,6 +5,7 @@ use std::fs;
 use std::env;
 use std::io::{self, BufRead, BufReader};
 use std::sync::{Arc, Mutex};
+use remove_dir_all::remove_dir_contents;
 use crossbeam::thread;
 
 pub fn utils_get_sys_type(build_sys_type: &Option<String>, app_folder: &str) -> Result<String, Box<dyn std::error::Error>> {
@@ -250,4 +251,38 @@ pub fn get_default_port(_native_serial_port: bool) -> String {
     } else {
         "/dev/ttyUSB0".to_string()
     }
+}
+
+
+// Check the target folder is valid
+pub fn check_target_folder_valid(target_folder: &str, clean: bool) -> bool{
+    // Check the target folder exists
+    if !Path::new(&target_folder).exists() {
+        // Create the folder if possible
+        match std::fs::create_dir(&target_folder) {
+            Ok(_) => println!("Created folder: {}", target_folder),
+            Err(e) => {
+                println!("Error creating folder: {}", e);
+                return false;
+            }
+        }
+    } else {
+        // Check the folder is empty
+        if std::fs::read_dir(&target_folder).unwrap().next().is_some() {
+            if clean {
+                // Delete the contents of the folder
+                match remove_dir_contents(&target_folder) {
+                    Ok(_) => println!("Deleted folder contents: {}", target_folder),
+                    Err(e) => {
+                        println!("Error deleting folder contents: {}", e);
+                        return false;
+                    }
+                }
+            } else {
+                println!("Error: target folder must be empty: {}", target_folder);
+                return false;
+            }
+        }
+    }
+    true
 }

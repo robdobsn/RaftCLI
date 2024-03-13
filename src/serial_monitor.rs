@@ -373,7 +373,8 @@ pub fn start_non_native(port: String, baud: u32, log: bool, log_folder: String) 
     // Setup args
     let mut args = vec!["monitor".to_string(), "-p".to_string(), port, "-b".to_string(), baud.to_string()];
     if log {
-        args.push("--log".to_string());
+        args.push("-l".to_string());
+        args.push("-g".to_string());
         args.push(log_folder);
     } 
     

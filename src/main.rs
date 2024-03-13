@@ -2,8 +2,6 @@
 // Rob Dobson 2024
 
 use clap::Parser;
-use std::path::Path;
-use remove_dir_all::remove_dir_contents;
 mod app_new;
 use app_new::generate_new_app;
 mod app_config;
@@ -15,6 +13,7 @@ mod app_flash;
 use app_flash::flash_raft_app;
 mod raft_cli_utils;
 use raft_cli_utils::is_wsl;
+use raft_cli_utils::check_target_folder_valid;
 
 #[derive(Clone, Parser, Debug)]
 enum Action {
@@ -119,39 +118,6 @@ struct RunCmd {
 struct Cli {
     #[clap(subcommand)]
     action: Action,
-}
-
-// Check the target folder is valid
-fn check_target_folder_valid(target_folder: &str, clean: bool) -> bool{
-    // Check the target folder exists
-    if !Path::new(&target_folder).exists() {
-        // Create the folder if possible
-        match std::fs::create_dir(&target_folder) {
-            Ok(_) => println!("Created folder: {}", target_folder),
-            Err(e) => {
-                println!("Error creating folder: {}", e);
-                return false;
-            }
-        }
-    } else {
-        // Check the folder is empty
-        if std::fs::read_dir(&target_folder).unwrap().next().is_some() {
-            if clean {
-                // Delete the contents of the folder
-                match remove_dir_contents(&target_folder) {
-                    Ok(_) => println!("Deleted folder contents: {}", target_folder),
-                    Err(e) => {
-                        println!("Error deleting folder contents: {}", e);
-                        return false;
-                    }
-                }
-            } else {
-                println!("Error: target folder must be empty: {}", target_folder);
-                return false;
-            }
-        }
-    }
-    true
 }
 
 // Main function
