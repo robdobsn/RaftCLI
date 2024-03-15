@@ -71,11 +71,14 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: 
         return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "Build failed")));
     }
 
-    // Store a file in the "build_raft_artifacts" folder to indicate the SysType
-    // of the last build
-    let build_raft_artifacts_folder = format!("{}/build_raft_artifacts", app_folder);
-    fs::create_dir_all(&build_raft_artifacts_folder)?;
-    fs::write(format!("{}/cursystype.txt", build_raft_artifacts_folder), sys_type)?;
+    // If not clean_only, store the SysType of the last build
+    if !clean_only {
+        // Store a file in the "build_raft_artifacts" folder to indicate the SysType
+        // of the last build
+        let build_raft_artifacts_folder = format!("{}/build_raft_artifacts", app_folder);
+        fs::create_dir_all(&build_raft_artifacts_folder)?;
+        fs::write(format!("{}/cursystype.txt", build_raft_artifacts_folder), sys_type)?;
+    }
 
     Ok(build_result.unwrap().to_string())
 }
@@ -112,7 +115,7 @@ fn build_with_docker(project_dir: &str, systype_name: &str, clean: bool, clean_o
     let mut command_sequence = String::new();
 
     if delete_build_folder {
-        command_sequence += &build_dir;
+        command_sequence += format!("rm -rf ./{}; ", build_dir).as_str();
     }
     if delete_raft_artifacts_folder {
         command_sequence += "rm -rf ./build_raft_artifacts; ";
