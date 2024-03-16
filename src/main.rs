@@ -161,9 +161,15 @@ async fn main() {
         Action::Build(cmd) => {
             // Get the app folder (or default to current folder)
             let app_folder = cmd.app_folder.unwrap_or(".".to_string());
-            let _result = build_raft_app(&cmd.sys_type, cmd.clean, 
+            let result = build_raft_app(&cmd.sys_type, cmd.clean, 
                         cmd.clean_only, app_folder, cmd.no_docker, cmd.idf_path);
-            // println!("{:?}", _result);
+            // println!("{:?}", result);
+
+            // Check for build error
+            if result.is_err() {
+                println!("Build failed {:?}", result);
+                std::process::exit(1);
+            }
         }
         
         Action::Monitor(cmd) => {

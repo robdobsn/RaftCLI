@@ -2,6 +2,9 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::fs;
+use std::error::Error;
+use regex::Regex;
+use std::fmt::{self, Display, Formatter};
 use std::io::{self, BufRead, BufReader};
 use std::sync::{Arc, Mutex};
 use remove_dir_all::remove_dir_contents;
@@ -108,7 +111,24 @@ pub fn convert_path_for_docker(path: PathBuf) -> Result<String, std::io::Error> 
     Ok(docker_path)
 }
 
-pub fn execute_and_capture_output(command: &str, args: &Vec<String>, cur_dir: &str) -> io::Result<String> {
+// Define an enum for different error types
+#[derive(Debug)]
+pub enum CommandError {
+    CommandNotFound(String),
+    ExecutionFailed(String),
+    Other(io::Error),
+}
+
+impl Display for CommandError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        // Implementation details here, for example:
+        write!(f, "{:?}", self) // Simple placeholder implementation
+    }
+}
+
+impl Error for CommandError {}
+
+pub fn execute_and_capture_output(command: &str, args: &Vec<String>, cur_dir: &str) -> Result<(String, bool), CommandError> {
 
     let process = Command::new(command)
         .current_dir(cur_dir)
@@ -116,12 +136,20 @@ pub fn execute_and_capture_output(command: &str, args: &Vec<String>, cur_dir: &s
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn();
-    if process.is_err() {
-        println!("Error executing command: {}", &process.as_ref().err().unwrap());
-        return Err(process.err().unwrap());
-    }
 
-    let mut process = process.unwrap();
+    // Match on the result
+    let mut process = match process {
+        Ok(process) => process,
+        Err(e) => {
+            if e.kind() == io::ErrorKind::NotFound {
+                return Err(CommandError::CommandNotFound(format!("{}: No such file or directory", command)));
+            } else {
+                return Err(CommandError::Other(e));
+            }
+        },
+    };
+
+    // Capture the output
     let stdout = process.stdout.take().unwrap();
     let stderr = process.stderr.take().unwrap();
 
@@ -131,7 +159,7 @@ pub fn execute_and_capture_output(command: &str, args: &Vec<String>, cur_dir: &s
     let captured_output = Arc::new(Mutex::new(String::new()));
 
     // Using crossbeam to handle threads
-    thread::scope(|s| {
+    let thread_result = thread::scope(|s| {
         let captured = Arc::clone(&captured_output);
         s.spawn(move |_| {
             for line in stdout_reader.lines() {
@@ -161,10 +189,17 @@ pub fn execute_and_capture_output(command: &str, args: &Vec<String>, cur_dir: &s
                 }
             }
         });
-    }).unwrap();
+    });
+
+    // Handle thread problems
+    if thread_result.is_err() {
+        return Err(CommandError::ExecutionFailed("Failed to execute threads".into()));
+    }
     
+    // Wait for the process to finish
     let output = captured_output.lock().unwrap().clone();
-    Ok(output)
+    let success_flag = process.wait().unwrap().success();
+    Ok((output, success_flag))
 }
 
 fn get_systypes_folder_name() -> &'static str {
@@ -220,36 +255,36 @@ pub fn extract_flash_cmd_args(output: String, port: &str, flash_baud: u32) ->
     // The result contains the command to flash the app which will look something like:
     // /opt/esp/python_env/idf5.1_py3.8_env/bin/python ../opt/esp/idf/components/esptool_py/esptool/esptool.py -p (PORT) -b 460800 --before default_reset --after hard_reset --chip esp32  write_flash --flash_mode dio --flash_size 4MB --flash_freq 40m 0x1000 build/SysTypeMain/bootloader/bootloader.bin 0x8000 build/SysTypeMain/partition_table/partition-table.bin 0x1e000 build/SysTypeMain/ota_data_initial.bin 0x20000 build/SysTypeMain/SysTypeMain.bin 0x380000 build/SysTypeMain/fs.bin
     // Extract the command to flash the app using the esptool.py as the keyword to locate the start of the command
-    let flash_command_start = output.find("-p (PORT)");
-    let mut flash_command: String;
-    match flash_command_start {
-        Some(start) => {
-            flash_command = output[start..].to_string();
-            // Truncase the string at the first newline character
-            let flash_command_end = flash_command.find("\n");
-            if !flash_command_end.is_none() {
-                flash_command.truncate(flash_command_end.unwrap());
-            }
-        },
-        None => {
-            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "Flash command not found in output")));
-        }
+
+    // Attempt to locate the placeholder for the port in the flash command within the output
+    let flash_command_start = output.find("-p (PORT)").ok_or_else(|| 
+        io::Error::new(io::ErrorKind::Other, "Flash command not found in output"))?;
+    
+    // Extract the command starting from the located placeholder
+    let mut flash_command = output[flash_command_start..].to_string();
+    
+    // Truncate the command at the first newline character, if present
+    if let Some(end) = flash_command.find('\n') {
+        flash_command.truncate(end);
     }
 
     // The required arguments for flashing the app will look something like this
     // -p {{port}} -b {{flash_baud}} --before default_reset --after hard_reset --chip esp32  write_flash --flash_mode dio --flash_size 4MB --flash_freq 40m 0x1000 build/SysTypeMain/bootloader/bootloader.bin 0x8000 build/SysTypeMain/partition_table/partition-table.bin 0x1e000 build/SysTypeMain/ota_data_initial.bin 0x20000 build/SysTypeMain/SysTypeMain.bin 0x380000 build/SysTypeMain/fs.bin
 
-    // Replace the placeholders with the actual values
-    let flash_command = flash_command
-                                    .replace("(PORT)", port)
-                                    .replace("-b 460800", &format!("-b {}", flash_baud.to_string()));
+    // Replace the (PORT) placeholder with the actual port
+    flash_command = flash_command.replace("(PORT)", port);
 
-    // Create a vector by splitting the string on whitespace
-    let flash_command_parts: Vec<String> = flash_command.split_whitespace().map(|s| s.to_string()).collect();
+    // Use regex to replace the baud rate
+    let baud_regex = Regex::new("-b \\d+").map_err(|e| e.to_string())?;
+    flash_command = baud_regex.replace_all(&flash_command, format!("-b {}", flash_baud)).to_string();
 
-    // Debug
+    // Split the modified command into parts for use as arguments
+    let flash_command_parts: Vec<String> = flash_command.split_whitespace()
+                                                        .map(String::from)
+                                                        .collect();
+
     println!("Flash command parts: {:?}", flash_command_parts);
-
+    
     Ok(flash_command_parts)
 }
 

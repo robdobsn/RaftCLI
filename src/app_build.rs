@@ -2,11 +2,13 @@
 use std::process::{Command, Stdio};
 use std::fs;
 use std::path::Path;
+use std::io;
 use crate::raft_cli_utils::utils_get_sys_type;
 use crate::raft_cli_utils::check_app_folder_valid;
 use crate::raft_cli_utils::check_for_raft_artifacts_deletion;
 use crate::raft_cli_utils::execute_and_capture_output;
 use crate::raft_cli_utils::convert_path_for_docker;
+use crate::raft_cli_utils::CommandError;
 
 pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: bool, app_folder: String,
             no_docker_arg: bool, idf_path_full: Option<String>) 
@@ -42,10 +44,6 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: 
         }
     }
 
-    // Build the app
-    println!("Building the SysType {} app in folder: {} delete_build {} delete_raft_artifacts {}", 
-                        sys_type, app_folder, delete_build_folder, delete_build_raft_artifacts_folder);
-
     // Determine if docker is to be used for build
     let mut no_docker = std::env::var("RAFT_NO_DOCKER").unwrap_or("false".to_string()) == "true";
     if no_docker_arg {
@@ -66,18 +64,9 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: 
                     delete_build_folder, delete_build_raft_artifacts_folder)
     };
 
-    // Check for build error
+    // If the build failed, return the error
     if build_result.is_err() {
-        return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "Build failed")));
-    }
-
-    // If not clean_only, store the SysType of the last build
-    if !clean_only {
-        // Store a file in the "build_raft_artifacts" folder to indicate the SysType
-        // of the last build
-        let build_raft_artifacts_folder = format!("{}/build_raft_artifacts", app_folder);
-        fs::create_dir_all(&build_raft_artifacts_folder)?;
-        fs::write(format!("{}/cursystype.txt", build_raft_artifacts_folder), sys_type)?;
+        return Err(Box::new(build_result.unwrap_err()));
     }
 
     Ok(build_result.unwrap().to_string())
@@ -86,8 +75,10 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: 
 // Build with docker and return output as a string
 fn build_with_docker(project_dir: &str, systype_name: &str, clean: bool, clean_only: bool,
             delete_build_folder: bool, delete_raft_artifacts_folder: bool) -> Result<String, std::io::Error> {
+
     // Build with docker
-    println!("Building with docker in {} for SysType {} clean {}", project_dir, systype_name, clean);
+    println!("Raft build SysType {} in {}{}",  systype_name, project_dir,
+                    if clean { " (clean first)" } else { "" });
 
     // Build the Docker image
     let fail_docker_image_msg = format!("Docker build command failed");
@@ -142,17 +133,30 @@ fn build_with_docker(project_dir: &str, systype_name: &str, clean: bool, clean_o
     let docker_run_args: Vec<String> = docker_run_args.iter().map(|s| s.to_string()).collect();
 
     // Print args
-    println!("Docker run args: {:?}", docker_run_args);
+    // println!("Docker run args: {:?}", docker_run_args);
 
     // Execute the Docker command and capture its output
     let docker_command = "docker";
     match execute_and_capture_output(docker_command, &docker_run_args, project_dir) {
-        Ok(output) => {
-            return Ok(output);
+        Ok((output, success_flag)) => {
+            if success_flag {
+                // Success - return the output as a String
+                Ok(output)
+            } else {
+                // If the command executed but was not successful, log the output and return an error
+                eprintln!("Docker run failed but executed: {}", output);
+                Err(io::Error::new(io::ErrorKind::Other, "Docker run executed with errors"))
+            }
         },
         Err(e) => {
-            eprintln!("Docker run failed: {}", e);
-            return Err(e);
+            // More granular error handling based on the CommandError enum
+            let error_message = match e {
+                CommandError::CommandNotFound(msg) => format!("Docker command not found: {}", msg),
+                CommandError::ExecutionFailed(msg) => format!("Docker execution failed: {}", msg),
+                CommandError::Other(io_err) => format!("An IO error occurred during Docker execution: {}", io_err),
+            };
+            eprintln!("Docker run failed: {}", error_message);
+            Err(io::Error::new(io::ErrorKind::Other, error_message))
         }
     }
 }
@@ -162,14 +166,15 @@ fn build_without_docker(project_dir: &str, systype_name: &str, clean: bool, clea
     delete_build_folder: bool, delete_raft_artifacts_folder: bool,
     idf_path: String) -> Result<String, std::io::Error> {
     
-    // Build without docker
-    println!("Building without docker in {} for SysType {} clean {}", project_dir, systype_name, clean);
+    // Build with docker
+    println!("Raft build SysType {} in {}{} (no Docker)",  systype_name, project_dir,
+                    if clean { " (clean first)" } else { "" });
     
     // Folders
     let build_dir = format!("build/{}", systype_name);
     let build_raft_artifacts_folder = format!("{}/build_raft_artifacts", project_dir);
 
-    // Delete the build folder if required
+    // Delete build folders if required
     if delete_build_folder {
         let build_dir_full = format!("{}/{}", project_dir, build_dir);
         if Path::new(&build_dir_full).exists() {
@@ -192,21 +197,34 @@ fn build_without_docker(project_dir: &str, systype_name: &str, clean: bool, clea
     if !clean_only {
         idf_run_args.push("build".to_string());
     }
-
-    // Command
-    let idf_command = idf_path.as_str();
     
-    // Debug
-    println!("Build app command: {} {:?}", idf_command, idf_run_args);
-    
-    // Execute the command and capture its output
-    match execute_and_capture_output(idf_command, &idf_run_args, project_dir) {
-        Ok(output) => {
-            return Ok(output);
+    // Execute the command and handle the output
+    match execute_and_capture_output(&idf_path, &idf_run_args, project_dir) {
+        Ok((output, success_flag)) => {
+            if success_flag {
+                Ok(output) // Return the output directly
+            } else {
+                // If the command executed but failed, provide detailed feedback
+                eprintln!("idf.py build executed but failed: {}", output);
+                Err(io::Error::new(io::ErrorKind::Other, "idf.py build executed with errors"))
+            }
         },
         Err(e) => {
-            eprintln!("idf.py build failed {}", e);
-            return Err(e);
+            // Detailed error handling based on the failure
+            let error_message = match e {
+                CommandError::CommandNotFound(msg) => {
+                    // Check if the error is due to the idf.py command not being found
+                    if msg.contains("idf.py") {
+                        "idf.py command was not found - see https://docs.espressif.com/projects/esp-idf/en/stable/esp32/get-started/index.html".to_string()
+                    } else {
+                        format!("Command not found: {}", msg)
+                    }
+                },
+                CommandError::ExecutionFailed(msg) => format!("Execution failed: {}", msg),
+                CommandError::Other(io_err) => format!("An IO error occurred: {}", io_err),
+            };
+            eprintln!("idf.py build failed: {}", error_message);
+            Err(io::Error::new(io::ErrorKind::Other, error_message))
         }
     }
 }

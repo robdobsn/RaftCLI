@@ -8,14 +8,14 @@ pub fn flash_raft_app(app_folder: String, port: String,
                     -> Result<(), Box<dyn std::error::Error>> {
 
     // Get flash tool
-    let flash_cmd = get_flash_tool_cmd(flash_tool_opt, native_serial_port);
+    let flash_cmd: String = get_flash_tool_cmd(flash_tool_opt, native_serial_port);
 
     // Extract the arguments for the flash command
     let flash_cmd_args = extract_flash_cmd_args(build_cmd_output, &port, flash_baud);
 
-    // Check if the flash args are valid
+    // Check for errors in the flash command and arguments
     if flash_cmd_args.is_err() {
-        return Err(flash_cmd_args.err().unwrap());
+        return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "Error extracting flash command arguments")));
     }
     let flash_cmd_args = flash_cmd_args.unwrap();
 
@@ -24,12 +24,11 @@ pub fn flash_raft_app(app_folder: String, port: String,
     println!("Flash command args: {:?}", flash_cmd_args);
     println!("Flash command app folder: {}", app_folder);
 
-    // Execute the flash command
-    let result = execute_and_capture_output(&flash_cmd, &flash_cmd_args, &app_folder);
-   
-    // Check for flash error
-    if result.is_err() {
-        return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, format!("Flash failed {:?}", result))));
+    // Execute the flash command and check for errors
+    let (output, success_flag) = execute_and_capture_output(&flash_cmd, &flash_cmd_args, &app_folder)?;
+    if !success_flag {
+        let err_msg = format!("Flash executed with errors: {}", output);
+        return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, err_msg)));
     }
 
     Ok(())

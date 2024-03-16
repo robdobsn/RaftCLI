@@ -1,6 +1,6 @@
 # Raft CLI (command-line interface)
 
-> Note: installation is with 'cargo install raftcli' and not as listed in the sidebar
+> Note: installation is with 'cargo install raftcli' and not as listed in the sidebar [see installation section below](#installation)
 
 Raft is an opinionated framework for developing embedded apps for the Espressif ESP32 family - see [further information on Raft](https://github.com/robdobsn/RaftCore)
 
@@ -24,6 +24,28 @@ Then install the app with:
 ```
 cargo install raftcli
 ```
+
+There are some addition things you'll need to have on your system to support building and flashing raft apps:
+
+### Build using Docker
+
+The default option for building a raft app is to use [Docker](https://docs.docker.com/get-docker/) so please go ahead and install that if you don't have it already.
+
+The other thing you'll need in this scenario is a way to flash the ESP32 family chip. The simplest way to install this is using python's pip package. Make sure python and pip are installed first (you can type `python3 -m pip --version` or `python -m pip --version` if you are on Windows). If pip isn't installed then [install python and pip](https://www.python.org/downloads/). Install the esptool with:
+
+```
+python3 -m pip install esptool
+```
+
+> Note: change python3 to python on Windows.
+
+### Build using ESP IDF
+
+Alternatively you can [install the Espressif ESP IDF](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/get-started/index.html). Make sure all of the requirements are installed correctly as I find the Espressif installation docs to be a bit unclear. Also, if installing an ESP IDF from the [releases page on github](https://github.com/espressif/esp-idf/releases), ensure that you install the tools by changing to the ESP IDF folder and running ./install.sh or similar commands on different OSs - see [install-scripts](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-guides/tools/idf-tools.html#install-scripts).
+
+You will also need to make sure you run the raft command line interface program in a shell with the IDF environment installed. You can do this on linux/mac using a command like `. ~/esp/esp-idf-v5.2.1\export.sh` or similar based on where the esp idf got installed and what version it is. Another option, and one that works on Windows, is use the [Espressif VS Code extension](https://github.com/espressif/vscode-esp-idf-extension) which handles the shell environment for you. Otherwise, on Windows and depending on how you installed the ESP IDF, you may need to use a shortcut that runs the ESP IDF shell. 
+
+In this case use the -d option, i.e. `raft run -d` or `raft build -d` to disable the use of Docker.
 
 ## Creating a new raft app
 
