@@ -1,16 +1,29 @@
 # Raft CLI (command-line interface)
 
+> Note: installation is with 'cargo install raftcli' and not as listed in the sidebar
+
 Raft is an opinionated framework for developing embedded apps for the Espressif ESP32 family - see [further information on Raft](https://github.com/robdobsn/RaftCore)
 
 This command-line application is used to scaffold, build, flash and monitor raft apps.
 
+- [Installation](#installation)
 - [Creating a new raft app](#creating-a-new-raft-app)
 - [Building a raft app](#building-a-raft-app)
 - [Flashing firmware to a development board](#flashing-the-firmware-to-a-development-board)
 - [Monitoring a serial port](#monitoring-a-serial-port)
-- [Installation](#installation)
 - [Scaffolding Questions](#scaffolding-questions)
 
+## Installation
+
+Installation using the crates.io package (raftcli is an application writted in the Rust programming language) is by far the easiest option but the program can also be built from source code if you need to.
+
+Firstly install Rust (since you are here I assume you are interested in embedded development and Rust may be in your future in any case :) follow these steps to [install rust](https://www.rust-lang.org/tools/install)
+
+Then install the app with:
+
+```
+cargo install raftcli
+```
 
 ## Creating a new raft app
 
@@ -150,20 +163,6 @@ Options:
   ```
 
 To exit the serial monitor press ESC
-
-## Installation
-
-Installation using the crates.io package (raftcli is an application writted in the Rust programming language) is by far the easiest option but the program can also be built from source code if you need to.
-
-Firstly install Rust (since you are here I assume you are interested in embedded development and Rust may be in your future in any case :)
-
-Follow the steps to [install rust](https://www.rust-lang.org/tools/install)
-
-Then install the app with:
-
-```
-cargo install raftcli
-```
 
 ### Build from source
 
