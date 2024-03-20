@@ -254,12 +254,18 @@ pub fn extract_flash_cmd_args(output: String, port: &str, flash_baud: u32) ->
 
     // The result contains the command to flash the app which will look something like:
     // /opt/esp/python_env/idf5.1_py3.8_env/bin/python ../opt/esp/idf/components/esptool_py/esptool/esptool.py -p (PORT) -b 460800 --before default_reset --after hard_reset --chip esp32  write_flash --flash_mode dio --flash_size 4MB --flash_freq 40m 0x1000 build/SysTypeMain/bootloader/bootloader.bin 0x8000 build/SysTypeMain/partition_table/partition-table.bin 0x1e000 build/SysTypeMain/ota_data_initial.bin 0x20000 build/SysTypeMain/SysTypeMain.bin 0x380000 build/SysTypeMain/fs.bin
+    // OR
+    // python -m esptool --chip esp32 -b 460800 --before default_reset --after hard_reset write_flash --flash_mode dio --flash_size 4MB --flash_freq 40m 0x1000 build/ShadesScader/bootloader/bootloader.bin 0x8000 build/ShadesScader/partition_table/partition-table.bin 0x1e000 build/ShadesScader/ota_data_initial.bin 0x20000 build/ShadesScader/ShadesScader.bin 0x380000 build/ShadesScader/fs.bin
     // Extract the command to flash the app using the esptool.py as the keyword to locate the start of the command
 
-    // Attempt to locate the placeholder for the port in the flash command within the output
-    let flash_command_start = output.find("-p (PORT)").ok_or_else(|| 
-        io::Error::new(io::ErrorKind::Other, "Flash command not found in output"))?;
-    
+    // Create a regex pattern to match "esptool.py " or "esptool "
+    let re = Regex::new(r"esptool\.py |esptool ").unwrap();
+
+    // Find the match and get the start of the command
+    let flash_command_start = re.find(&output)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Flash command not found in output"))?
+        .start();
+
     // Extract the command starting from the located placeholder
     let mut flash_command = output[flash_command_start..].to_string();
     
@@ -268,16 +274,27 @@ pub fn extract_flash_cmd_args(output: String, port: &str, flash_baud: u32) ->
         flash_command.truncate(end);
     }
 
+    // Remove "esptool" or "esptool.py" from the start of the command
+    let esptool_regex = Regex::new("esptool(\\.py)?").map_err(|e| e.to_string())?;
+    flash_command = esptool_regex.replace(&flash_command, "").to_string();
+
+    // Remove the "-p (PORT)" if it exists
+    let port_regex = Regex::new("-p \\(PORT\\)").map_err(|e| e.to_string())?;
+    flash_command = port_regex.replace(&flash_command, "").to_string();
+
+    // Remove the "-b {{flash_baud}}" if it exists
+    let baud_regex = Regex::new("-b \\d+").map_err(|e| e.to_string())?;
+    flash_command = baud_regex.replace(&flash_command, "").to_string();
+    
     // The required arguments for flashing the app will look something like this
     // -p {{port}} -b {{flash_baud}} --before default_reset --after hard_reset --chip esp32  write_flash --flash_mode dio --flash_size 4MB --flash_freq 40m 0x1000 build/SysTypeMain/bootloader/bootloader.bin 0x8000 build/SysTypeMain/partition_table/partition-table.bin 0x1e000 build/SysTypeMain/ota_data_initial.bin 0x20000 build/SysTypeMain/SysTypeMain.bin 0x380000 build/SysTypeMain/fs.bin
 
-    // Replace the (PORT) placeholder with the actual port
-    flash_command = flash_command.replace("(PORT)", port);
+    // Create the string to prepend - it should be -p {{port}} -b {{flash_baud}}
+    let flash_command_prepend = format!("-p {} -b {}", port, flash_baud);
 
-    // Use regex to replace the baud rate
-    let baud_regex = Regex::new("-b \\d+").map_err(|e| e.to_string())?;
-    flash_command = baud_regex.replace_all(&flash_command, format!("-b {}", flash_baud)).to_string();
-
+    // Prepend the required arguments to the command
+    flash_command = format!("{} {}", flash_command_prepend, flash_command);
+    
     // Split the modified command into parts for use as arguments
     let flash_command_parts: Vec<String> = flash_command.split_whitespace()
                                                         .map(String::from)
@@ -308,7 +325,6 @@ pub fn get_default_port(_native_serial_port: bool) -> String {
         "/dev/ttyUSB0".to_string()
     }
 }
-
 
 // Check the target folder is valid
 pub fn check_target_folder_valid(target_folder: &str, clean: bool) -> bool{

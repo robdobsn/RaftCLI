@@ -167,7 +167,7 @@ async fn main() {
 
             // Check for build error
             if result.is_err() {
-                println!("Build failed {:?}", result);
+                // println!("Build failed {:?}", result);
                 std::process::exit(1);
             }
         }
@@ -214,7 +214,7 @@ async fn main() {
 
             // Check for build error
             if result.is_err() {
-                println!("Build failed {:?}", result);
+                // println!("Build failed {:?}", result);
                 std::process::exit(1);
             }
 

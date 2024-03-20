@@ -181,8 +181,11 @@ pub async fn monitor_terminal_for_events() -> (bool, KeyCode) {
                     }
                     // Handle key press
                     match key.code {
-                        // Break out of the serial monitor on Esc key or Ctrl+X
+                        // Break out of the serial monitor on Esc key, Ctrl-c or Ctrl+X
                         KeyCode::Esc => {
+                            return (true, key.code);
+                        },
+                        KeyCode::Char('c') if key.modifiers == crossterm::event::KeyModifiers::CONTROL => {
                             return (true, key.code);
                         },
                         KeyCode::Char('x') if key.modifiers == crossterm::event::KeyModifiers::CONTROL => {
@@ -364,7 +367,7 @@ async fn handle_serial_connection(serial_port: tokio_serial::SerialStream, log_f
     
     // Write welcome message to the terminal
     let version = env!("CARGO_PKG_VERSION");  
-    println!("Raft Serial Monitor {} - press Esc (or Ctrl+X) to exit", version);
+    println!("Raft Serial Monitor {} - press Esc (or Ctrl+c or Ctrl+X) to exit", version);
 
     // Enter crossterm raw mode (characters are not automatically echoed to the terminal)
     let rslt = enable_raw_mode();

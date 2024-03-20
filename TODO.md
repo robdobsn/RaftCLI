@@ -9,5 +9,7 @@
 - bug noticed on Mac with invalid chars immediately after boot
 - remove makefile generation???
 - monitor seems to have incresing processor overhead over time on WSL - is this to do with logging?
+- config file for default settings - maybe use platformio.ini when in that system?
+- shift default ESP IDF to 5.2.1
 
 
