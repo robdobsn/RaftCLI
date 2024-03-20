@@ -13,7 +13,7 @@ use crossbeam::thread;
 #[cfg(not(target_os = "windows"))]
 use std::env;
 
-pub fn utils_get_sys_type(build_sys_type: &Option<String>, app_folder: &str) -> Result<String, Box<dyn std::error::Error>> {
+pub fn utils_get_sys_type(build_sys_type: &Option<String>, app_folder: String) -> Result<String, Box<dyn std::error::Error>> {
 
     // Determine the Systype to build - this is either the SysType passed in or
     // the first SysType found in the systypes folder (excluding Common)
@@ -46,7 +46,7 @@ pub fn utils_get_sys_type(build_sys_type: &Option<String>, app_folder: &str) -> 
 }
 
 // Check the app folder is valid
-pub fn check_app_folder_valid(app_folder: &str) -> bool {
+pub fn check_app_folder_valid(app_folder: String) -> bool {
     // The app folder is valid if it exists and contains a CMakeLists.txt file
     // and a folder called systypes 
     let cmake_file = format!("{}/CMakeLists.txt", app_folder);
@@ -64,7 +64,7 @@ pub fn check_app_folder_valid(app_folder: &str) -> bool {
     }
 }
 
-pub fn check_for_raft_artifacts_deletion(app_folder: &str, sys_type: &str) -> bool {
+pub fn check_for_raft_artifacts_deletion(app_folder: String, sys_type: String) -> bool {
     // Check if the "build_raft_artifacts" folder exists inside the app folder
     // and if so extract the contents of the "cursystype.txt" file to determine
     // the SysType of the last build - then check if this is the same as the
@@ -128,9 +128,9 @@ impl Display for CommandError {
 
 impl Error for CommandError {}
 
-pub fn execute_and_capture_output(command: &str, args: &Vec<String>, cur_dir: &str) -> Result<(String, bool), CommandError> {
+pub fn execute_and_capture_output(command: String, args: &Vec<String>, cur_dir: String) -> Result<(String, bool), CommandError> {
 
-    let process = Command::new(command)
+    let process = Command::new(command.clone())
         .current_dir(cur_dir)
         .args(args)
         .stdout(Stdio::piped())
@@ -142,7 +142,7 @@ pub fn execute_and_capture_output(command: &str, args: &Vec<String>, cur_dir: &s
         Ok(process) => process,
         Err(e) => {
             if e.kind() == io::ErrorKind::NotFound {
-                return Err(CommandError::CommandNotFound(format!("{}: No such file or directory", command)));
+                return Err(CommandError::CommandNotFound(format!("{}: No such file or directory", command.clone())));
             } else {
                 return Err(CommandError::Other(e));
             }
@@ -249,60 +249,121 @@ pub fn get_flash_tool_cmd(flash_tool_opt: Option<String>, native_serial_port: bo
     }
 }
 
-pub fn extract_flash_cmd_args(output: String, port: &str, flash_baud: u32) -> 
-                    Result<Vec<String>, Box<dyn std::error::Error>> {
+pub fn get_build_folder_name(sys_type: String, app_folder: String) -> String {
+    let build_folder_name = format!("{}/build/{}", app_folder, sys_type);
+    build_folder_name
+}
 
-    // The result contains the command to flash the app which will look something like:
-    // /opt/esp/python_env/idf5.1_py3.8_env/bin/python ../opt/esp/idf/components/esptool_py/esptool/esptool.py -p (PORT) -b 460800 --before default_reset --after hard_reset --chip esp32  write_flash --flash_mode dio --flash_size 4MB --flash_freq 40m 0x1000 build/SysTypeMain/bootloader/bootloader.bin 0x8000 build/SysTypeMain/partition_table/partition-table.bin 0x1e000 build/SysTypeMain/ota_data_initial.bin 0x20000 build/SysTypeMain/SysTypeMain.bin 0x380000 build/SysTypeMain/fs.bin
-    // OR
-    // python -m esptool --chip esp32 -b 460800 --before default_reset --after hard_reset write_flash --flash_mode dio --flash_size 4MB --flash_freq 40m 0x1000 build/ShadesScader/bootloader/bootloader.bin 0x8000 build/ShadesScader/partition_table/partition-table.bin 0x1e000 build/ShadesScader/ota_data_initial.bin 0x20000 build/ShadesScader/ShadesScader.bin 0x380000 build/ShadesScader/fs.bin
-    // Extract the command to flash the app using the esptool.py as the keyword to locate the start of the command
+pub fn get_device_type(sys_type: String, app_folder: String) -> String {
 
-    // Create a regex pattern to match "esptool.py " or "esptool "
-    let re = Regex::new(r"esptool\.py |esptool ").unwrap();
+    // Get build folder
+    let build_folder = get_build_folder_name(sys_type, app_folder);
 
-    // Find the match and get the start of the command
-    let flash_command_start = re.find(&output)
-        .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Flash command not found in output"))?
-        .start();
+    // Read the project_description.json file
+    let project_description = fs::read_to_string(format!("{}/project_description.json", build_folder));
 
-    // Extract the command starting from the located placeholder
-    let mut flash_command = output[flash_command_start..].to_string();
-    
-    // Truncate the command at the first newline character, if present
-    if let Some(end) = flash_command.find('\n') {
-        flash_command.truncate(end);
+    // Check for errors reading the project_description.json file
+    if project_description.is_err() {
+        println!("Error reading the project_description.json file: {}", project_description.err().unwrap());
+        return "esp32".to_string();
     }
 
-    // Remove "esptool" or "esptool.py" from the start of the command
-    let esptool_regex = Regex::new("esptool(\\.py)?").map_err(|e| e.to_string())?;
-    flash_command = esptool_regex.replace(&flash_command, "").to_string();
+    // Extract the device type from the project_description.json file
+    let project_description = project_description.unwrap();
+    let device_type_regex = Regex::new(r#""target":\s*"([^"]+)""#).unwrap();
+    let device_type = device_type_regex.captures(&project_description);
 
-    // Remove the "-p (PORT)" if it exists
-    let port_regex = Regex::new("-p \\(PORT\\)").map_err(|e| e.to_string())?;
-    flash_command = port_regex.replace(&flash_command, "").to_string();
+    // Check for errors extracting the device type
+    if device_type.is_none() {
+        println!("Error extracting the device type from the project_description.json file");
+        return "esp32".to_string();
+    }
 
-    // Remove the "-b {{flash_baud}}" if it exists
-    let baud_regex = Regex::new("-b \\d+").map_err(|e| e.to_string())?;
-    flash_command = baud_regex.replace(&flash_command, "").to_string();
+    // Return the device type
+    device_type.unwrap()[1].to_string()
+}
+
+pub fn extract_flash_cmd_args(_output: String, device_type: String, port: &str, flash_baud: u32) -> 
+                    Result<Vec<String>, Box<dyn std::error::Error>> {
+
+    // // The result contains the command to flash the app which will look something like:
+    // // /opt/esp/python_env/idf5.1_py3.8_env/bin/python ../opt/esp/idf/components/esptool_py/esptool/esptool.py -p (PORT) -b 460800 --before default_reset --after hard_reset --chip esp32  write_flash --flash_mode dio --flash_size 4MB --flash_freq 40m 0x1000 build/SysTypeMain/bootloader/bootloader.bin 0x8000 build/SysTypeMain/partition_table/partition-table.bin 0x1e000 build/SysTypeMain/ota_data_initial.bin 0x20000 build/SysTypeMain/SysTypeMain.bin 0x380000 build/SysTypeMain/fs.bin
+    // // OR
+    // // python -m esptool --chip esp32 -b 460800 --before default_reset --after hard_reset write_flash --flash_mode dio --flash_size 4MB --flash_freq 40m 0x1000 build/ShadesScader/bootloader/bootloader.bin 0x8000 build/ShadesScader/partition_table/partition-table.bin 0x1e000 build/ShadesScader/ota_data_initial.bin 0x20000 build/ShadesScader/ShadesScader.bin 0x380000 build/ShadesScader/fs.bin
+    // // Extract the command to flash the app using the esptool.py as the keyword to locate the start of the command
+
+    // // Create a regex pattern to match "esptool.py " or "esptool "
+    // let re = Regex::new(r"esptool\.py |esptool ").unwrap();
+
+    // // Find all matches and take the last one
+    // let last_match = re.find_iter(&output).last();
+    // let flash_command_start = match last_match {
+    //     Some(m) => m.start(), // Get the start position of the last match
+    //     None => return Err("Error: esptool.py command not found".into())
+    // };
+
+    // println!("----------- output: {}", output);
+
+    // // Extract the command starting from the located placeholder
+    // let mut flash_command = output[flash_command_start..].to_string();
     
-    // The required arguments for flashing the app will look something like this
-    // -p {{port}} -b {{flash_baud}} --before default_reset --after hard_reset --chip esp32  write_flash --flash_mode dio --flash_size 4MB --flash_freq 40m 0x1000 build/SysTypeMain/bootloader/bootloader.bin 0x8000 build/SysTypeMain/partition_table/partition-table.bin 0x1e000 build/SysTypeMain/ota_data_initial.bin 0x20000 build/SysTypeMain/SysTypeMain.bin 0x380000 build/SysTypeMain/fs.bin
+    // // Truncate the command at the first newline character, if present
+    // if let Some(end) = flash_command.find('\n') {
+    //     flash_command.truncate(end);
+    // }
 
-    // Create the string to prepend - it should be -p {{port}} -b {{flash_baud}}
-    let flash_command_prepend = format!("-p {} -b {}", port, flash_baud);
+    // println!("----------- Flash basis command: {}", flash_command);
 
-    // Prepend the required arguments to the command
-    flash_command = format!("{} {}", flash_command_prepend, flash_command);
+    // // Remove "esptool" or "esptool.py" from the start of the command
+    // let esptool_regex = Regex::new("esptool(\\.py)?").map_err(|e| e.to_string())?;
+    // flash_command = esptool_regex.replace(&flash_command, "").to_string();
+
+    // // Remove the "-p (PORT)" if it exists
+    // let port_regex = Regex::new("-p \\(PORT\\)").map_err(|e| e.to_string())?;
+    // flash_command = port_regex.replace(&flash_command, "").to_string();
+
+    // // Remove the "-b {{flash_baud}}" if it exists
+    // let baud_regex = Regex::new("-b \\d+").map_err(|e| e.to_string())?;
+    // flash_command = baud_regex.replace(&flash_command, "").to_string();
+
+    // println!("----------- Flash command: {}", flash_command);
     
-    // Split the modified command into parts for use as arguments
-    let flash_command_parts: Vec<String> = flash_command.split_whitespace()
-                                                        .map(String::from)
-                                                        .collect();
+    // // The required arguments for flashing the app will look something like this
+    // // -p {{port}} -b {{flash_baud}} --before default_reset --after hard_reset --chip esp32  write_flash --flash_mode dio --flash_size 4MB --flash_freq 40m 0x1000 build/SysTypeMain/bootloader/bootloader.bin 0x8000 build/SysTypeMain/partition_table/partition-table.bin 0x1e000 build/SysTypeMain/ota_data_initial.bin 0x20000 build/SysTypeMain/SysTypeMain.bin 0x380000 build/SysTypeMain/fs.bin
 
-    println!("Flash command parts: {:?}", flash_command_parts);
+    // // Create the string to prepend - it should be -p {{port}} -b {{flash_baud}}
+    // let flash_command_prepend = format!("-p {} -b {}", port, flash_baud);
+
+    // // Prepend the required arguments to the command
+    // flash_command = format!("{} {}", flash_command_prepend, flash_command);
     
-    Ok(flash_command_parts)
+    // // Split the modified command into parts for use as arguments
+    // let flash_command_parts: Vec<String> = flash_command.split_whitespace()
+    //                                                     .map(String::from)
+    //                                                     .collect();
+
+    // println!("Flash command parts: {:?}", flash_command_parts);
+    
+    // Ok(flash_command_parts)
+
+    // Flash baud string
+    let flash_baud = format!("{}", flash_baud);
+
+    // Flash command parts
+    let esptool_args = vec![
+        "-p", port,
+        "-b", flash_baud.as_str(),
+        "--before", "default_reset",
+        "--after", "hard_reset",
+        "--chip", &device_type,
+        "write_flash",
+        "@flash_args",
+    ];
+
+    // Create a vector of strings from esptool_args
+    let esptool_args: Vec<String> = esptool_args.iter().map(|s| s.to_string()).collect();
+
+    Ok(esptool_args)
 }
 
 // TODO - make these default to value read from config file in project folder

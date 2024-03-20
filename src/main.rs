@@ -223,7 +223,8 @@ async fn main() {
             let port = cmd.port.unwrap_or(raft_cli_utils::get_default_port(native_serial_port));
 
             // Flash the app
-            let result = flash_raft_app(app_folder.clone(), 
+            let result = flash_raft_app(&cmd.sys_type,
+                        app_folder.clone(), 
                         port.clone(),
                         native_serial_port,
                         cmd.flash_baud.unwrap_or(1000000),

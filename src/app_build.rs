@@ -17,12 +17,12 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: 
     // println!("Building the app in folder: {} clean {} clean_only {} no_docker_arg {}", app_folder, clean, clean_only, no_docker_arg);
 
     // Check the app folder is valid
-    if !check_app_folder_valid(&app_folder) {
+    if !check_app_folder_valid(app_folder.clone()) {
         return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "Invalid app folder")));
     }
 
     // Determine the Systype to build
-    let sys_type = utils_get_sys_type(build_sys_type, &app_folder);
+    let sys_type = utils_get_sys_type(build_sys_type, app_folder.clone());
     if sys_type.is_err() {
         return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "Error determining SysType")));
     }
@@ -39,7 +39,7 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: 
         delete_build_raft_artifacts_folder = true;
     } else {
         // Check if the "build_raft_artifacts" folder needs to be deleted
-        if check_for_raft_artifacts_deletion(&app_folder, &sys_type) {
+        if check_for_raft_artifacts_deletion(app_folder.clone(), sys_type.clone()) {
             delete_build_raft_artifacts_folder = true;
         }
     }
@@ -56,11 +56,11 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: 
         let idf_path = idf_path_full.unwrap_or("idf.py".to_string());
 
         // Build without docker
-        build_without_docker(&app_folder, &sys_type, clean, clean_only,
+        build_without_docker(app_folder.clone(), sys_type.clone(), clean, clean_only,
                     delete_build_folder, delete_build_raft_artifacts_folder, idf_path)
     } else {
         // Build with docker
-        build_with_docker(&app_folder, &sys_type, clean, clean_only,
+        build_with_docker(app_folder.clone(), sys_type.clone(), clean, clean_only,
                     delete_build_folder, delete_build_raft_artifacts_folder)
     };
 
@@ -73,18 +73,18 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: 
 }
 
 // Build with docker and return output as a string
-fn build_with_docker(project_dir: &str, systype_name: &str, clean: bool, clean_only: bool,
+fn build_with_docker(project_dir: String, systype_name: String, clean: bool, clean_only: bool,
             delete_build_folder: bool, delete_raft_artifacts_folder: bool) -> Result<String, std::io::Error> {
 
     // Build with docker
-    println!("Raft build SysType {} in {}{}",  systype_name, project_dir,
+    println!("Raft build SysType {} in {}{}",  systype_name, project_dir.clone(),
                     if clean { " (clean first)" } else { "" });
 
     // Build the Docker image
     let fail_docker_image_msg = format!("Docker build command failed");
     let docker_image_build_args = vec!["build", "-t", "raftbuilder", "."];
     let docker_image_build_status = Command::new("docker")
-        .current_dir(project_dir)
+        .current_dir(project_dir.clone())
         .args(docker_image_build_args)
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())        
@@ -98,7 +98,7 @@ fn build_with_docker(project_dir: &str, systype_name: &str, clean: bool, clean_o
 
     // Execute the Docker command to build the app
     let build_dir = format!("./build/{}", systype_name);
-    let absolute_project_dir = fs::canonicalize(project_dir)?;
+    let absolute_project_dir = fs::canonicalize(project_dir.clone())?;
     let docker_compatible_project_dir = convert_path_for_docker(absolute_project_dir);
     let project_dir_full = format!("{}:/project", docker_compatible_project_dir?);
 
@@ -136,8 +136,8 @@ fn build_with_docker(project_dir: &str, systype_name: &str, clean: bool, clean_o
     // println!("Docker run args: {:?}", docker_run_args);
 
     // Execute the Docker command and capture its output
-    let docker_command = "docker";
-    match execute_and_capture_output(docker_command, &docker_run_args, project_dir) {
+    let docker_command = "docker".to_string();
+    match execute_and_capture_output(docker_command.clone(), &docker_run_args, project_dir.clone()) {
         Ok((output, success_flag)) => {
             if success_flag {
                 // Success - return the output as a String
@@ -162,21 +162,21 @@ fn build_with_docker(project_dir: &str, systype_name: &str, clean: bool, clean_o
 }
 
 // Build without docker
-fn build_without_docker(project_dir: &str, systype_name: &str, clean: bool, clean_only: bool,
+fn build_without_docker(project_dir: String, systype_name: String, clean: bool, clean_only: bool,
     delete_build_folder: bool, delete_raft_artifacts_folder: bool,
     idf_path: String) -> Result<String, std::io::Error> {
     
     // Build with docker
-    println!("Raft build SysType {} in {}{} (no Docker)",  systype_name, project_dir,
+    println!("Raft build SysType {} in {}{} (no Docker)",  systype_name, project_dir.clone(),
                     if clean { " (clean first)" } else { "" });
     
     // Folders
     let build_dir = format!("build/{}", systype_name);
-    let build_raft_artifacts_folder = format!("{}/build_raft_artifacts", project_dir);
+    let build_raft_artifacts_folder = format!("{}/build_raft_artifacts", project_dir.clone());
 
     // Delete build folders if required
     if delete_build_folder {
-        let build_dir_full = format!("{}/{}", project_dir, build_dir);
+        let build_dir_full = format!("{}/{}", project_dir.clone(), build_dir);
         if Path::new(&build_dir_full).exists() {
             fs::remove_dir_all(&build_dir_full)?;
         }
@@ -199,7 +199,7 @@ fn build_without_docker(project_dir: &str, systype_name: &str, clean: bool, clea
     }
     
     // Execute the command and handle the output
-    match execute_and_capture_output(&idf_path, &idf_run_args, project_dir) {
+    match execute_and_capture_output(idf_path.clone(), &idf_run_args, project_dir.clone()) {
         Ok((output, success_flag)) => {
             if success_flag {
                 Ok(output) // Return the output directly
