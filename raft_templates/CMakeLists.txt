@@ -9,6 +9,8 @@ FetchContent_Declare(
     GIT_TAG        {{raft_core_git_tag}}
 )
 FetchContent_Populate(raftcore)
+set(ADDED_PROJECT_DEPENDENCIES ${ADDED_PROJECT_DEPENDENCIES} "raftcore")
+set(EXTRA_COMPONENT_DIRS ${EXTRA_COMPONENT_DIRS} ${raftcore_SOURCE_DIR})
 
 # Include the Raft CMake
 include(${raftcore_SOURCE_DIR}/scripts/RaftProject.cmake)
