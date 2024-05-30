@@ -18,13 +18,13 @@
     },
     "NetMan": {
         "wifiSTAEn": 1,
-        "wifiAPEn": 0,
+        "wifiAPEn": 1,
         "ethEn": 0,
         "wifiSSID": "",
         "wifiPW": "",
         "wifiSTAScanThreshold": "OPEN",
-        "wifiAPSSID": "",
-        "wifiAPPW": "",
+        "wifiAPSSID": "RaftAP",
+        "wifiAPPW": "raftpassword",
         "wifiAPChannel": 1,
         "wifiAPMaxConn": 4,
         "wifiAPAuthMode": "WPA2_PSK",
@@ -40,7 +40,7 @@
         "enable": 0,
         "brokerHostname": "mqttbroker",
         "brokerPort": 1883,
-        "clientID": "mqttclientid",
+        "clientID": "",
         "topics": [
             {
                 "name": "examplein",
