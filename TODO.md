@@ -1,5 +1,7 @@
 # RaftCLI ToDo list
 
+[] add option for BLE settings on new scaffold
+[] add .gitattributes # Auto detect text files and perform LF normalization .. * text=auto
 - handle reconnection automatically - if serial port disconnected then reconnected
 - add a command history to the terminal emulation
 - consider whether to allow entry of ssid and password in CLI written to sdkconfig.defaults file or possibly to a config.ini type file that is .gitignored

@@ -868,7 +868,7 @@ dependencies = [
 
 [[package]]
 name = "raftcli"
-version = "1.0.37"
+version = "1.0.38"
 dependencies = [
  "bytes",
  "chrono",
@@ -1007,8 +1007,7 @@ dependencies = [
 [[package]]
 name = "serialport"
 version = "4.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f5a15d0be940df84846264b09b51b10b931fb2f275becb80934e3568a016828"
+source = "git+https://github.com/robdobsn/serialport-rs.git?branch=fix-stop-bits-back-set-to-4.3.0#13c9915c307917b95000d9b83c7115d89a67a9de"
 dependencies = [
  "bitflags 2.4.2",
  "cfg-if",
