@@ -17,13 +17,13 @@ use raft_cli_utils::check_target_folder_valid;
 
 #[derive(Clone, Parser, Debug)]
 enum Action {
-    #[clap(name = "new", about = "Create a new raft app")]
+    #[clap(name = "new", about = "Create a new raft app", alias = "n")]
     New(NewCmd),
-    #[clap(name = "build", about = "Build a raft app")]
+    #[clap(name = "build", about = "Build a raft app", alias = "b")]
     Build(BuildCmd),    
-    #[clap(name = "monitor", about = "Monitor a serial port")]
+    #[clap(name = "monitor", about = "Monitor a serial port", alias = "m")]
     Monitor(MonitorCmd),
-    #[clap(name = "run", about = "Build, flash and monitor a raft app")]
+    #[clap(name = "run", about = "Build, flash and monitor a raft app", alias = "r")]
     Run(RunCmd),
 }
 
