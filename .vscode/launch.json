@@ -7,7 +7,7 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'raft'",
+            "name": "Debug 'raft build -a ../TestRaftApp11'",
             "cargo": {
                 "args": [
                     "build",
@@ -23,6 +23,28 @@
                 "build",
                 "-a",
                 "../TestRaftApp11"
+            ],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug 'raft monitor'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=raft",
+                    "--package=raftcli"
+                ],
+                "filter": {
+                    "name": "raft",
+                    "kind": "bin"
+                }
+            },
+            "args": [
+                "monitor",
+                "-p",
+                "COM14"
             ],
             "cwd": "${workspaceFolder}"
         },

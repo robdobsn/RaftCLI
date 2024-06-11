@@ -130,8 +130,7 @@ struct Cli {
 }
 
 // Main function
-#[tokio::main]
-async fn main() {
+fn main() {
     // Parse the command line arguments
     let args = Cli::parse();
     // println!("{:?}", args);
@@ -193,7 +192,7 @@ async fn main() {
                 }
             }
 
-            let result = serial_monitor::start_native(port, monitor_baud, cmd.no_reconnect, log, log_folder).await;
+            let result = serial_monitor::start_native(port, monitor_baud, cmd.no_reconnect, log, log_folder);
             match result {
                 Ok(()) => std::process::exit(0),
                 Err(e) => {
@@ -254,7 +253,7 @@ async fn main() {
                 }
             }
 
-            let result = serial_monitor::start_native(port, monitor_baud, cmd.no_reconnect, log, log_folder).await;
+            let result = serial_monitor::start_native(port, monitor_baud, cmd.no_reconnect, log, log_folder);
             match result {
                 Ok(()) => std::process::exit(0),
                 Err(e) => {
