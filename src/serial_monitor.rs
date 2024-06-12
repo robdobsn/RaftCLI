@@ -2,9 +2,7 @@
 // Rob Dobson 2024
 
 use crossterm::{
-    cursor,
-    event::{self, Event, KeyCode, KeyModifiers},
-    execute, terminal,
+    cursor, event::{self, Event, KeyCode, KeyEventKind, KeyModifiers}, execute, style::{Color, ResetColor, SetForegroundColor}, terminal
 };
 use serialport::{new, SerialPort};
 use std::io::Write;
@@ -40,6 +38,19 @@ fn open_log_file(log_to_file: bool, log_folder: String) -> Result<SharedLogFile,
         }))));
     }
     Ok(Arc::new(Mutex::new(None)))
+}
+
+fn display_cmd_buffer(command_buffer: &str, rows: u16) {
+    execute!(
+        std::io::stdout(),
+        cursor::MoveTo(0, rows - 1),
+        terminal::Clear(terminal::ClearType::CurrentLine),
+        SetForegroundColor(Color::Yellow),
+    )
+    .unwrap();
+    print!("> {}", command_buffer);
+    execute!(std::io::stdout(), ResetColor).unwrap();
+    std::io::stdout().flush().unwrap();
 }
 
 pub fn start_native(
@@ -143,65 +154,42 @@ pub fn start_native(
                 terminal::Clear(terminal::ClearType::CurrentLine),
             )?;
             print!("{}", received);
-            execute!(
-                std::io::stdout(),
-                cursor::MoveTo(0, rows - 1),
-                terminal::Clear(terminal::ClearType::CurrentLine),
-                cursor::MoveToColumn(0), // Ensure cursor moves to column 0
-            )?;
-            print!("> {}", command_buffer);
-            std::io::stdout().flush().unwrap();
+            display_cmd_buffer(&command_buffer, rows);
         }
 
         // Handle keyboard input
         if event::poll(Duration::from_millis(1))? {
             if let Event::Key(key_event) = event::read()? {
-                match key_event.code {
-                    KeyCode::Char(c)
-                        if key_event.modifiers == KeyModifiers::CONTROL
-                            && (c == 'c' || c == 'x') =>
-                    {
-                        running.store(false, Ordering::SeqCst);
-                    }
-                    KeyCode::Esc => {
-                        running.store(false, Ordering::SeqCst);
-                    }
-                    KeyCode::Enter => {
-                        let mut serial_port_lock = serial_port.lock().unwrap();
-                        let _ = serial_port_lock.write(command_buffer.as_bytes());
-                        let _ = serial_port_lock.write(&[b'\n']);
-                        command_buffer.clear();
-                        execute!(
-                            std::io::stdout(),
-                            cursor::MoveTo(0, rows - 1),
-                            terminal::Clear(terminal::ClearType::CurrentLine)
-                        )?;
-                        print!("> ");
-                        std::io::stdout().flush().unwrap();
-                    }
-                    KeyCode::Backspace => {
-                        if !command_buffer.is_empty() {
-                            command_buffer.pop();
-                            execute!(
-                                std::io::stdout(),
-                                cursor::MoveTo(0, rows - 1),
-                                terminal::Clear(terminal::ClearType::CurrentLine)
-                            )?;
-                            print!("> {}", command_buffer);
-                            std::io::stdout().flush().unwrap();
+                if key_event.kind == KeyEventKind::Press {
+                    match key_event.code {
+                        KeyCode::Char(c)
+                            if key_event.modifiers == KeyModifiers::CONTROL
+                                && (c == 'c' || c == 'x') =>
+                        {
+                            running.store(false, Ordering::SeqCst);
                         }
+                        KeyCode::Esc => {
+                            running.store(false, Ordering::SeqCst);
+                        }
+                        KeyCode::Enter => {
+                            let mut serial_port_lock = serial_port.lock().unwrap();
+                            let _ = serial_port_lock.write(command_buffer.as_bytes());
+                            let _ = serial_port_lock.write(&[b'\n']);
+                            command_buffer.clear();
+                            display_cmd_buffer(&command_buffer, rows);
+                        }
+                        KeyCode::Backspace => {
+                            if !command_buffer.is_empty() {
+                                command_buffer.pop();
+                                display_cmd_buffer(&command_buffer, rows);
+                            }
+                        }
+                        KeyCode::Char(c) => {
+                            command_buffer.push(c);
+                            display_cmd_buffer(&command_buffer, rows);
+                        }
+                        _ => {}
                     }
-                    KeyCode::Char(c) => {
-                        command_buffer.push(c);
-                        execute!(
-                            std::io::stdout(),
-                            cursor::MoveTo(0, rows - 1),
-                            terminal::Clear(terminal::ClearType::CurrentLine)
-                        )?;
-                        print!("> {}", command_buffer);
-                        std::io::stdout().flush().unwrap();
-                    }
-                    _ => {}
                 }
             }
         }
