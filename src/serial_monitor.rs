@@ -1,13 +1,20 @@
 // RaftCLI: Serial monitor module
 // Rob Dobson 2024
 
-use std::sync::{atomic::{AtomicBool, Ordering}, mpsc, Arc, Mutex};
-use std::thread;
-use std::time::Duration;
-use crossterm::{event::{self, Event, KeyCode, KeyModifiers}, terminal, execute, cursor};
-use serialport::{SerialPort, new};
+use crossterm::{
+    cursor,
+    event::{self, Event, KeyCode, KeyModifiers},
+    execute, terminal,
+};
+use serialport::{new, SerialPort};
 use std::io::Write;
 use std::process::{Command, Stdio};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    mpsc, Arc, Mutex,
+};
+use std::thread;
+use std::time::Duration;
 
 struct LogFileInfo {
     file: std::fs::File,
@@ -82,7 +89,8 @@ pub fn start_native(
             match serial_port_lock.read(&mut buffer) {
                 Ok(n) if n > 0 => {
                     let received = String::from_utf8_lossy(&buffer[..n]);
-                    tx.send(received.to_string()).expect("Failed to send data to main thread");
+                    tx.send(received.to_string())
+                        .expect("Failed to send data to main thread");
                     if let Ok(mut log_file) = log_file.lock() {
                         if let Some(log_file_info) = log_file.as_mut() {
                             write!(log_file_info.file, "{}", received).unwrap();
@@ -97,7 +105,7 @@ pub fn start_native(
                     if no_reconnect {
                         break;
                     }
-                    eprintln!("Attempting to reconnect...\r");
+                    eprintln!("Serial port attempting to reconnect...\r");
                     drop(serial_port_lock); // Unlock the mutex before attempting to reconnect
                     thread::sleep(Duration::from_secs(1));
                     match open_serial_port(&port_name, baud_rate) {
@@ -105,13 +113,13 @@ pub fn start_native(
                             *serial_port_clone.lock().unwrap() = new_port;
                         }
                         Err(e) => {
-                            eprintln!("Reconnection failed: {:?}\r", e);
+                            eprintln!("Serial port reconnection failed: {:?}\r", e);
                         }
                     }
                 }
             }
         }
-        eprintln!("Serial thread exiting...\r");
+        eprintln!("Serial monitor exiting...\r");
     });
 
     // Setup terminal for raw mode
@@ -122,11 +130,25 @@ pub fn start_native(
         cursor::MoveTo(0, 0)
     )?;
 
+    let mut command_buffer = String::new();
+    let (_cols, rows) = terminal::size()?;
+
     // Main loop to handle terminal events and print received serial data
     while running.load(Ordering::SeqCst) {
         // Handle serial data
         while let Ok(received) = rx.try_recv() {
+            execute!(
+                std::io::stdout(),
+                cursor::MoveTo(0, rows - 2),
+                terminal::Clear(terminal::ClearType::CurrentLine),
+            )?;
             print!("{}", received);
+            execute!(
+                std::io::stdout(),
+                cursor::MoveTo(0, rows - 1),
+                terminal::Clear(terminal::ClearType::CurrentLine)
+            )?;
+            print!("> {}", command_buffer);
             std::io::stdout().flush().unwrap();
         }
 
@@ -134,24 +156,48 @@ pub fn start_native(
         if event::poll(Duration::from_millis(1))? {
             if let Event::Key(key_event) = event::read()? {
                 match key_event.code {
-                    KeyCode::Char(c) if key_event.modifiers == KeyModifiers::CONTROL && (c == 'c' || c == 'x') => {
+                    KeyCode::Char(c)
+                        if key_event.modifiers == KeyModifiers::CONTROL
+                            && (c == 'c' || c == 'x') =>
+                    {
                         running.store(false, Ordering::SeqCst);
                     }
                     KeyCode::Esc => {
                         running.store(false, Ordering::SeqCst);
                     }
                     KeyCode::Enter => {
-                        let _ = serial_port.lock().unwrap().write(&[b'\n']);
+                        let mut serial_port_lock = serial_port.lock().unwrap();
+                        let _ = serial_port_lock.write(command_buffer.as_bytes());
+                        let _ = serial_port_lock.write(&[b'\n']);
+                        command_buffer.clear();
+                        execute!(
+                            std::io::stdout(),
+                            cursor::MoveTo(0, rows - 1),
+                            terminal::Clear(terminal::ClearType::CurrentLine)
+                        )?;
+                        print!("> ");
                         std::io::stdout().flush().unwrap();
                     }
                     KeyCode::Backspace => {
-                        let _ = serial_port.lock().unwrap().write(&[b'\x08']);
-                        print!("\x08 \x08");
-                        std::io::stdout().flush().unwrap();
+                        if !command_buffer.is_empty() {
+                            command_buffer.pop();
+                            execute!(
+                                std::io::stdout(),
+                                cursor::MoveTo(0, rows - 1),
+                                terminal::Clear(terminal::ClearType::CurrentLine)
+                            )?;
+                            print!("> {}", command_buffer);
+                            std::io::stdout().flush().unwrap();
+                        }
                     }
                     KeyCode::Char(c) => {
-                        let _ = serial_port.lock().unwrap().write(&[c as u8]);
-                        print!("{}", c);
+                        command_buffer.push(c);
+                        execute!(
+                            std::io::stdout(),
+                            cursor::MoveTo(0, rows - 1),
+                            terminal::Clear(terminal::ClearType::CurrentLine)
+                        )?;
+                        print!("> {}", command_buffer);
                         std::io::stdout().flush().unwrap();
                     }
                     _ => {}
@@ -167,44 +213,54 @@ pub fn start_native(
     Ok(())
 }
 
-pub fn start_non_native(port: String, baud: u32, no_reconnect: bool,
-    log: bool, log_folder: String) -> Result<(), Box<dyn std::error::Error>> {
+pub fn start_non_native(
+    port: String,
+    baud: u32,
+    no_reconnect: bool,
+    log: bool,
+    log_folder: String,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Setup args
+    let mut args = vec![
+        "monitor".to_string(),
+        "-p".to_string(),
+        port,
+        "-b".to_string(),
+        baud.to_string(),
+    ];
+    if no_reconnect {
+        args.push("-n".to_string());
+    }
+    if log {
+        args.push("-l".to_string());
+        args.push("-g".to_string());
+        args.push(log_folder);
+    }
 
-// Setup args
-let mut args = vec!["monitor".to_string(), "-p".to_string(), port, "-b".to_string(), baud.to_string()];
-if no_reconnect {
-args.push("-n".to_string());
-}
-if log {
-args.push("-l".to_string());
-args.push("-g".to_string());
-args.push(log_folder);
-}
+    // Run the serial monitor
+    let process = Command::new("raft.exe")
+        .args(args)
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .spawn();
 
-// Run the serial monitor
-let process = Command::new("raft.exe")
-.args(args)
-.stdout(Stdio::inherit())
-.stderr(Stdio::inherit())
-.spawn();
+    // Check for error
+    match process {
+        Ok(mut child) => {
+            // Wait for the process to complete
+            match child.wait() {
+                Ok(_status) => {
+                    // println!("Process exited with status: {}", _status)
+                }
+                Err(e) => {
+                    println!("Error in serial monitor: {:?}", e);
+                }
+            }
+        }
+        Err(e) => {
+            println!("Error starting serial monitor: {:?}", e);
+        }
+    }
 
-// Check for error
-match process {
-Ok(mut child) => {
-// Wait for the process to complete
-match child.wait() {
-   Ok(_status) => {
-       // println!("Process exited with status: {}", _status)
-       },
-   Err(e) => { 
-       println!("Error in serial monitor: {:?}", e);
-   },
-}
-},
-Err(e) => {
-println!("Error starting serial monitor: {:?}", e);
-},
-}
-
-Ok(())
+    Ok(())
 }

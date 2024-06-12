@@ -192,7 +192,7 @@ fn main() {
                 match result {
                     Ok(()) => std::process::exit(0),
                     Err(e) => {
-                        println!("Error: {}", e);
+                        println!("Serial monitor error: {}", e);
                         std::process::exit(1);
                     }
                 }
@@ -202,7 +202,7 @@ fn main() {
             match result {
                 Ok(()) => std::process::exit(0),
                 Err(e) => {
-                    println!("Error: {}", e);
+                    println!("Serial monitor error: {}", e);
                     std::process::exit(1);
                 }
             }
@@ -236,7 +236,7 @@ fn main() {
                         cmd.flash_tool,
                         result.unwrap());
             if result.is_err() {
-                println!("Flash failed {:?}", result);
+                println!("Flash operation failed {:?}", result);
                 std::process::exit(1);
             }
 
@@ -253,7 +253,7 @@ fn main() {
                 match result {
                     Ok(()) => std::process::exit(0),
                     Err(e) => {
-                        println!("Error: {}", e);
+                        println!("Serial monitor error: {}", e);
                         std::process::exit(1);
                     }
                 }
@@ -263,7 +263,7 @@ fn main() {
             match result {
                 Ok(()) => std::process::exit(0),
                 Err(e) => {
-                    println!("Error: {}", e);
+                    println!("Serial monitor error: {}", e);
                     std::process::exit(1);
                 }
             }
