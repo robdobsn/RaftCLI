@@ -146,7 +146,8 @@ pub fn start_native(
             execute!(
                 std::io::stdout(),
                 cursor::MoveTo(0, rows - 1),
-                terminal::Clear(terminal::ClearType::CurrentLine)
+                terminal::Clear(terminal::ClearType::CurrentLine),
+                cursor::MoveToColumn(0), // Ensure cursor moves to column 0
             )?;
             print!("> {}", command_buffer);
             std::io::stdout().flush().unwrap();
