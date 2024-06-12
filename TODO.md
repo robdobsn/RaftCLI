@@ -1,5 +1,7 @@
 # RaftCLI ToDo list
 
+[] move up to 5.2.2 ESP IDF?
+[] allow one letter cmds for monitor (m), run (r)
 [] detect IDF environment and use docker only on windows/wsl and only if docker is present
 [] use -n for nodocker and -y for yesdocker
 [] add option for BLE settings on new scaffold
