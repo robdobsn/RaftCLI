@@ -3,7 +3,7 @@ use std::process::{Command, Stdio};
 use std::fs;
 use std::path::Path;
 use std::io;
-use crate::raft_cli_utils::utils_get_sys_type;
+use crate::raft_cli_utils::{is_docker_available, is_esp_idf_env, utils_get_sys_type};
 use crate::raft_cli_utils::check_app_folder_valid;
 use crate::raft_cli_utils::check_for_raft_artifacts_deletion;
 use crate::raft_cli_utils::execute_and_capture_output;
@@ -11,7 +11,7 @@ use crate::raft_cli_utils::convert_path_for_docker;
 use crate::raft_cli_utils::CommandError;
 
 pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: bool, app_folder: String,
-            no_docker_arg: bool, idf_path_full: Option<String>) 
+            force_docker_arg: bool, no_docker_arg: bool, idf_path_full: Option<String>) 
                             -> Result<String, Box<dyn std::error::Error>> {
 
     // println!("Building the app in folder: {} clean {} clean_only {} no_docker_arg {}", app_folder, clean, clean_only, no_docker_arg);
@@ -50,18 +50,31 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: 
         no_docker = true;
     }
 
+    // Determine if docker is to be forced for build
+    let mut force_docker = std::env::var("RAFT_FORCE_DOCKER").unwrap_or("false".to_string()) == "true";
+    if force_docker_arg {
+        force_docker = true;
+    }
+
     // Handle building with or without docker
-    let build_result = if no_docker {
+    let build_result = if (is_esp_idf_env() && !force_docker) || no_docker {
         // Get idf path
         let idf_path = idf_path_full.unwrap_or("idf.py".to_string());
 
         // Build without docker
         build_without_docker(app_folder.clone(), sys_type.clone(), clean, clean_only,
                     delete_build_folder, delete_build_raft_artifacts_folder, idf_path)
-    } else {
+    } else if is_docker_available() {
         // Build with docker
         build_with_docker(app_folder.clone(), sys_type.clone(), clean, clean_only,
                     delete_build_folder, delete_build_raft_artifacts_folder)
+    } else 
+    {
+        // Either ESP IDF or docker must be available to build
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "Either ESP IDF or Docker must be available to build",
+        ))
     };
 
     // If the build failed, return the error

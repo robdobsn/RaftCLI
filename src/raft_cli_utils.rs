@@ -419,3 +419,17 @@ pub fn check_target_folder_valid(target_folder: &str, clean: bool) -> bool{
     }
     true
 }
+
+// Check if ESP IDF Environment is active
+pub fn is_esp_idf_env() -> bool {
+    // Check if the IDF_PATH environment variable is set
+    env::var("IDF_PATH").is_ok()
+}
+
+// Function to check if Docker is available
+pub fn is_docker_available() -> bool {
+    Command::new("docker")
+        .arg("--version")
+        .output()
+        .map_or(false, |output| output.status.success())
+}

@@ -1,26 +1,17 @@
 # RaftCLI ToDo list
 
-[] allow one letter cmds for monitor (m), run (r)
 [] detect IDF environment and use docker only on windows/wsl and only if docker is present
 [] use -n for nodocker and -y for yesdocker
 [] add option for BLE settings on new scaffold
-[] add .gitattributes # Auto detect text files and perform LF normalization .. * text=auto
-- handle reconnection automatically - if serial port disconnected then reconnected
-- add a command history to the terminal emulation
-- consider whether to allow entry of ssid and password in CLI written to sdkconfig.defaults file or possibly to a config.ini type file that is .gitignored
-- possibly include size of flash as a user input - issues with this are different flash types such as OCTAL in addition to size
-- fix problem invalid string ... thread 'tokio-runtime-worker' panicked at src/serial_monitor.rs:179:68: Failed to read from RX stream: Custom { kind: Other, error: "Invalid String" }
-- add monitor as option in Makefile?
-- bug noticed on Mac with invalid chars immediately after boot
-- remove makefile generation???
-- monitor seems to have incresing processor overhead over time on WSL - is this to do with logging?
-- config file for default settings - maybe use platformio.ini when in that system?
-- shift default ESP IDF to 5.2.1
-- change so logging is the default and -l disables
+[] add a command history to the terminal emulation
+[] consider whether to allow entry of ssid and password in CLI written to sdkconfig.defaults file or possibly to a config.ini type file that is .gitignored
+[] possibly include size of flash as a user input - issues with this are different flash types such as OCTAL in addition to size
+[] bug noticed on Mac with invalid chars immediately after boot
+[] config file for default settings - maybe use platformio.ini when in that system?
+[] change so logging is the default and -l disables
+[] test on mac and linux
 
-[] monitor is a problem - up arrow in terminal goes up a line
-
-- rethink the build process for ESP IDF and potentially other platforms
+[] rethink the build process for ESP IDF and potentially other platforms
 -- ESP IDF build dependencies not quite right for web ui - gets stuck saying can't build files that now don't exist due to dynamic naming of files and auto generating of build script based on folder contents
 -- can it be made to work on platformio for arduino
 -- can it be made to work on arduino IDE
@@ -31,3 +22,14 @@
 -- on platformio the configurations could maybe be managed by the platformio.ini file so and there could be an option in the raftcli to generate a platformio.ini file?
 -- maybe there should be a raftcli prebuild function which runs this script?
 
+Completed
+
+[] allow one letter cmds for monitor (m), run (r)
+[] add .gitattributes # Auto detect text files and perform LF normalization .. * text=auto
+[] handle reconnection automatically - if serial port disconnected then reconnected
+[] fix problem invalid string ... thread 'tokio-runtime-worker' panicked at src/serial_monitor.rs:179:68: Failed to read from RX stream: Custom { kind: Other, error: "Invalid String" }
+[] add monitor as option in Makefile?
+[] remove makefile generation???
+[] monitor seems to have incresing processor overhead over time on WSL - is this to do with logging?
+[] shift default ESP IDF to 5.2.1
+[] monitor is a problem - up arrow in terminal goes up a line
