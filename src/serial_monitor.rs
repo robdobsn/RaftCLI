@@ -144,16 +144,21 @@ pub fn start_native(
     let mut command_buffer = String::new();
     let (_cols, rows) = terminal::size()?;
 
+    // Initially display the command buffer
+    display_cmd_buffer(&command_buffer, rows);
+
     // Main loop to handle terminal events and print received serial data
     while running.load(Ordering::SeqCst) {
         // Handle serial data
         while let Ok(received) = rx.try_recv() {
+            // Move existing text up
             execute!(
                 std::io::stdout(),
-                cursor::MoveTo(0, rows - 2),
+                cursor::MoveTo(0, rows - 1),
                 terminal::Clear(terminal::ClearType::CurrentLine),
             )?;
             print!("{}", received);
+            // Redraw the command buffer
             display_cmd_buffer(&command_buffer, rows);
         }
 
@@ -253,3 +258,4 @@ pub fn start_non_native(
 
     Ok(())
 }
+
