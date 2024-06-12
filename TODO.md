@@ -1,9 +1,5 @@
 # RaftCLI ToDo list
 
-[] move up to 5.2.2 ESP IDF?
-[] allow one letter cmds for monitor (m), run (r)
-[] detect IDF environment and use docker only on windows/wsl and only if docker is present
-[] use -n for nodocker and -y for yesdocker
 [] add option for BLE settings on new scaffold
 [] add a command history to the terminal emulation
 [] consider whether to allow entry of ssid and password in CLI written to sdkconfig.defaults file or possibly to a config.ini type file that is .gitignored
@@ -12,6 +8,7 @@
 [] config file for default settings - maybe use platformio.ini when in that system?
 [] change so logging is the default and -l disables
 [] test on mac and linux
+[] move up to 5.2.2 ESP IDF - testing needed to ensure Raft works with it - serial output seemed different
 
 [] rethink the build process for ESP IDF and potentially other platforms
 -- ESP IDF build dependencies not quite right for web ui - gets stuck saying can't build files that now don't exist due to dynamic naming of files and auto generating of build script based on folder contents
@@ -35,3 +32,6 @@ Completed
 [] monitor seems to have incresing processor overhead over time on WSL - is this to do with logging?
 [] shift default ESP IDF to 5.2.1
 [] monitor is a problem - up arrow in terminal goes up a line
+[] allow one letter cmds for monitor (m), run (r)
+[] detect IDF environment and use docker only on windows/wsl and only if docker is present
+[] use --no_docker for nodocker and --docker for yesdocker

@@ -93,11 +93,11 @@ pub fn start_native(
                 Ok(_) => {}
                 Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {}
                 Err(e) => {
-                    eprintln!("Serial port read error: {:?}", e);
+                    eprintln!("Serial port read error: {:?}\r", e);
                     if no_reconnect {
                         break;
                     }
-                    eprintln!("Attempting to reconnect...");
+                    eprintln!("Attempting to reconnect...\r");
                     drop(serial_port_lock); // Unlock the mutex before attempting to reconnect
                     thread::sleep(Duration::from_secs(1));
                     match open_serial_port(&port_name, baud_rate) {
@@ -105,13 +105,13 @@ pub fn start_native(
                             *serial_port_clone.lock().unwrap() = new_port;
                         }
                         Err(e) => {
-                            eprintln!("Reconnection failed: {:?}", e);
+                            eprintln!("Reconnection failed: {:?}\r", e);
                         }
                     }
                 }
             }
         }
-        eprintln!("Serial thread exiting...");
+        eprintln!("Serial thread exiting...\r");
     });
 
     // Setup terminal for raw mode
@@ -142,7 +142,6 @@ pub fn start_native(
                     }
                     KeyCode::Enter => {
                         let _ = serial_port.lock().unwrap().write(&[b'\n']);
-                        print!("\n");
                         std::io::stdout().flush().unwrap();
                     }
                     KeyCode::Backspace => {
@@ -163,49 +162,49 @@ pub fn start_native(
 
     // Clean up
     terminal::disable_raw_mode()?;
-    println!("Exiting...");
+    println!("Exiting...\r");
 
     Ok(())
 }
 
 pub fn start_non_native(port: String, baud: u32, no_reconnect: bool,
-                 log: bool, log_folder: String) -> Result<(), Box<dyn std::error::Error>> {
+    log: bool, log_folder: String) -> Result<(), Box<dyn std::error::Error>> {
 
-    // Setup args
-    let mut args = vec!["monitor".to_string(), "-p".to_string(), port, "-b".to_string(), baud.to_string()];
-    if no_reconnect {
-        args.push("-n".to_string());
-    }
-    if log {
-        args.push("-l".to_string());
-        args.push("-g".to_string());
-        args.push(log_folder);
-    }
-    
-    // Run the serial monitor
-    let process = Command::new("raft.exe")
-        .args(args)
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .spawn();
+// Setup args
+let mut args = vec!["monitor".to_string(), "-p".to_string(), port, "-b".to_string(), baud.to_string()];
+if no_reconnect {
+args.push("-n".to_string());
+}
+if log {
+args.push("-l".to_string());
+args.push("-g".to_string());
+args.push(log_folder);
+}
 
-    // Check for error
-    match process {
-        Ok(mut child) => {
-            // Wait for the process to complete
-            match child.wait() {
-                Ok(_status) => {
-                    // println!("Process exited with status: {}", _status)
-                    },
-                Err(e) => { 
-                    println!("Error in serial monitor: {:?}", e);
-                },
-            }
-        },
-        Err(e) => {
-            println!("Error starting serial monitor: {:?}", e);
-        },
-    }
+// Run the serial monitor
+let process = Command::new("raft.exe")
+.args(args)
+.stdout(Stdio::inherit())
+.stderr(Stdio::inherit())
+.spawn();
 
-    Ok(())
+// Check for error
+match process {
+Ok(mut child) => {
+// Wait for the process to complete
+match child.wait() {
+   Ok(_status) => {
+       // println!("Process exited with status: {}", _status)
+       },
+   Err(e) => { 
+       println!("Error in serial monitor: {:?}", e);
+   },
+}
+},
+Err(e) => {
+println!("Error starting serial monitor: {:?}", e);
+},
+}
+
+Ok(())
 }
