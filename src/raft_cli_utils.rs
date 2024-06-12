@@ -11,9 +11,6 @@ use std::sync::{Arc, Mutex};
 use remove_dir_all::remove_dir_contents;
 use crossbeam::thread;
 
-#[cfg(not(target_os = "windows"))]
-use std::env;
-
 pub fn utils_get_sys_type(build_sys_type: &Option<String>, app_folder: String) -> Result<String, Box<dyn std::error::Error>> {
 
     // Determine the Systype to build - this is either the SysType passed in or
