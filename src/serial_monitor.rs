@@ -4,7 +4,7 @@
 use crossterm::{
     cursor, event::{self, Event, KeyCode, KeyEventKind, KeyModifiers}, execute, style::{Color, ResetColor, SetForegroundColor}, terminal
 };
-use serialport::{new, SerialPort};
+use serialport_fix_stop_bits::{new, SerialPort};
 use std::io::Write;
 use std::process::{Command, Stdio};
 use std::sync::{

@@ -717,7 +717,7 @@ dependencies = [
  "remove_dir_all",
  "serde",
  "serde_json",
- "serialport",
+ "serialport-fix-stop-bits",
 ]
 
 [[package]]
@@ -831,9 +831,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "serialport"
+name = "serialport-fix-stop-bits"
 version = "4.3.0"
-source = "git+https://github.com/robdobsn/serialport-rs.git?branch=fix-stop-bits-back-set-to-4.3.0#3fd59a33ed2810e33d6fa76511f03f6b508758c0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d65f469cf0b20e4ddac01ae7bfeb7d3be3f194195e73ceb1ced1cce15c83015"
 dependencies = [
  "bitflags 2.5.0",
  "cfg-if",
