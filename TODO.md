@@ -1,5 +1,7 @@
 # RaftCLI ToDo list
 
+[] mew monitor may drop chars ?
+[] new monitor takes two ESCs to stop
 [] add option for BLE settings on new scaffold
 [] add a command history to the terminal emulation
 [] consider whether to allow entry of ssid and password in CLI written to sdkconfig.defaults file or possibly to a config.ini type file that is .gitignored
