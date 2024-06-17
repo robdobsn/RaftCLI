@@ -703,7 +703,7 @@ dependencies = [
 
 [[package]]
 name = "raftcli"
-version = "1.0.42"
+version = "1.0.43"
 dependencies = [
  "bytes",
  "chrono",
@@ -713,6 +713,7 @@ dependencies = [
  "dialoguer",
  "handlebars",
  "include_dir",
+ "pkg-config",
  "regex",
  "remove_dir_all",
  "serde",

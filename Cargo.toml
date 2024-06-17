@@ -1,6 +1,6 @@
 [package]
 name = "raftcli"
-version = "1.0.42"
+version = "1.0.43"
 authors = ["Rob Dobson <rob@dobson.com>"]
 license = "MIT"
 keywords = ["cli", "esp32", "espressif", "raft", "framework"]
@@ -17,6 +17,9 @@ name = "raft"
 path = "src/main.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[build-dependencies]
+pkg-config = "0.3"
 
 [dependencies]
 serialport-fix-stop-bits = "4.3.0"
