@@ -1,5 +1,6 @@
 # RaftCLI ToDo list
 
+[] add option to avoid programming file system flash if it hasn't changed since last programming
 [] mew monitor may drop chars ?
 [] new monitor takes two ESCs to stop
 [] add option for BLE settings on new scaffold
