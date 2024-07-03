@@ -15,7 +15,7 @@ This command-line application is used to scaffold, build, flash and monitor raft
 
 ## Installation
 
-Installation using the crates.io package (raftcli is an application writted in the Rust programming language) is by far the easiest option but the program can also be built from source code if you need to.
+Installation using the online service crates.io (raftcli is an application written in the Rust programming language) is by far the easiest option but the program can also be built from source code if you need to.
 
 Firstly install Rust (since you are here I assume you are interested in embedded development and Rust may be in your future in any case :) follow these steps to [install rust](https://www.rust-lang.org/tools/install)
 
@@ -23,6 +23,13 @@ Then install the app with:
 
 ```
 cargo install raftcli
+```
+
+If you are using a linux OS and encountering issues then please make sure the following system dependencies are installed:
+
+```sh
+sudo apt-get update
+sudo apt-get install pkg-config libudev-dev
 ```
 
 There are some addition things you'll need to have on your system to support building and flashing raft apps:
