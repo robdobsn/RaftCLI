@@ -364,27 +364,6 @@ pub fn extract_flash_cmd_args(_output: String, device_type: String, port: &str, 
     Ok(esptool_args)
 }
 
-// TODO - make these default to value read from config file in project folder
-
-#[cfg(target_os = "macos")]
-pub fn get_default_port(_native_serial_port: bool) -> String {
-    "/dev/tty.usbserial".to_string()
-}
-
-#[cfg(target_os = "windows")]
-pub fn get_default_port(_native_serial_port: bool) -> String {
-    "COM3".to_string()
-}
-
-#[cfg(target_os = "linux")]
-pub fn get_default_port(_native_serial_port: bool) -> String {
-    if !_native_serial_port && is_wsl() {
-        "COM3".to_string()
-    } else {
-        "/dev/ttyUSB0".to_string()
-    }
-}
-
 // Check the target folder is valid
 pub fn check_target_folder_valid(target_folder: &str, clean: bool) -> bool{
     // Check the target folder exists

@@ -14,6 +14,8 @@ use app_flash::flash_raft_app;
 mod raft_cli_utils;
 use raft_cli_utils::is_wsl;
 use raft_cli_utils::check_target_folder_valid;
+mod app_ports;
+use app_ports::{PortsCmd, manage_ports, select_most_likely_port};
 
 #[derive(Clone, Parser, Debug)]
 enum Action {
@@ -25,6 +27,8 @@ enum Action {
     Monitor(MonitorCmd),
     #[clap(name = "run", about = "Build, flash and monitor a raft app", alias = "r")]
     Run(RunCmd),
+    #[clap(name = "ports", about = "Manage serial ports", alias = "p")]
+    Ports(PortsCmd),
 }
 
 // Define arguments specific to the `new` subcommand
@@ -80,6 +84,9 @@ struct MonitorCmd {
     log: bool,
     #[arg(short = 'g', long, default_value = "./logs", help = "Folder for log files")]
     log_folder: Option<String>,
+    // Option to specify vendor ID
+    #[clap(short = 'v', long, help = "Vendor ID")]
+    vid: Option<String>,
 }
 
 // Define arguments for the 'run' subcommand
@@ -125,6 +132,9 @@ struct RunCmd {
     log: bool,
     #[arg(short = 'g', long, default_value = "./logs", help = "Folder for log files")]
     log_folder: Option<String>,
+    // Option to specify vendor ID
+    #[clap(short = 'v', long, help = "Vendor ID")]
+    vid: Option<String>,
 }
 
 // Main CLI struct that includes the subcommands
@@ -179,15 +189,26 @@ fn main() {
         
         Action::Monitor(cmd) => {
 
-            // Extract port and buad rate arguments
-            let native_serial_port = cmd.native_serial_port;
-            let port = cmd.port.unwrap_or(raft_cli_utils::get_default_port(native_serial_port));
+            // Extract port and other arguments
+            let port = if let Some(port) = cmd.port {
+                port
+            } else {
+                // Use select_most_likely_port if no specific port is provided
+                let port_cmd = PortsCmd::new_with_vid(cmd.vid.clone());
+                match select_most_likely_port(&port_cmd) {
+                    Some(p) => p.port_name,
+                    None => {
+                        println!("Error: No suitable port found");
+                        std::process::exit(1);
+                    }
+                }
+            };
             let monitor_baud = cmd.monitor_baud.unwrap_or(115200);
             let log = cmd.log;
             let log_folder = cmd.log_folder.unwrap_or("./logs".to_string());
 
             // Start the serial monitor
-            if !native_serial_port && is_wsl() {
+            if !cmd.native_serial_port && is_wsl() {
                 let result = serial_monitor::start_non_native(port, monitor_baud, cmd.no_reconnect, log, log_folder);
                 match result {
                     Ok(()) => std::process::exit(0),
@@ -223,15 +244,26 @@ fn main() {
                 std::process::exit(1);
             }
 
-            // Extract the port and force native serial port arguments
-            let native_serial_port = cmd.native_serial_port;
-            let port = cmd.port.unwrap_or(raft_cli_utils::get_default_port(native_serial_port));
-
+            // Extract port and baud rate arguments
+            let port = if let Some(port) = cmd.port {
+                port
+            } else {
+                // Use select_most_likely_port if no specific port is provided
+                let port_cmd = PortsCmd::new_with_vid(cmd.vid.clone());
+                match select_most_likely_port(&port_cmd) {
+                    Some(p) => p.port_name,
+                    None => {
+                        println!("Error: No suitable port found");
+                        std::process::exit(1);
+                    }
+                }
+            };
+            
             // Flash the app
             let result = flash_raft_app(&cmd.sys_type,
                         app_folder.clone(), 
                         port.clone(),
-                        native_serial_port,
+                        cmd.native_serial_port,
                         cmd.flash_baud.unwrap_or(1000000),
                         cmd.flash_tool,
                         result.unwrap());
@@ -248,7 +280,7 @@ fn main() {
             let monitor_baud = cmd.monitor_baud.unwrap_or(115200);
 
             // Start the serial monitor
-            if !native_serial_port && is_wsl() {
+            if !cmd.native_serial_port && is_wsl() {
                 let result = serial_monitor::start_non_native(port, monitor_baud, cmd.no_reconnect, log, log_folder);
                 match result {
                     Ok(()) => std::process::exit(0),
@@ -267,6 +299,9 @@ fn main() {
                     std::process::exit(1);
                 }
             }
+        }
+        Action::Ports(cmd) => {
+            manage_ports(&cmd);
         }
     }
     std::process::exit(0);

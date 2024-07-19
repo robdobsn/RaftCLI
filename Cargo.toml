@@ -1,6 +1,6 @@
 [package]
 name = "raftcli"
-version = "1.0.44"
+version = "1.0.45"
 authors = ["Rob Dobson <rob@dobson.com>"]
 license = "MIT"
 keywords = ["cli", "esp32", "espressif", "raft", "framework"]
@@ -35,3 +35,4 @@ bytes = "1.5.0"
 remove_dir_all = "0.8.2"
 chrono = "0.4.33"
 crossbeam = "0.8.4"
+wildmatch = "2.3.4"
