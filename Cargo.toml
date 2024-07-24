@@ -21,8 +21,11 @@ path = "src/main.rs"
 [build-dependencies]
 pkg-config = "0.3"
 
+[patch.crates-io]
+# serialport = { git = "https://github.com/robdobsn/serialport-rs", branch = "fix-stop-bits-back-set-to-4.3.0" }
+serialport = { git = "https://github.com/robdobsn/serialport-rs", branch = "fix-stop-bits-back-set-to-4.3.0-and-named-serialport" }
+
 [dependencies]
-serialport-fix-stop-bits = "4.3.0"
 clap = { version = "4.4.18", features = ["derive"] }
 include_dir = "0.7.3"
 handlebars = "5.1.0"
@@ -36,3 +39,5 @@ remove_dir_all = "0.8.2"
 chrono = "0.4.33"
 crossbeam = "0.8.4"
 wildmatch = "2.3.4"
+# espflash = { version = "3.1", features = ["default", "serialport"] }
+serialport = { version = "4.3.0" }

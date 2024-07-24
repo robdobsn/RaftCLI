@@ -1,4 +1,4 @@
-use serialport_fix_stop_bits::{available_ports, SerialPortType, SerialPortInfo, UsbPortInfo};
+use serialport::{available_ports, SerialPortType, SerialPortInfo, UsbPortInfo};
 use clap::Parser;
 use wildmatch::WildMatch;
 use std::error::Error;
