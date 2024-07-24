@@ -1,28 +1,22 @@
 use crate::raft_cli_utils::extract_flash_cmd_args;
 use crate::raft_cli_utils::get_flash_tool_cmd;
+use crate::raft_cli_utils::execute_and_capture_output;
 use crate::raft_cli_utils::get_device_type;
 use crate::raft_cli_utils::get_build_folder_name;
 use crate::raft_cli_utils::utils_get_sys_type;
-use espflash::flasher::{Flasher, FlashDataBuilder, FlashSettings};
-use espflash::connection::Port;
+use espflash::flasher::{Flasher, FlashData, FlashDataBuilder, FlashSettings};
+use espflash::connection::{Connection, Port};
 use espflash::targets::Chip;
-use serialport::SerialPortBuilder;
-#[cfg(unix)]
-use serialport::TTYPort;
-#[cfg(windows)]
-use serialport::COMPort;
-use serialport::{SerialPort, available_ports};
+use serialport::{new, available_ports, SerialPort};
 
 pub fn flash_raft_app(build_sys_type: &Option<String>, 
     app_folder: String, port: String,
-    native_serial_port: bool, 
-    flash_baud: u32, 
-    flash_tool_opt: Option<String>, 
-    build_cmd_output: String)
-    -> Result<(), Box<dyn std::error::Error>> {
+                native_serial_port: bool, 
+                flash_baud: u32, 
+                flash_tool_opt: Option<String>, 
+                build_cmd_output: String)
+                    -> Result<(), Box<dyn std::error::Error>> {
 
-    println!("flash_raft_app");
-    
     // Get flash tool
     let flash_cmd: String = get_flash_tool_cmd(flash_tool_opt, native_serial_port);
 
@@ -63,58 +57,35 @@ pub fn flash_raft_app(build_sys_type: &Option<String>,
 
     // Get the USB port info
     let usb_info = available_ports()?
-        .into_iter()
-        .find(|p| p.port_name == port)
-        .and_then(|p| match p.port_type {
-            serialport::SerialPortType::UsbPort(info) => Some(info),
-            _ => None,
+    .into_iter()
+    .find(|p| p.port_name == port)
+    .and_then(|p| match p.port_type {
+        serialport::SerialPortType::UsbPort(info) => Some(info),
+        _ => None,
     });
 
-    // Open the serial port based on the OS type
-    // For linux open a TTY port and refer to it as a Port
-    // For windows open a COM port and refer to it as a Port
-    // let builder = SerialPortBuilder::new(&port, 115_200)
-    //     .timeout(std::time::Duration::from_secs(3))
-    //     .data_bits(serialport::DataBits::Eight)
-    //     .flow_control(serialport::FlowControl::None)
-    //     .parity(serialport::Parity::None)
-    //     .stop_bits(serialport::StopBits::One);
-    let serial_port_builder = serialport::new(&port, 115_200)
-        .timeout(std::time::Duration::from_secs(3));
-
-    #[cfg(unix)]
-    let serial_port: Port = TTYPort::open(&serial_port_builder)?;
-    #[cfg(windows)]
-    let serial_port: Port = COMPort::open(&serial_port_builder)?;
-
-    // let serial_port = serialport::new(&port, 115_200)
-    //     .timeout(std::time::Duration::from_secs(3))
-    //     .open()?;
-    
+    // Open the serial port
+    let serial_port = serialport::new(&port, 115_200)
+        .timeout(std::time::Duration::from_secs(3))
+        .open()?;
 
     let usb_info = usb_info.ok_or("No USB info found for the port")?;
-    
-    println!("USB info: {:?}", usb_info);
 
     // Set up the flasher
     let mut flasher = Flasher::connect(
-        serial_port,
+        Port::new(serial_port),
         usb_info,
         None,
         true,  // use_stub
         true,  // verify
         false, // skip
-        Some(Chip::Esp32s3), // specify the chip type
+        Some(Chip::Esp32), // specify the chip type
         espflash::connection::reset::ResetAfterOperation::HardReset,
-        espflash::connection::reset::ResetBeforeOperation::NoReset,
+        espflash::connection::reset::ResetBeforeOperation::DefaultReset,
     )?;
-
-    println!("Flasher device info {:?}", flasher.device_info()?);
 
     // Load the firmware image
     let firmware_data = std::fs::read(build_folder)?;
-
-    println!("Firmware data: {:?}", firmware_data);
 
     // Create FlashData with default settings
     let flash_data = FlashDataBuilder::new()
@@ -126,3 +97,7 @@ pub fn flash_raft_app(build_sys_type: &Option<String>,
 
     Ok(())
 }
+
+// Alternate implementation using espflash tool?
+// pub fn flash_raft_app(build_sys_type: &Option<String>, app_folder: String, port: String, flash_baud: u32,
+//                 flash_tool_opt: Option<String>, build_cmd_output: String)

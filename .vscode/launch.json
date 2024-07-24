@@ -7,7 +7,7 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug 'raft build -a ../TestRaftApp11'",
+            "name": "Debug 'raft run ../1-test/TestRaftComPorts'",
             "cargo": {
                 "args": [
                     "build",
@@ -20,9 +20,8 @@
                 }
             },
             "args": [
-                "build",
-                "-a",
-                "../TestRaftApp11"
+                "run",
+                "../1-test/TestRaftComPorts"
             ],
             "cwd": "${workspaceFolder}"
         },
