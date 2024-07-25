@@ -5,18 +5,25 @@ use crate::raft_cli_utils::get_device_type;
 use crate::raft_cli_utils::get_build_folder_name;
 use crate::raft_cli_utils::utils_get_sys_type;
 
-pub fn flash_raft_app(build_sys_type: &Option<String>, app_folder: String, port: String,
-                native_serial_port: bool, flash_baud: u32, 
-                flash_tool_opt: Option<String>, build_cmd_output: String)
-                    -> Result<(), Box<dyn std::error::Error>> {
-
+pub fn flash_raft_app(
+    build_sys_type: &Option<String>,
+    app_folder: String,
+    port: String,
+    native_serial_port: bool,
+    flash_baud: u32,
+    flash_tool_opt: Option<String>,
+    build_cmd_output: String,
+) -> Result<(), Box<dyn std::error::Error>> {
     // Get flash tool
     let flash_cmd: String = get_flash_tool_cmd(flash_tool_opt, native_serial_port);
 
     // Get SysType
     let sys_type = utils_get_sys_type(build_sys_type, app_folder.clone());
     if sys_type.is_err() {
-        return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "Error determining SysType")));
+        return Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "Error determining SysType",
+        )));
     }
     let sys_type: String = sys_type.unwrap();
 
@@ -28,7 +35,10 @@ pub fn flash_raft_app(build_sys_type: &Option<String>, app_folder: String, port:
 
     // Check for errors in the flash command and arguments
     if flash_cmd_args.is_err() {
-        return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "Error extracting flash command arguments")));
+        return Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "Error extracting flash command arguments",
+        )));
     }
     let flash_cmd_args = flash_cmd_args.unwrap();
 
@@ -50,7 +60,3 @@ pub fn flash_raft_app(build_sys_type: &Option<String>, app_folder: String, port:
 
     Ok(())
 }
-
-// Alternate implementation using espflash tool?
-// pub fn flash_raft_app(build_sys_type: &Option<String>, app_folder: String, port: String, flash_baud: u32,
-//                 flash_tool_opt: Option<String>, build_cmd_output: String)

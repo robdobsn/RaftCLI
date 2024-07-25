@@ -11,8 +11,10 @@ use std::sync::{Arc, Mutex};
 use remove_dir_all::remove_dir_contents;
 use crossbeam::thread;
 
-pub fn utils_get_sys_type(build_sys_type: &Option<String>, app_folder: String) -> Result<String, Box<dyn std::error::Error>> {
-
+pub fn utils_get_sys_type(
+    build_sys_type: &Option<String>, 
+    app_folder: String
+) -> Result<String, Box<dyn std::error::Error>> {
     // Determine the Systype to build - this is either the SysType passed in or
     // the first SysType found in the systypes folder (excluding Common)
     let mut sys_type: String = String::new();
@@ -80,9 +82,7 @@ pub fn check_for_raft_artifacts_deletion(app_folder: String, sys_type: String) -
                 println!("Delete the build_raft_artifacts folder as the SysType to build has changed");
                 return true;
             }
-        }
-        else
-        {
+        } else {
             println!("Delete the build_raft_artifacts folder as the cursystype.txt file is missing");
             return true;
         }
@@ -127,7 +127,6 @@ impl Display for CommandError {
 impl Error for CommandError {}
 
 pub fn execute_and_capture_output(command: String, args: &Vec<String>, cur_dir: String) -> Result<(String, bool), CommandError> {
-
     let process = Command::new(command.clone())
         .current_dir(cur_dir)
         .args(args)
@@ -144,7 +143,7 @@ pub fn execute_and_capture_output(command: String, args: &Vec<String>, cur_dir: 
             } else {
                 return Err(CommandError::Other(e));
             }
-        },
+        }
     };
 
     // Capture the output
@@ -193,7 +192,7 @@ pub fn execute_and_capture_output(command: String, args: &Vec<String>, cur_dir: 
     if thread_result.is_err() {
         return Err(CommandError::ExecutionFailed("Failed to execute threads".into()));
     }
-    
+
     // Wait for the process to finish
     let output = captured_output.lock().unwrap().clone();
     let success_flag = process.wait().unwrap().success();
@@ -207,7 +206,6 @@ fn get_systypes_folder_name() -> &'static str {
 
 // Check if running a linux binary under WSL
 pub fn is_wsl() -> bool {
-
     // If this is a windows binary then return false
     #[cfg(target_os = "windows")]
     {
@@ -232,16 +230,40 @@ pub fn is_wsl() -> bool {
     }
 }
 
-pub fn get_flash_tool_cmd(flash_tool_opt: Option<String>, native_serial_port: bool) -> String {
+pub fn find_executable(executables: &[&str]) -> Option<String> {
+    for &exe in executables {
+        if which::which(exe).is_ok() {
+            return Some(exe.to_string());
+        }
+    }
+    None
+}
 
-    // If the tool is specified then use it, otherwise determine the tool from the platform
+pub fn get_flash_tool_cmd(flash_tool_opt: Option<String>, native_serial_port: bool) -> String {
     match flash_tool_opt {
         Some(tool) => tool,
         None => {
-            if !native_serial_port && is_wsl() {
-                "esptool.py.exe".to_string()
+            let possible_executables = if cfg!(target_os = "windows") {
+                vec!["esptool.py.exe", "esptool.exe"]
+            } else if is_wsl() {
+                if native_serial_port {
+                    vec!["esptool.py", "esptool"]
+                } else {
+                    vec!["esptool.py.exe", "esptool.exe"]
+                }
             } else {
-                "esptool.py".to_string()
+                vec!["esptool.py", "esptool"]
+            };
+
+            if let Some(exe) = find_executable(&possible_executables) {
+                exe
+            } else {
+                // Fallback to default if not found
+                if cfg!(target_os = "windows") {
+                    "esptool.exe".to_string()
+                } else {
+                    "esptool.py".to_string()
+                }
             }
         }
     }
@@ -253,7 +275,6 @@ pub fn get_build_folder_name(sys_type: String, app_folder: String) -> String {
 }
 
 pub fn get_device_type(sys_type: String, app_folder: String) -> String {
-
     // Get build folder
     let build_folder = get_build_folder_name(sys_type, app_folder);
 
@@ -281,69 +302,12 @@ pub fn get_device_type(sys_type: String, app_folder: String) -> String {
     device_type.unwrap()[1].to_string()
 }
 
-pub fn extract_flash_cmd_args(_output: String, device_type: String, port: &str, flash_baud: u32) -> 
-                    Result<Vec<String>, Box<dyn std::error::Error>> {
-
-    // // The result contains the command to flash the app which will look something like:
-    // // /opt/esp/python_env/idf5.1_py3.8_env/bin/python ../opt/esp/idf/components/esptool_py/esptool/esptool.py -p (PORT) -b 460800 --before default_reset --after hard_reset --chip esp32  write_flash --flash_mode dio --flash_size 4MB --flash_freq 40m 0x1000 build/SysTypeMain/bootloader/bootloader.bin 0x8000 build/SysTypeMain/partition_table/partition-table.bin 0x1e000 build/SysTypeMain/ota_data_initial.bin 0x20000 build/SysTypeMain/SysTypeMain.bin 0x380000 build/SysTypeMain/fs.bin
-    // // OR
-    // // python -m esptool --chip esp32 -b 460800 --before default_reset --after hard_reset write_flash --flash_mode dio --flash_size 4MB --flash_freq 40m 0x1000 build/ShadesScader/bootloader/bootloader.bin 0x8000 build/ShadesScader/partition_table/partition-table.bin 0x1e000 build/ShadesScader/ota_data_initial.bin 0x20000 build/ShadesScader/ShadesScader.bin 0x380000 build/ShadesScader/fs.bin
-    // // Extract the command to flash the app using the esptool.py as the keyword to locate the start of the command
-
-    // // Create a regex pattern to match "esptool.py " or "esptool "
-    // let re = Regex::new(r"esptool\.py |esptool ").unwrap();
-
-    // // Find all matches and take the last one
-    // let last_match = re.find_iter(&output).last();
-    // let flash_command_start = match last_match {
-    //     Some(m) => m.start(), // Get the start position of the last match
-    //     None => return Err("Error: esptool.py command not found".into())
-    // };
-
-    // println!("----------- output: {}", output);
-
-    // // Extract the command starting from the located placeholder
-    // let mut flash_command = output[flash_command_start..].to_string();
-    
-    // // Truncate the command at the first newline character, if present
-    // if let Some(end) = flash_command.find('\n') {
-    //     flash_command.truncate(end);
-    // }
-
-    // println!("----------- Flash basis command: {}", flash_command);
-
-    // // Remove "esptool" or "esptool.py" from the start of the command
-    // let esptool_regex = Regex::new("esptool(\\.py)?").map_err(|e| e.to_string())?;
-    // flash_command = esptool_regex.replace(&flash_command, "").to_string();
-
-    // // Remove the "-p (PORT)" if it exists
-    // let port_regex = Regex::new("-p \\(PORT\\)").map_err(|e| e.to_string())?;
-    // flash_command = port_regex.replace(&flash_command, "").to_string();
-
-    // // Remove the "-b {{flash_baud}}" if it exists
-    // let baud_regex = Regex::new("-b \\d+").map_err(|e| e.to_string())?;
-    // flash_command = baud_regex.replace(&flash_command, "").to_string();
-
-    // println!("----------- Flash command: {}", flash_command);
-    
-    // // The required arguments for flashing the app will look something like this
-    // // -p {{port}} -b {{flash_baud}} --before default_reset --after hard_reset --chip esp32  write_flash --flash_mode dio --flash_size 4MB --flash_freq 40m 0x1000 build/SysTypeMain/bootloader/bootloader.bin 0x8000 build/SysTypeMain/partition_table/partition-table.bin 0x1e000 build/SysTypeMain/ota_data_initial.bin 0x20000 build/SysTypeMain/SysTypeMain.bin 0x380000 build/SysTypeMain/fs.bin
-
-    // // Create the string to prepend - it should be -p {{port}} -b {{flash_baud}}
-    // let flash_command_prepend = format!("-p {} -b {}", port, flash_baud);
-
-    // // Prepend the required arguments to the command
-    // flash_command = format!("{} {}", flash_command_prepend, flash_command);
-    
-    // // Split the modified command into parts for use as arguments
-    // let flash_command_parts: Vec<String> = flash_command.split_whitespace()
-    //                                                     .map(String::from)
-    //                                                     .collect();
-
-    // println!("Flash command parts: {:?}", flash_command_parts);
-    
-    // Ok(flash_command_parts)
-
+pub fn extract_flash_cmd_args(
+    _output: String,
+    device_type: String,
+    port: &str,
+    flash_baud: u32,
+) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     // Flash baud string
     let flash_baud = format!("{}", flash_baud);
 
@@ -365,7 +329,7 @@ pub fn extract_flash_cmd_args(_output: String, device_type: String, port: &str, 
 }
 
 // Check the target folder is valid
-pub fn check_target_folder_valid(target_folder: &str, clean: bool) -> bool{
+pub fn check_target_folder_valid(target_folder: &str, clean: bool) -> bool {
     // Check the target folder exists
     if !Path::new(&target_folder).exists() {
         // Create the folder if possible
