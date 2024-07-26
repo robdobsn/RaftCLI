@@ -14,6 +14,8 @@ use std::sync::{
 use std::thread;
 use std::time::Duration;
 
+use crate::app_ports::{select_most_likely_port, PortsCmd};
+
 struct LogFileInfo {
     file: std::fs::File,
     last_write: std::time::Instant,
@@ -54,11 +56,12 @@ fn display_cmd_buffer(command_buffer: &str, rows: u16) {
 }
 
 pub fn start_native(
-    port_name: String,
+    port: Option<String>,
     baud_rate: u32,
     no_reconnect: bool,
     log: bool,
     log_folder: String,
+    vid: Option<String>
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Open log file if required
     let log_file = if log {
@@ -75,19 +78,34 @@ pub fn start_native(
     // Channel for communication between the serial thread and the main thread
     let (tx, rx) = mpsc::channel();
 
+    // Extract port and baud rate arguments
+    let port = if let Some(port) = port {
+        port
+    } else {
+        // Use select_most_likely_port if no specific port is provided
+        let port_cmd = PortsCmd::new_with_vid(vid);
+        match select_most_likely_port(&port_cmd, false) {
+            Some(p) => p.port_name,
+            None => {
+                println!("Error: No suitable port found");
+                std::process::exit(1);
+            }
+        }
+    };
+    
     // Function to open the serial port
     fn open_serial_port(
-        port_name: &str,
+        port: &str,
         baud_rate: u32,
     ) -> Result<Box<dyn SerialPort>, Box<dyn std::error::Error>> {
-        let port = new(port_name, baud_rate)
+        let port = new(port, baud_rate)
             .timeout(Duration::from_millis(10))
             .open()?;
         Ok(port)
     }
 
     // Open the serial port and wrap it in an Arc<Mutex<>>
-    let serial_port = Arc::new(Mutex::new(open_serial_port(&port_name, baud_rate)?));
+    let serial_port = Arc::new(Mutex::new(open_serial_port(&port, baud_rate)?));
 
     // Clone the Arc for the serial communication thread
     let serial_port_clone = Arc::clone(&serial_port);
@@ -119,7 +137,7 @@ pub fn start_native(
                     eprintln!("Serial port attempting to reconnect...\r");
                     drop(serial_port_lock); // Unlock the mutex before attempting to reconnect
                     thread::sleep(Duration::from_secs(1));
-                    match open_serial_port(&port_name, baud_rate) {
+                    match open_serial_port(&port, baud_rate) {
                         Ok(new_port) => {
                             *serial_port_clone.lock().unwrap() = new_port;
                         }
@@ -208,20 +226,27 @@ pub fn start_native(
 }
 
 pub fn start_non_native(
-    port: String,
+    port: Option<String>,
     baud: u32,
     no_reconnect: bool,
     log: bool,
     log_folder: String,
+    vid: Option<String>
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Setup args
     let mut args = vec![
         "monitor".to_string(),
-        "-p".to_string(),
-        port,
         "-b".to_string(),
         baud.to_string(),
     ];
+    if port.is_some() {
+        args.push("-p".to_string());
+        args.push(port.unwrap());
+    }
+    if vid.is_some() {
+        args.push("-v".to_string());
+        args.push(vid.unwrap());
+    }
     if no_reconnect {
         args.push("-n".to_string());
     }

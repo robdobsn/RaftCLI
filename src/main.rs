@@ -15,7 +15,7 @@ mod raft_cli_utils;
 use raft_cli_utils::is_wsl;
 use raft_cli_utils::check_target_folder_valid;
 mod app_ports;
-use app_ports::{PortsCmd, manage_ports, select_most_likely_port};
+use app_ports::{PortsCmd, manage_ports};
 
 #[derive(Clone, Parser, Debug)]
 enum Action {
@@ -189,27 +189,13 @@ fn main() {
         
         Action::Monitor(cmd) => {
 
-            // Extract port and other arguments
-            let port = if let Some(port) = cmd.port {
-                port
-            } else {
-                // Use select_most_likely_port if no specific port is provided
-                let port_cmd = PortsCmd::new_with_vid(cmd.vid.clone());
-                match select_most_likely_port(&port_cmd) {
-                    Some(p) => p.port_name,
-                    None => {
-                        println!("Error: No suitable port found");
-                        std::process::exit(1);
-                    }
-                }
-            };
             let monitor_baud = cmd.monitor_baud.unwrap_or(115200);
             let log = cmd.log;
             let log_folder = cmd.log_folder.unwrap_or("./logs".to_string());
 
             // Start the serial monitor
             if !cmd.native_serial_port && is_wsl() {
-                let result = serial_monitor::start_non_native(port, monitor_baud, cmd.no_reconnect, log, log_folder);
+                let result = serial_monitor::start_non_native(cmd.port, monitor_baud, cmd.no_reconnect, log, log_folder, cmd.vid);
                 match result {
                     Ok(()) => std::process::exit(0),
                     Err(e) => {
@@ -219,7 +205,7 @@ fn main() {
                 }
             }
 
-            let result = serial_monitor::start_native(port, monitor_baud, cmd.no_reconnect, log, log_folder);
+            let result = serial_monitor::start_native(cmd.port, monitor_baud, cmd.no_reconnect, log, log_folder, cmd.vid);
             match result {
                 Ok(()) => std::process::exit(0),
                 Err(e) => {
@@ -243,27 +229,13 @@ fn main() {
                 // println!("Build failed {:?}", result);
                 std::process::exit(1);
             }
-
-            // Extract port and baud rate arguments
-            let port = if let Some(port) = cmd.port {
-                port
-            } else {
-                // Use select_most_likely_port if no specific port is provided
-                let port_cmd = PortsCmd::new_with_vid(cmd.vid.clone());
-                match select_most_likely_port(&port_cmd) {
-                    Some(p) => p.port_name,
-                    None => {
-                        println!("Error: No suitable port found");
-                        std::process::exit(1);
-                    }
-                }
-            };
             
             // Flash the app
             let result = flash_raft_app(&cmd.sys_type,
                         app_folder.clone(), 
-                        port.clone(),
+                        cmd.port.clone(),
                         cmd.native_serial_port,
+                        cmd.vid.clone(),
                         cmd.flash_baud.unwrap_or(1000000),
                         cmd.flash_tool,
                         result.unwrap());
@@ -281,7 +253,7 @@ fn main() {
 
             // Start the serial monitor
             if !cmd.native_serial_port && is_wsl() {
-                let result = serial_monitor::start_non_native(port, monitor_baud, cmd.no_reconnect, log, log_folder);
+                let result = serial_monitor::start_non_native(cmd.port.clone(), monitor_baud, cmd.no_reconnect, log, log_folder, cmd.vid.clone());
                 match result {
                     Ok(()) => std::process::exit(0),
                     Err(e) => {
@@ -291,7 +263,7 @@ fn main() {
                 }
             }
 
-            let result = serial_monitor::start_native(port, monitor_baud, cmd.no_reconnect, log, log_folder);
+            let result = serial_monitor::start_native(cmd.port, monitor_baud, cmd.no_reconnect, log, log_folder,cmd.vid);
             match result {
                 Ok(()) => std::process::exit(0),
                 Err(e) => {

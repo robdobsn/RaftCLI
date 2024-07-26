@@ -231,8 +231,10 @@ pub fn is_wsl() -> bool {
 }
 
 pub fn find_executable(executables: &[&str]) -> Option<String> {
+    // println!("executables: {:?}", executables);
     for &exe in executables {
         if which::which(exe).is_ok() {
+            // println!("exe ok: {:?}", exe);
             return Some(exe.to_string());
         }
     }

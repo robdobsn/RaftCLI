@@ -3,6 +3,8 @@ use clap::Parser;
 use wildmatch::WildMatch;
 use std::error::Error;
 
+use crate::raft_cli_utils::is_wsl;
+
 #[derive(Clone, Parser, Debug)]
 pub struct PortsCmd {
     #[clap(short = 'p', long, help = "Port pattern")]
@@ -181,11 +183,60 @@ fn list_ports(cmd: &PortsCmd) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-pub fn select_most_likely_port(cmd: &PortsCmd) -> Option<SerialPortInfo> {
-    if let Ok(ports) = filtered_ports(cmd) {
+pub fn select_most_likely_port(cmd: &PortsCmd, native_serial_port: bool) -> Option<SerialPortInfo> {
+    // println!("select_most_likely_port cmd: {:?} native_serial_port: {:?}", cmd, native_serial_port);
+    if is_wsl() && !native_serial_port {
+        // println!("WSL detected, looking for windows serial ports");
+        
+        // Use raft.exe ports <-v vid> to get the list of ports
+        let mut args = vec!["ports"];
+        if let Some(vid) = &cmd.vid {
+            args.push("-v");
+            args.push(vid);
+        }
+        let output = std::process::Command::new("raft.exe")
+            .args(args)
+            .output()
+            .expect("Failed to execute raft.exe ports");
+        let output = String::from_utf8_lossy(&output.stdout);
+        // println!("select_most_likely_port output: {:?}", output);
+        
+        // Check for "No ports" message (no ports found)
+        let no_ports_msg_pattern = "No ports";
+        if output.contains(no_ports_msg_pattern) {
+            // println!("No suitable serial ports found");
+            return None;
+        }
+        let lines: Vec<&str> = output.lines().collect();
+        let mut ports: Vec<SerialPortInfo> = Vec::new();
+        for line in lines {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() > 1 {
+                let port_name = parts[0].to_string();
+                let port_type = SerialPortType::UsbPort(UsbPortInfo {
+                    vid: 0x0403,
+                    pid: 0x0000,
+                    manufacturer: Some("FTDI".to_string()),
+                    serial_number: None,
+                    product: None,
+                });
+                ports.push(SerialPortInfo {
+                    port_name,
+                    port_type,
+                });
+            }
+        }
         if !ports.is_empty() {
+            // println!("select_most_likely_port found ports {:?}", ports);
             return Some(ports[0].clone());
         }
     }
+    if let Ok(ports) = filtered_ports(cmd) {
+        if !ports.is_empty() {
+            // println!("select_most_likely_port found ports {:?}", ports);
+            return Some(ports[0].clone());
+        }
+    }
+    // println!("No ports found");
     None
 }

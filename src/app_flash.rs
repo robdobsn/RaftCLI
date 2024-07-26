@@ -1,3 +1,5 @@
+use crate::app_ports::select_most_likely_port;
+use crate::app_ports::PortsCmd;
 use crate::raft_cli_utils::extract_flash_cmd_args;
 use crate::raft_cli_utils::get_flash_tool_cmd;
 use crate::raft_cli_utils::execute_and_capture_output;
@@ -8,8 +10,9 @@ use crate::raft_cli_utils::utils_get_sys_type;
 pub fn flash_raft_app(
     build_sys_type: &Option<String>,
     app_folder: String,
-    port: String,
+    port: Option<String>,
     native_serial_port: bool,
+    vid: Option<String>,
     flash_baud: u32,
     flash_tool_opt: Option<String>,
     build_cmd_output: String,
@@ -30,6 +33,21 @@ pub fn flash_raft_app(
     // Get device type string
     let device_type = get_device_type(sys_type.clone(), app_folder.clone());
 
+    // Extract port and baud rate arguments
+    let port = if let Some(port) = port {
+        port
+    } else {
+        // Use select_most_likely_port if no specific port is provided
+        let port_cmd = PortsCmd::new_with_vid(vid);
+        match select_most_likely_port(&port_cmd, native_serial_port) {
+            Some(p) => p.port_name,
+            None => {
+                println!("Error: No suitable port found");
+                std::process::exit(1);
+            }
+        }
+    };
+    
     // Extract the arguments for the flash command
     let flash_cmd_args = extract_flash_cmd_args(build_cmd_output, device_type, &port, flash_baud);
 
