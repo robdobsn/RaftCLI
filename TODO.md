@@ -1,5 +1,9 @@
 # RaftCLI ToDo list
 
+[] if no docker or idf then silently stops
+[] try to find a way to start esp if no docker
+[] raft new - change false/true to Y / N and allow Y/y/N/n as answers to questions
+[] raft new - doesn't seem to honour no response on web server question
 [] add option to avoid programming file system flash if it hasn't changed since last programming
 [] mew monitor may drop chars ?
 [] new monitor takes two ESCs to stop
