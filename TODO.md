@@ -1,5 +1,6 @@
 # RaftCLI ToDo list
 
+[] need a way to build with docker and then switch to idf - currently build with docker then run idf export.sh then raft run results in a one line display and then exit the program without doing anything
 [] if no docker or idf then silently stops
 [] try to find a way to start esp if no docker
 [] raft new - change false/true to Y / N and allow Y/y/N/n as answers to questions
