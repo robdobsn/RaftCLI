@@ -99,7 +99,7 @@ pub fn start_native(
         baud_rate: u32,
     ) -> Result<Box<dyn SerialPort>, Box<dyn std::error::Error>> {
         let port = new(port, baud_rate)
-            .timeout(Duration::from_millis(10))
+            .timeout(Duration::from_millis(100))
             .open()?;
         Ok(port)
     }
@@ -113,7 +113,7 @@ pub fn start_native(
     // Spawn a thread to handle serial port communication
     thread::spawn(move || {
         while r.load(Ordering::SeqCst) {
-            let mut buffer: Vec<u8> = vec![0; 1024];
+            let mut buffer: Vec<u8> = vec![0; 10000];
             let mut serial_port_lock = serial_port_clone.lock().unwrap();
             match serial_port_lock.read(&mut buffer) {
                 Ok(n) if n > 0 => {
