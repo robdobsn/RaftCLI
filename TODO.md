@@ -1,5 +1,11 @@
 # RaftCLI ToDo list
 
+[] config ini or similar in proj dir
+--- define serial port or at least filter
+--- define other flags
+--- define something to run initially like . ~/esp/esp-v/export.sh etc
+--- define default systype
+[] move template MODULE_PREFIX to constexpr in header
 [] need a way to build with docker and then switch to idf - currently build with docker then run idf export.sh then raft run results in a one line display and then exit the program without doing anything
 [] if no docker or idf then silently stops
 [] try to find a way to start esp if no docker
