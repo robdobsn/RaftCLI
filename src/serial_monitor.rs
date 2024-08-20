@@ -2,7 +2,7 @@
 // Rob Dobson 2024
 
 use crossterm::{
-    cursor, event::{self, Event, KeyCode, KeyEventKind, KeyModifiers}, execute, style::{Color, ResetColor, SetForegroundColor}, terminal::{self, ScrollDown, ScrollUp}
+    cursor, event::{self, Event, KeyCode, KeyEventKind, KeyModifiers}, execute, style::{Color, ResetColor, SetForegroundColor}, terminal,
 };
 use serialport_fix_stop_bits::{new, SerialPort};
 use std::io::Write;
@@ -237,7 +237,7 @@ pub fn start_native(
     let serial_port_clone = Arc::clone(&serial_port);
 
     // Terminal output
-    let mut terminal_out = Arc::new(Mutex::new(TerminalOut::new()));
+    let terminal_out = Arc::new(Mutex::new(TerminalOut::new()));
     terminal_out.lock().unwrap().init().unwrap();
 
     // Clone the Arc for the terminal output
