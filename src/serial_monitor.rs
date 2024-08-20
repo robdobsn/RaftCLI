@@ -2,7 +2,7 @@
 // Rob Dobson 2024
 
 use crossterm::{
-    cursor, event::{self, Event, KeyCode, KeyEventKind, KeyModifiers}, execute, style::{Color, ResetColor, SetForegroundColor}, terminal
+    cursor, event::{self, Event, KeyCode, KeyEventKind, KeyModifiers}, execute, style::{Color, ResetColor, SetForegroundColor}, terminal::{self, ScrollDown, ScrollUp}
 };
 use serialport_fix_stop_bits::{new, SerialPort};
 use std::io::Write;
@@ -22,6 +22,145 @@ struct LogFileInfo {
 }
 type SharedLogFile = Arc<Mutex<Option<LogFileInfo>>>;
 
+struct TerminalOut {
+    command_buffer: String,
+    cursor_col: u16,
+    cursor_row: u16,
+    cols: u16,
+    rows: u16,
+    is_error: bool,
+}
+
+impl TerminalOut {
+    fn new() -> TerminalOut {
+        TerminalOut {
+            command_buffer: String::new(),
+            cursor_col: 0,
+            cursor_row: 0,
+            cols: 0,
+            rows: 0,
+            is_error: false,
+        }
+    }
+
+    fn init(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let (_cols, rows) = terminal::size()?;
+        self.cols = _cols;
+        self.rows = rows;
+        // Setup terminal for raw mode
+        terminal::enable_raw_mode()?;
+        execute!(
+            std::io::stdout(),
+            terminal::Clear(terminal::ClearType::All),
+            cursor::MoveTo(0, 0)
+        )?;
+        Ok(())
+    }
+
+    fn print(&mut self, data: &str, force_show: bool) {
+
+        if !force_show && self.is_error {
+            return;
+        }
+
+        // Clear error flag
+        self.is_error = false;
+
+        // Clear the last line of the terminal (command buffer)
+        execute!(
+            std::io::stdout(),
+            cursor::MoveTo(0, self.rows - 1),
+            terminal::Clear(terminal::ClearType::CurrentLine)
+        ).unwrap();
+
+        // Move the cursor to the position of the last output
+        execute!(
+            std::io::stdout(),
+            cursor::MoveTo(self.cursor_col, self.cursor_row)
+        ).unwrap();
+
+        // Display the received data
+        self.display_serial_data(&data);
+
+        // Save the cursor position
+        let (cursor_col, cursor_row) = cursor::position().unwrap();
+        self.cursor_col = cursor_col;
+        self.cursor_row = cursor_row;
+
+        // If the cursor is not at the first column then add a newline
+        if cursor_col != 0 {
+            print!("\n");
+            self.cursor_row -= 1;
+        }
+
+        // Move the cursor to the bottom line and clear it
+        execute!(
+            std::io::stdout(),
+            cursor::MoveTo(0, self.rows - 1),
+            terminal::Clear(terminal::ClearType::CurrentLine),
+            SetForegroundColor(Color::Yellow),
+        ).unwrap();
+
+        // Display the command buffer
+        print!("> {}", self.command_buffer);
+
+        // Reset the text color
+        execute!(std::io::stdout(), ResetColor).unwrap();
+
+        // Flush the output
+        std::io::stdout().flush().unwrap();
+    }
+
+    fn show_error(&mut self, error_msg: &str) {
+
+        // Move the cursor to the bottom line and clear it
+        execute!(
+            std::io::stdout(),
+            cursor::MoveTo(0, self.rows - 1),
+            terminal::Clear(terminal::ClearType::CurrentLine),
+            SetForegroundColor(Color::Red),
+        ).unwrap();
+
+        // Display the error message
+        print!("! {}", error_msg);
+
+        // Reset the text color
+        execute!(std::io::stdout(), ResetColor).unwrap();
+
+        // Flush the output
+        std::io::stdout().flush().unwrap();
+
+        // Set the error flag
+        self.is_error = true;
+    }
+
+    fn display_serial_data(&mut self, data: &str) {
+        print!("{}", data);
+        std::io::stdout().flush().unwrap();
+    }
+
+    fn get_command_buffer(&self) -> String {
+        self.command_buffer.clone()
+    }
+
+    fn clear_command_buffer(&mut self) {
+        self.command_buffer.clear();
+        self.print("", false);
+    }
+
+    fn add_to_command_buffer(&mut self, c: char) {
+        self.command_buffer.push(c);
+        self.print("", false);
+    }
+
+    fn backspace_command_buffer(&mut self) {
+        if self.command_buffer.len() > 0 {
+            self.command_buffer.pop();
+            self.print("", false);
+        }
+    }
+}
+
 // Logging to file
 fn open_log_file(log_to_file: bool, log_folder: String) -> Result<SharedLogFile, std::io::Error> {
     if log_to_file && log_folder.len() > 0 && log_folder != "none" {
@@ -40,19 +179,6 @@ fn open_log_file(log_to_file: bool, log_folder: String) -> Result<SharedLogFile,
         }))));
     }
     Ok(Arc::new(Mutex::new(None)))
-}
-
-fn display_cmd_buffer(command_buffer: &str, rows: u16) {
-    execute!(
-        std::io::stdout(),
-        cursor::MoveTo(0, rows - 1),
-        terminal::Clear(terminal::ClearType::CurrentLine),
-        SetForegroundColor(Color::Yellow),
-    )
-    .unwrap();
-    print!("> {}", command_buffer);
-    execute!(std::io::stdout(), ResetColor).unwrap();
-    std::io::stdout().flush().unwrap();
 }
 
 pub fn start_native(
@@ -110,6 +236,13 @@ pub fn start_native(
     // Clone the Arc for the serial communication thread
     let serial_port_clone = Arc::clone(&serial_port);
 
+    // Terminal output
+    let mut terminal_out = Arc::new(Mutex::new(TerminalOut::new()));
+    terminal_out.lock().unwrap().init().unwrap();
+
+    // Clone the Arc for the terminal output
+    let terminal_out_clone = Arc::clone(&terminal_out);
+    
     // Spawn a thread to handle serial port communication
     thread::spawn(move || {
         while r.load(Ordering::SeqCst) {
@@ -129,55 +262,36 @@ pub fn start_native(
                 }
                 Ok(_) => {}
                 Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {}
-                Err(e) => {
-                    eprintln!("Serial port read error: {:?}\r", e);
+                Err(_e) => {
+                    terminal_out_clone.lock().unwrap().show_error("Serial port read error");
                     if no_reconnect {
                         break;
                     }
-                    eprintln!("Serial port attempting to reconnect...\r");
+                    terminal_out_clone.lock().unwrap().show_error("Serial port attempting to reconnect...");
                     drop(serial_port_lock); // Unlock the mutex before attempting to reconnect
-                    thread::sleep(Duration::from_secs(1));
+                    thread::sleep(Duration::from_millis(50));
                     match open_serial_port(&port, baud_rate) {
                         Ok(new_port) => {
                             *serial_port_clone.lock().unwrap() = new_port;
                         }
-                        Err(e) => {
-                            eprintln!("Serial port reconnection failed: {:?}\r", e);
+                        Err(_e) => {
+                            // eprintln!("Serial port reconnection failed: {:?}\r", e);
                         }
                     }
                 }
             }
         }
-        eprintln!("Serial monitor exiting...\r");
+        // eprintln!("Serial monitor exiting...\r");
     });
 
-    // Setup terminal for raw mode
-    terminal::enable_raw_mode()?;
-    execute!(
-        std::io::stdout(),
-        terminal::Clear(terminal::ClearType::All),
-        cursor::MoveTo(0, 0)
-    )?;
-
-    let mut command_buffer = String::new();
-    let (_cols, rows) = terminal::size()?;
-
-    // Initially display the command buffer
-    display_cmd_buffer(&command_buffer, rows);
+    // Print nothing to display the command prompt
+    terminal_out.lock().unwrap().print("", false);
 
     // Main loop to handle terminal events and print received serial data
     while running.load(Ordering::SeqCst) {
         // Handle serial data
         while let Ok(received) = rx.try_recv() {
-            // Move existing text up
-            execute!(
-                std::io::stdout(),
-                cursor::MoveTo(0, rows - 1),
-                terminal::Clear(terminal::ClearType::CurrentLine),
-            )?;
-            print!("{}", received);
-            // Redraw the command buffer
-            display_cmd_buffer(&command_buffer, rows);
+            terminal_out.lock().unwrap().print(&received, true);
         }
 
         // Handle keyboard input
@@ -196,20 +310,15 @@ pub fn start_native(
                         }
                         KeyCode::Enter => {
                             let mut serial_port_lock = serial_port.lock().unwrap();
-                            let _ = serial_port_lock.write(command_buffer.as_bytes());
+                            let _ = serial_port_lock.write(terminal_out.lock().unwrap().get_command_buffer().as_bytes());
                             let _ = serial_port_lock.write(&[b'\n']);
-                            command_buffer.clear();
-                            display_cmd_buffer(&command_buffer, rows);
+                            terminal_out.lock().unwrap().clear_command_buffer();
                         }
                         KeyCode::Backspace => {
-                            if !command_buffer.is_empty() {
-                                command_buffer.pop();
-                                display_cmd_buffer(&command_buffer, rows);
-                            }
+                            terminal_out.lock().unwrap().backspace_command_buffer();
                         }
                         KeyCode::Char(c) => {
-                            command_buffer.push(c);
-                            display_cmd_buffer(&command_buffer, rows);
+                            terminal_out.lock().unwrap().add_to_command_buffer(c);
                         }
                         _ => {}
                     }
@@ -283,4 +392,3 @@ pub fn start_non_native(
 
     Ok(())
 }
-
