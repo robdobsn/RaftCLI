@@ -28,6 +28,7 @@ struct TerminalOut {
     cursor_row: u16,
     cols: u16,
     rows: u16,
+    is_error: bool,
 }
 
 impl TerminalOut {
@@ -38,6 +39,7 @@ impl TerminalOut {
             cursor_row: 0,
             cols: 0,
             rows: 0,
+            is_error: false,
         }
     }
 
@@ -55,7 +57,14 @@ impl TerminalOut {
         Ok(())
     }
 
-    fn print(&mut self, data: &str) {
+    fn print(&mut self, data: &str, force_show: bool) {
+
+        if !force_show && self.is_error {
+            return;
+        }
+
+        // Clear error flag
+        self.is_error = false;
 
         // Clear the last line of the terminal (command buffer)
         execute!(
@@ -102,6 +111,29 @@ impl TerminalOut {
         std::io::stdout().flush().unwrap();
     }
 
+    fn show_error(&mut self, error_msg: &str) {
+
+        // Move the cursor to the bottom line and clear it
+        execute!(
+            std::io::stdout(),
+            cursor::MoveTo(0, self.rows - 1),
+            terminal::Clear(terminal::ClearType::CurrentLine),
+            SetForegroundColor(Color::Red),
+        ).unwrap();
+
+        // Display the error message
+        print!("! {}", error_msg);
+
+        // Reset the text color
+        execute!(std::io::stdout(), ResetColor).unwrap();
+
+        // Flush the output
+        std::io::stdout().flush().unwrap();
+
+        // Set the error flag
+        self.is_error = true;
+    }
+
     fn display_serial_data(&mut self, data: &str) {
         print!("{}", data);
         // for byte in data.bytes() {
@@ -122,18 +154,18 @@ impl TerminalOut {
 
     fn clear_command_buffer(&mut self) {
         self.command_buffer.clear();
-        self.print("");
+        self.print("", false);
     }
 
     fn add_to_command_buffer(&mut self, c: char) {
         self.command_buffer.push(c);
-        self.print("");
+        self.print("", false);
     }
 
     fn backspace_command_buffer(&mut self) {
         if self.command_buffer.len() > 0 {
             self.command_buffer.pop();
-            self.print("");
+            self.print("", false);
         }
     }
 }
@@ -290,6 +322,13 @@ pub fn start_native(
     // Clone the Arc for the serial communication thread
     let serial_port_clone = Arc::clone(&serial_port);
 
+    // Terminal output
+    let mut terminal_out = Arc::new(Mutex::new(TerminalOut::new()));
+    terminal_out.lock().unwrap().init().unwrap();
+
+    // Clone the Arc for the terminal output
+    let terminal_out_clone = Arc::clone(&terminal_out);
+    
     // Spawn a thread to handle serial port communication
     thread::spawn(move || {
         while r.load(Ordering::SeqCst) {
@@ -309,31 +348,27 @@ pub fn start_native(
                 }
                 Ok(_) => {}
                 Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {}
-                Err(e) => {
-                    eprintln!("Serial port read error: {:?}\r", e);
+                Err(_e) => {
+                    terminal_out_clone.lock().unwrap().show_error("Serial port read error");
                     if no_reconnect {
                         break;
                     }
-                    eprintln!("Serial port attempting to reconnect...\r");
+                    terminal_out_clone.lock().unwrap().show_error("Serial port attempting to reconnect...");
                     drop(serial_port_lock); // Unlock the mutex before attempting to reconnect
-                    thread::sleep(Duration::from_secs(1));
+                    thread::sleep(Duration::from_millis(50));
                     match open_serial_port(&port, baud_rate) {
                         Ok(new_port) => {
                             *serial_port_clone.lock().unwrap() = new_port;
                         }
-                        Err(e) => {
-                            eprintln!("Serial port reconnection failed: {:?}\r", e);
+                        Err(_e) => {
+                            // eprintln!("Serial port reconnection failed: {:?}\r", e);
                         }
                     }
                 }
             }
         }
-        eprintln!("Serial monitor exiting...\r");
+        // eprintln!("Serial monitor exiting...\r");
     });
-
-    // Terminal output
-    let mut terminal_out = TerminalOut::new();
-    terminal_out.init()?;
 
     // // Setup terminal for raw mode
     // terminal::enable_raw_mode()?;
@@ -349,11 +384,14 @@ pub fn start_native(
     // // Initially display the command buffer
     // display_cmd_buffer(&command_buffer, rows);
 
+    // Print nothing to display the command prompt
+    terminal_out.lock().unwrap().print("", false);
+
     // Main loop to handle terminal events and print received serial data
     while running.load(Ordering::SeqCst) {
         // Handle serial data
         while let Ok(received) = rx.try_recv() {
-            terminal_out.print(&received);
+            terminal_out.lock().unwrap().print(&received, true);
             // remove_cmd_buffer(&command_buffer, rows);
             // display_serial_data(&received, rows);
             // display_cmd_buffer(&command_buffer, rows)
@@ -375,15 +413,15 @@ pub fn start_native(
                         }
                         KeyCode::Enter => {
                             let mut serial_port_lock = serial_port.lock().unwrap();
-                            let _ = serial_port_lock.write(terminal_out.get_command_buffer().as_bytes());
+                            let _ = serial_port_lock.write(terminal_out.lock().unwrap().get_command_buffer().as_bytes());
                             let _ = serial_port_lock.write(&[b'\n']);
-                            terminal_out.clear_command_buffer();
+                            terminal_out.lock().unwrap().clear_command_buffer();
                         }
                         KeyCode::Backspace => {
-                            terminal_out.backspace_command_buffer();
+                            terminal_out.lock().unwrap().backspace_command_buffer();
                         }
                         KeyCode::Char(c) => {
-                            terminal_out.add_to_command_buffer(c);
+                            terminal_out.lock().unwrap().add_to_command_buffer(c);
                         }
                         _ => {}
                     }
