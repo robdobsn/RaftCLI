@@ -1,5 +1,6 @@
 # RaftCLI ToDo list
 
+[] entering text into serial terminal seems to kill it sometimes
 [] config ini or similar in proj dir
 --- define serial port or at least filter
 --- define other flags
