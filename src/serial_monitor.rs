@@ -203,8 +203,9 @@ pub fn start_native(
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
 
-    // Channel for communication between the serial thread and the main thread
-    let (tx, rx) = mpsc::channel();
+    // Channels for communication between the serial thread and the main thread
+    let (serial_read_tx, serial_read_rx) = mpsc::channel();
+    let (serial_write_tx, serial_write_rx) = mpsc::channel::<String>();
 
     // Extract port and baud rate arguments
     let port = if let Some(port) = port {
@@ -245,7 +246,7 @@ pub fn start_native(
     // Clone the Arc for the terminal output
     let terminal_out_clone = Arc::clone(&terminal_out);
     
-    // Spawn a thread to handle serial port communication
+    // Spawn a thread to handle reading from the serial port
     thread::spawn(move || {
         while r.load(Ordering::SeqCst) {
             let mut buffer: Vec<u8> = vec![0; 10000];
@@ -253,7 +254,7 @@ pub fn start_native(
             match serial_port_lock.read(&mut buffer) {
                 Ok(n) if n > 0 => {
                     let received = String::from_utf8_lossy(&buffer[..n]);
-                    tx.send(received.to_string())
+                    serial_read_tx.send(received.to_string())
                         .expect("Failed to send data to main thread");
                     if let Ok(mut log_file) = log_file.lock() {
                         if let Some(log_file_info) = log_file.as_mut() {
@@ -286,13 +287,23 @@ pub fn start_native(
         // eprintln!("Serial monitor exiting...\r");
     });
 
+    // Spawn a thread to handle writing to the serial port
+    let serial_port_clone = Arc::clone(&serial_port);
+    thread::spawn(move || {
+        while let Ok(command) = serial_write_rx.recv() {
+            let mut serial_port_lock = serial_port_clone.lock().unwrap();
+            let _ = serial_port_lock.write(command.as_bytes());
+            let _ = serial_port_lock.write(&[b'\n']);
+        }
+    });
+
     // Print nothing to display the command prompt
     terminal_out.lock().unwrap().print("", false);
 
     // Main loop to handle terminal events and print received serial data
     while running.load(Ordering::SeqCst) {
         // Handle serial data
-        while let Ok(received) = rx.try_recv() {
+        while let Ok(received) = serial_read_rx.try_recv() {
             terminal_out.lock().unwrap().print(&received, true);
         }
 
@@ -312,11 +323,7 @@ pub fn start_native(
                         }
                         KeyCode::Enter => {
                             let command = terminal_out.lock().unwrap().get_command_buffer();
-                            {
-                                let mut serial_port_lock = serial_port.lock().unwrap();
-                                let _ = serial_port_lock.write(command.as_bytes());
-                                let _ = serial_port_lock.write(&[b'\n']);
-                            }
+                            serial_write_tx.send(command).expect("Failed to send command to write thread");
                             terminal_out.lock().unwrap().clear_command_buffer();
                         }
                         KeyCode::Backspace => {
