@@ -7,8 +7,6 @@
 #include "{{user_sys_mod_class}}.h"
 #include "RaftUtils.h"
 
-static const char *MODULE_PREFIX = "{{user_sys_mod_class}}";
-
 {{user_sys_mod_class}}::{{user_sys_mod_class}}(const char *pModuleName, RaftJsonIF& sysConfig)
     : RaftSysMod(pModuleName, sysConfig)
 {

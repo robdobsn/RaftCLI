@@ -30,6 +30,9 @@ protected:
     virtual void loop() override final;
 
 private:
+    // Debug
+    static constexpr const char *MODULE_PREFIX = "{{user_sys_mod_class}}";
+
     // Example of how to control loop rate
     uint32_t _lastLoopMs = 0;
 };
