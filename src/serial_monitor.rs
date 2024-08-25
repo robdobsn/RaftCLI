@@ -249,7 +249,7 @@ pub fn start_native(
     // Spawn a thread to handle reading from the serial port
     thread::spawn(move || {
         while r.load(Ordering::SeqCst) {
-            let mut buffer: Vec<u8> = vec![0; 10000];
+            let mut buffer: Vec<u8> = vec![0; 100];
             let mut serial_port_lock = serial_port_clone.lock().unwrap();
             match serial_port_lock.read(&mut buffer) {
                 Ok(n) if n > 0 => {
@@ -303,12 +303,12 @@ pub fn start_native(
     // Main loop to handle terminal events and print received serial data
     while running.load(Ordering::SeqCst) {
         // Handle serial data
-        while let Ok(received) = serial_read_rx.try_recv() {
+        if let Ok(received) = serial_read_rx.try_recv() {
             terminal_out.lock().unwrap().print(&received, true);
         }
 
         // Handle keyboard input
-        if event::poll(Duration::from_millis(1))? {
+        if event::poll(Duration::from_millis(0))? {
             if let Event::Key(key_event) = event::read()? {
                 if key_event.kind == KeyEventKind::Press {
                     match key_event.code {
