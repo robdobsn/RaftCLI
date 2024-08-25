@@ -82,16 +82,18 @@ impl TerminalOut {
         // Display the received data
         self.display_serial_data(&data);
 
-        // Save the cursor position
-        let (cursor_col, cursor_row) = cursor::position().unwrap();
-        self.cursor_col = cursor_col;
-        self.cursor_row = cursor_row;
+        // Get the cursor position
+        let (cursor_col, mut cursor_row) = cursor::position().unwrap();
 
         // If the cursor is not at the first column then add a newline
-        if cursor_col != 0 {
+        if cursor_col != 0 && cursor_row != 0 {
             print!("\n");
-            self.cursor_row -= 1;
+            cursor_row -= 1;
         }
+
+        // Save the cursor position
+        self.cursor_col = cursor_col;
+        self.cursor_row = cursor_row;
 
         // Move the cursor to the bottom line and clear it
         execute!(
@@ -309,9 +311,12 @@ pub fn start_native(
                             running.store(false, Ordering::SeqCst);
                         }
                         KeyCode::Enter => {
-                            let mut serial_port_lock = serial_port.lock().unwrap();
-                            let _ = serial_port_lock.write(terminal_out.lock().unwrap().get_command_buffer().as_bytes());
-                            let _ = serial_port_lock.write(&[b'\n']);
+                            let command = terminal_out.lock().unwrap().get_command_buffer();
+                            {
+                                let mut serial_port_lock = serial_port.lock().unwrap();
+                                let _ = serial_port_lock.write(command.as_bytes());
+                                let _ = serial_port_lock.write(&[b'\n']);
+                            }
                             terminal_out.lock().unwrap().clear_command_buffer();
                         }
                         KeyCode::Backspace => {
