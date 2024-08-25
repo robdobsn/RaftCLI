@@ -86,7 +86,7 @@ impl TerminalOut {
         let (cursor_col, mut cursor_row) = cursor::position().unwrap();
 
         // If the cursor is not at the first column then add a newline
-        if cursor_col != 0 && cursor_row != 0 {
+        if cursor_col != 0 && cursor_row == self.rows - 1 {
             print!("\n");
             cursor_row -= 1;
         }
