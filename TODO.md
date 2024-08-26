@@ -18,7 +18,6 @@
 - test on mac and linux
 - move up to 5.3 ESP IDF - testing needed to ensure Raft works with it - serial output seemed different
 - raft new - change false/true to Y / N and allow Y/y/N/n as answers to questions
-- raft new - doesn't seem to honour no response on web server question
 - rethink the build process for ESP IDF and potentially other platforms
   - ESP IDF build dependencies not quite right for web ui - gets stuck saying can't build files that now don't exist due to dynamic naming of files and auto generating of build script based on folder contents
   - can it be made to work on platformio for arduino
@@ -29,6 +28,9 @@
   - another post-build script might be needed too though - although maybe not? this would perhaps do what RaftGenFSImage.cmake does - though in fact this probably isn't necessary as long as arduinoIDE can be configured to write the FS image?
   - on platformio the configurations could maybe be managed by the platformio.ini file so and there could be an option in the raftcli to generate a platformio.ini file?
   - maybe there should be a raftcli prebuild function which runs this script?
+
+## Fixed in 1.2.0
+- raft new - doesn't seem to honour no response on web server question
 
 ## Fixed in 1.1.6
 - entering text into serial terminal seems to kill it sometimes
