@@ -138,7 +138,8 @@ fn get_schema() -> serde_json::Value {
             "description": "The git tag for the Raft SysMods library",
             "pattern": "^[a-zA-Z0-9_]*$",
             "message": "",
-            "error": "Invalid git tag"
+            "error": "Invalid git tag",
+            "condition": "use_raft_sysmods"
         },
         {
             "key": "use_raft_webserver",
@@ -158,7 +159,8 @@ fn get_schema() -> serde_json::Value {
             "description": "The git tag for the Raft Web Server library",
             "pattern": "^[a-zA-Z0-9_]*$",
             "message": "",
-            "error": "Invalid git tag"
+            "error": "Invalid git tag",
+            "condition": "use_raft_webserver"
         },
         {
             "key": "inc_raft_sysmods",

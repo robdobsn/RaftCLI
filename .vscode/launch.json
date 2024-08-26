@@ -7,6 +7,27 @@
         {
             "type": "lldb",
             "request": "launch",
+            "name": "Debug 'raft new ../TestRaftCLI/Test1'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=raft",
+                    "--package=raftcli"
+                ],
+                "filter": {
+                    "name": "raft",
+                    "kind": "bin"
+                }
+            },
+            "args": [
+                "new",
+                "../TestRaftCLI/Test1"
+            ],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
             "name": "Debug 'raft run ../TestRaftCLI/Test1'",
             "cargo": {
                 "args": [
