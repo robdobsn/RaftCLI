@@ -183,6 +183,11 @@ fn open_log_file(log_to_file: bool, log_folder: String) -> Result<SharedLogFile,
     Ok(Arc::new(Mutex::new(None)))
 }
 
+struct CommandAndTime {
+    user_input: String,
+    _time: std::time::Instant,
+}
+
 pub fn start_native(
     port: Option<String>,
     baud_rate: u32,
@@ -205,7 +210,7 @@ pub fn start_native(
 
     // Channels for communication between the serial thread and the main thread
     let (serial_read_tx, serial_read_rx) = mpsc::channel();
-    let (serial_write_tx, serial_write_rx) = mpsc::channel::<String>();
+    let (serial_write_tx, serial_write_rx) = mpsc::channel::<CommandAndTime>();
 
     // Extract port and baud rate arguments
     let port = if let Some(port) = port {
@@ -245,13 +250,16 @@ pub fn start_native(
 
     // Clone the Arc for the terminal output
     let terminal_out_clone = Arc::clone(&terminal_out);
-    
+
     // Spawn a thread to handle reading from the serial port
     thread::spawn(move || {
         while r.load(Ordering::SeqCst) {
             let mut buffer: Vec<u8> = vec![0; 100];
-            let mut serial_port_lock = serial_port_clone.lock().unwrap();
-            match serial_port_lock.read(&mut buffer) {
+            let result = {
+                let mut serial_port_lock = serial_port_clone.lock().unwrap();
+                serial_port_lock.read(&mut buffer)
+            };
+            match result {
                 Ok(n) if n > 0 => {
                     let received = String::from_utf8_lossy(&buffer[..n]);
                     serial_read_tx.send(received.to_string())
@@ -271,7 +279,6 @@ pub fn start_native(
                         break;
                     }
                     terminal_out_clone.lock().unwrap().show_error("Serial port attempting to reconnect...");
-                    drop(serial_port_lock); // Unlock the mutex before attempting to reconnect
                     thread::sleep(Duration::from_millis(50));
                     match open_serial_port(&port, baud_rate) {
                         Ok(new_port) => {
@@ -283,6 +290,9 @@ pub fn start_native(
                     }
                 }
             }
+
+            // Sleep the thread to allow terminal input
+            thread::sleep(Duration::from_millis(1));
         }
         // eprintln!("Serial monitor exiting...\r");
     });
@@ -291,9 +301,12 @@ pub fn start_native(
     let serial_port_clone = Arc::clone(&serial_port);
     thread::spawn(move || {
         while let Ok(command) = serial_write_rx.recv() {
+            // println!("Time to receive command: {:?}", command.time.elapsed());
             let mut serial_port_lock = serial_port_clone.lock().unwrap();
-            let _ = serial_port_lock.write(command.as_bytes());
+            // println!("Time to lock port: {:?}", command.time.elapsed());
+            let _ = serial_port_lock.write(command.user_input.as_bytes());
             let _ = serial_port_lock.write(&[b'\n']);
+            // println!("Time to write command: {:?}", command.time.elapsed());
         }
     });
 
@@ -322,8 +335,15 @@ pub fn start_native(
                             running.store(false, Ordering::SeqCst);
                         }
                         KeyCode::Enter => {
-                            let command = terminal_out.lock().unwrap().get_command_buffer();
+                            // print!("⏎");
+                            let key_detect_time = std::time::Instant::now();
+                            let command: CommandAndTime = CommandAndTime {
+                                user_input: terminal_out.lock().unwrap().get_command_buffer(),
+                                _time: key_detect_time
+                            };
+                            // println!("Time to get command buffer: {:?}", key_detect_time.elapsed());
                             serial_write_tx.send(command).expect("Failed to send command to write thread");
+                            // println!("Time to send command: {:?}", key_detect_time.elapsed());
                             terminal_out.lock().unwrap().clear_command_buffer();
                         }
                         KeyCode::Backspace => {
