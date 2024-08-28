@@ -29,6 +29,9 @@
   - on platformio the configurations could maybe be managed by the platformio.ini file so and there could be an option in the raftcli to generate a platformio.ini file?
   - maybe there should be a raftcli prebuild function which runs this script?
 
+## Fixed in 1.2.2
+- changed default to ESP IDF 5.3
+
 ## Fixed in 1.2.0
 - raft new - doesn't seem to honour no response on web server question
 

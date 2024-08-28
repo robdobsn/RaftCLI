@@ -71,7 +71,7 @@ fn get_schema() -> serde_json::Value {
         {
             "key": "esp_idf_version",
             "prompt": "ESP-IDF Version",
-            "default": "5.2.1",
+            "default": "5.3",
             "datatype": "string",
             "description": "The version of the ESP-IDF to use",
             "pattern": r"^\d+\.\d+(\.\d+)?(-[\da-zA-Z-]+(\.[\da-zA-Z-]+)*)?$",
