@@ -44,13 +44,13 @@ The other thing you'll need in this scenario is a way to flash the ESP32 family 
 python3 -m pip install esptool
 ```
 
-> Note: change python3 to python on Windows.
+> Note: you may need to use python instead of python3 on Windows.
 
 ### Build using ESP IDF
 
 Alternatively you can [install the Espressif ESP IDF](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/get-started/index.html). Make sure all of the requirements are installed correctly as I find the Espressif installation docs to be a bit unclear. Also, if installing an ESP IDF from the [releases page on github](https://github.com/espressif/esp-idf/releases), ensure that you install the tools by changing to the ESP IDF folder and running ./install.sh or similar commands on different OSs - see [install-scripts](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-guides/tools/idf-tools.html#install-scripts).
 
-You will also need to make sure you run the raft command line interface program in a shell with the IDF environment installed. You can do this on linux/mac using a command like `. ~/esp/esp-idf-v5.2.2\export.sh` or similar based on where the esp idf got installed and what version it is. Another option, and one that works on Windows, is use the [Espressif VS Code extension](https://github.com/espressif/vscode-esp-idf-extension) which handles the shell environment for you. Otherwise, on Windows and depending on how you installed the ESP IDF, you may need to use a shortcut that runs the ESP IDF shell. 
+You will also need to make sure you run the raft command line interface program in a shell with the IDF environment installed. You can do this on linux/mac using a command like `. ~/esp/esp-idf-v5.3/export.sh` or similar based on where the esp idf got installed and what version it is. Another option, and one that works on Windows, is use the [Espressif VS Code extension](https://github.com/espressif/vscode-esp-idf-extension) which handles the shell environment for you. Otherwise, on Windows and depending on how you installed the ESP IDF, you may need to use a shortcut that runs the ESP IDF shell. 
 
 In this case use the -d option, i.e. `raft run -d` or `raft build -d` to disable the use of Docker.
 
@@ -100,9 +100,9 @@ To build an existing raft app use:
 raft build
 ```
 
-This will build the raft app in the current folder using Docker. If your raft app has multiple SysTypes then you can define which SysType to build using the -s option.
+This will build the raft app in the current folder using Docker (unless you are in a prompt with the ESP IDF already sourced in which case ESP IDF will be used natively). If your raft app has multiple SysTypes then you can define which SysType to build using the -s option.
 
-If you don't want to use Docker for the build then you can use the -d option and, in this case, you will need to ensure that a correctly installed ESP IDF (Espressif's development environment) is present on the system. You can override the location of this ESP IDF using the -i option.
+If you don't want to use Docker for the build then you can use the no-docker option (see below) and, in this case, you will need to ensure that a correctly installed ESP IDF (Espressif's development environment) is present on the system. You can override the location of this ESP IDF using the -i option.
 
 To perform a clean build use the -c option.
 
@@ -117,7 +117,9 @@ Arguments:
 Options:
   -s, --sys-type <SYS_TYPE>  System type to build
   -c, --clean                Clean the target folder
-  -d, --no-docker            Don't use docker for build
+  -n, --clean-only           Clean only
+      --docker               Use docker for build
+      --no-docker            Do not use docker for build
   -i, --idf-path <IDF_PATH>  Full path to idf.py (when not using docker)
   -h, --help                 Print help
 ```
@@ -132,7 +134,7 @@ raft run
 
 This will first build the firmware (and all of the build options are availble as above), then it will flash the firmare to the Espressif processor and then start a serial monitor.
 
-To specify the serial port to be used there is the -p option. You can also specify baud rate for flashing using -f option. This program generally uses the espressif esptool to do the actual work of flashing. If you need to specify the full path to this tool then use the -t option.
+If the serial port is not specified (with the -p option) then the most likely suitable serial port will be tried. You can also specify baud rate for flashing using -f option. This program generally uses the espressif esptool to do the actual work of flashing. If you need to specify the full path to this tool then use the -t option.
 
 Once the flashing process is complete the monitoring function will be started to view the output from the serial port. The options for this are described below and can be used both run and monitor commands.
 
@@ -144,12 +146,13 @@ Build, flash and monitor a raft app
 Usage: raft run [OPTIONS] [APP_FOLDER]
 
 Arguments:
-  [APP_FOLDER]
+  [APP_FOLDER]  
 
 Options:
   -s, --sys-type <SYS_TYPE>          System type to build
   -c, --clean                        Clean the target folder
-  -d, --no-docker                    Don't use docker for build
+      --docker                       Use docker for build
+      --no-docker                    Do not use docker for build
   -i, --idf-path <IDF_PATH>          Full path to idf.py (when not using docker)
   -p, --port <PORT>                  Serial port
   -b, --monitor-baud <MONITOR_BAUD>  Monitor baud rate
@@ -159,6 +162,7 @@ Options:
   -t, --flash-tool <FLASH_TOOL>      Flash tool (e.g. esptool)
   -l, --log                          Log serial data to file
   -g, --log-folder <LOG_FOLDER>      Folder for log files [default: ./logs]
+  -v, --vid <VID>                    Vendor ID
   -h, --help                         Print help
 ```
 
@@ -168,7 +172,7 @@ Options:
 raft monitor
 ```
 
-This starts the serial monitor, displaying serial output received from the device and sending keyboard commands to the device. To specify the serial port use the -p option and to specify the baud rate for monitoring use -b.
+This starts the serial monitor, displaying serial output received from the device and sending keyboard commands to the device. If a serial port isn't specified (with the -p option) then the most likely suitable port will be used. To specify the baud rate for monitoring use -b.
 
 Logging of received serial data can be enabled using the -l option. This is very useful when debugging as it automatically names log files with their start date and time and provides a record of test runs when developing firmware. The folder ./logs is generally used for log files but this can be changed using the -g option. 
 
@@ -188,10 +192,35 @@ Options:
   -n, --native-serial-port           Native serial port when in WSL
   -l, --log                          Log serial data to file
   -g, --log-folder <LOG_FOLDER>      Folder for log files [default: ./logs]
+  -v, --vid <VID>                    Vendor ID
   -h, --help                         Print help
   ```
 
 To exit the serial monitor press ESC
+
+## Listing serial ports
+
+To list available serial ports use:
+
+```
+raft ports
+```
+
+Manage serial ports
+
+Usage: raft ports [OPTIONS]
+
+Options:
+  -p, --port <PORT>                      Port pattern
+  -v, --vid <VID>                        Vendor ID
+  -d, --pid <PID>                        Product ID
+      --manufacturer <MANUFACTURER>      Manufacturer
+      --serial <SERIAL>                  Serial number
+      --product <PRODUCT>                Product name
+  -i, --index <INDEX>                    Index
+  -D, --debug                            Debug mode
+      --preferred-vids <PREFERRED_VIDS>  Preferred VIDs (comma separated list)
+  -h, --help                             Print help
 
 ### Build from source
 
