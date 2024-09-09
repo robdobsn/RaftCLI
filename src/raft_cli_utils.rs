@@ -45,7 +45,7 @@ pub fn utils_get_sys_type_list(
                     .collect();
 
                 if !envs.is_empty() {
-                    sys_types.extend(envs); // Add all the environments to the list
+                    sys_types.extend(envs.clone()); // Add all the environments to the list
                 }
             }
         }
@@ -68,7 +68,10 @@ pub fn utils_get_sys_type_list(
                 sys_types.push(sys_type_sections[0].clone());
             }
 
-        } else {
+        }
+        
+        // Check if the list of SysTypes is still empty
+        if sys_types.is_empty() {
             // Get the list of SysTypes found in the systypes folder (excluding Common)
             let sys_types_dir = fs::read_dir(
                 format!("{}/{}", app_folder, get_systypes_folder_name())
