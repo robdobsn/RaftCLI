@@ -1,9 +1,11 @@
+// buid.rs - RaftCLI: Build (with or without Docker) the Raft app
+// Rob Dobson 2024
 
 use std::process::{Command, Stdio};
 use std::fs;
 use std::path::Path;
 use std::io;
-use crate::raft_cli_utils::{is_docker_available, is_esp_idf_env, utils_get_sys_type};
+use crate::raft_cli_utils::{is_docker_available, is_esp_idf_env, utils_get_sys_type_list};
 use crate::raft_cli_utils::check_app_folder_valid;
 use crate::raft_cli_utils::check_for_raft_artifacts_deletion;
 use crate::raft_cli_utils::execute_and_capture_output;
@@ -21,12 +23,17 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: 
         return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "Invalid app folder")));
     }
 
+    // TODO - extend this to handle multiple SysTypes
+    
     // Determine the Systype to build
-    let sys_type = utils_get_sys_type(build_sys_type, app_folder.clone());
-    if sys_type.is_err() {
+    let sys_type_list = utils_get_sys_type_list(build_sys_type, app_folder.clone());
+    if sys_type_list.is_err() {
         return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "Error determining SysType")));
     }
-    let sys_type = sys_type.unwrap();
+    if sys_type_list.as_ref().unwrap().is_empty() {
+        return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "No SysType found")));
+    }
+    let sys_type = sys_type_list.unwrap()[0].clone();
 
     // Flags indicating the build folder and "build_raft_artifacts" folder should be deleted
     let mut delete_build_folder = false;

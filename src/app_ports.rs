@@ -1,3 +1,6 @@
+// app_ports.rs - RaftCLI: Serial port management
+// Rob Dobson 2024
+
 use serialport_fix_stop_bits::{available_ports, SerialPortType, SerialPortInfo, UsbPortInfo};
 use clap::Parser;
 use wildmatch::WildMatch;

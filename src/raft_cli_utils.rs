@@ -1,3 +1,6 @@
+// raft_cli_utils.rs - RaftCLI: Utilities
+// Rob Dobson 2024
+
 use std::env;
 use std::path::Path;
 use std::path::PathBuf;
@@ -10,39 +13,92 @@ use std::io::{self, BufRead, BufReader};
 use std::sync::{Arc, Mutex};
 use remove_dir_all::remove_dir_contents;
 use crossbeam::thread;
+use ini::Ini;
 
-pub fn utils_get_sys_type(
+/// @brief Get a list of SysTypes
+/// @param build_sys_type The SysType if specified on the command line
+/// @param app_folder The app folder
+/// @return List of SysTypes
+/// @note the returned value is a list containing (a) the single SysType passed in (from command line) OR
+///       (b) if platform.ini is present and there is a default_envs entry in the raft section then that list OR
+///       (c) if platform.ini is present and there are env:: entries then the first one of those OR
+///       (d) if none of the above then the first SysType found in the systypes folder (excluding Common)
+pub fn utils_get_sys_type_list(
     build_sys_type: &Option<String>, 
     app_folder: String
-) -> Result<String, Box<dyn std::error::Error>> {
-    // Determine the Systype to build - this is either the SysType passed in or
-    // the first SysType found in the systypes folder (excluding Common)
-    let mut sys_type: String = String::new();
+) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+
+    // Get the list of SysTypes
+    let mut sys_types: Vec<String> = Vec::new();
+
     if let Some(build_sys_type) = build_sys_type {
-        sys_type = build_sys_type.to_string();
+        sys_types.push(build_sys_type.to_string());
     } else {
-        let sys_types = fs::read_dir(
-            format!("{}/{}", app_folder, get_systypes_folder_name())
-        );
-        if sys_types.is_err() {
-            println!("Error reading the systypes folder: {}", sys_types.err().unwrap());
-            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "Error reading the systypes folder")));
+        // Read a platform.ini file if it exists
+        let platform_ini = read_platform_ini(app_folder.clone());
+
+        // If platform.ini exists, process the default_envs field
+        if let Ok(ref platform_ini) = platform_ini {
+            if let Some(default_envs) = platform_ini.get_from(Some("raft"), "default_envs") {
+                let envs: Vec<String> = default_envs.split(',')
+                    .map(|s| s.trim().to_string()) // Trim and convert to String
+                    .collect();
+
+                if !envs.is_empty() {
+                    sys_types.extend(envs); // Add all the environments to the list
+                }
+            }
         }
-        for sys_type_dir_entry in sys_types.unwrap() {
-            let sys_type_dir = sys_type_dir_entry;
-            if sys_type_dir.is_err() {
-                println!("Error reading the systypes folder: {}", sys_type_dir.err().unwrap());
+
+        // Check if the list of SysTypes is empty
+        if sys_types.is_empty() {
+
+            let sys_type_sections: Vec<String> = platform_ini.unwrap().sections()
+            .filter_map(|s| {
+                if s?.starts_with("env::") {
+                    Some(s?.trim_start_matches("env::").to_string())
+                } else {
+                    None
+                }
+            })
+            .collect();
+    
+            // If there is a valid list of SysTypes in the platform.ini file then use the first one in that list
+            if !sys_type_sections.is_empty() {
+                sys_types.push(sys_type_sections[0].clone());
+            }
+
+        } else {
+            // Get the list of SysTypes found in the systypes folder (excluding Common)
+            let sys_types_dir = fs::read_dir(
+                format!("{}/{}", app_folder, get_systypes_folder_name())
+            );
+            if sys_types_dir.is_err() {
+                println!("Error reading the systypes folder: {}", sys_types_dir.err().unwrap());
                 return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "Error reading the systypes folder")));
             }
-            let sys_type_name = sys_type_dir.unwrap().file_name().into_string().unwrap();
-            if sys_type_name != "Common" {
-                sys_type = sys_type_name;
-                break;
+
+            let mut sys_type_dir_list: Vec<String> = Vec::new();
+            for sys_type_dir_entry in sys_types_dir.unwrap() {
+                let sys_type_dir = sys_type_dir_entry;
+                if sys_type_dir.is_err() {
+                    println!("Error reading the systypes folder: {}", sys_type_dir.err().unwrap());
+                    return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "Error reading the systypes folder")));
+                }
+                let sys_type_name = sys_type_dir.unwrap().file_name().into_string().unwrap();
+                if sys_type_name != "Common" {
+                    sys_type_dir_list.push(sys_type_name);
+                }
+            }
+
+            // If the list isn't empty then use the first element in it
+            if !sys_type_dir_list.is_empty() {
+                sys_types.push(sys_type_dir_list[0].clone());
             }
         }
     }
 
-    Ok(sys_type)
+    Ok(sys_types)
 }
 
 // Check the app folder is valid
@@ -375,4 +431,15 @@ pub fn is_docker_available() -> bool {
         .arg("--version")
         .output()
         .map_or(false, |output| output.status.success())
+}
+
+
+pub fn read_platform_ini(project_dir: String) -> Result<Ini, Box<dyn std::error::Error>> {
+    let platform_ini_path = format!("{}/platform.ini", project_dir);
+    if Path::new(&platform_ini_path).exists() {
+        let conf = Ini::load_from_file(platform_ini_path)?;
+        Ok(conf)
+    } else {
+        Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "platform.ini not found")))
+    }
 }

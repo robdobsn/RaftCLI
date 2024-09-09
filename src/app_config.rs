@@ -1,4 +1,4 @@
-// RaftCLI: App configuration module
+// app_config.rs - RaftCLI: App configuration module
 // Rob Dobson 2024
 
 use serde::{Deserialize, Serialize};

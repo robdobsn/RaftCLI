@@ -1,4 +1,4 @@
-// RaftCLI: Main module
+// RaftCLI: Main module (main.rs)
 // Rob Dobson 2024
 
 use clap::Parser;

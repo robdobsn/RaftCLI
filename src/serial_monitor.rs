@@ -1,4 +1,4 @@
-// RaftCLI: Serial monitor module
+// serial_monitor.rs - RaftCLI: Serial monitor module
 // Rob Dobson 2024
 
 use crossterm::{

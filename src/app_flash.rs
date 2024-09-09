@@ -1,3 +1,6 @@
+// app_flash.rs - RaftCLI: Flash the application to the device
+// Rob Dobson 2024
+
 use crate::app_ports::select_most_likely_port;
 use crate::app_ports::PortsCmd;
 use crate::raft_cli_utils::extract_flash_cmd_args;
@@ -5,7 +8,7 @@ use crate::raft_cli_utils::get_flash_tool_cmd;
 use crate::raft_cli_utils::execute_and_capture_output;
 use crate::raft_cli_utils::get_device_type;
 use crate::raft_cli_utils::get_build_folder_name;
-use crate::raft_cli_utils::utils_get_sys_type;
+use crate::raft_cli_utils::utils_get_sys_type_list;
 
 pub fn flash_raft_app(
     build_sys_type: &Option<String>,
@@ -21,14 +24,14 @@ pub fn flash_raft_app(
     let flash_cmd: String = get_flash_tool_cmd(flash_tool_opt, native_serial_port);
 
     // Get SysType
-    let sys_type = utils_get_sys_type(build_sys_type, app_folder.clone());
-    if sys_type.is_err() {
-        return Err(Box::new(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "Error determining SysType",
-        )));
+    let sys_type_list = utils_get_sys_type_list(build_sys_type, app_folder.clone());
+    if sys_type_list.is_err() {
+        return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "Error determining SysType")));
     }
-    let sys_type: String = sys_type.unwrap();
+    if sys_type_list.as_ref().unwrap().is_empty() {
+        return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "No SysType found")));
+    }
+    let sys_type = sys_type_list.unwrap()[0].clone();
 
     // Get device type string
     let device_type = get_device_type(sys_type.clone(), app_folder.clone());

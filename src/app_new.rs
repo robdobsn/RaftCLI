@@ -1,4 +1,4 @@
-// RaftCLI: New raft app generator
+// app_new.rs - RaftCLI: New raft app generator
 // Rob Dobson 2024
 
 use std::fs;
