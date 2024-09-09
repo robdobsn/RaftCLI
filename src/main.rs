@@ -3,6 +3,7 @@
 
 use clap::Parser;
 mod app_new;
+mod systype_config;
 use app_new::generate_new_app;
 mod app_config;
 use app_config::get_user_input;

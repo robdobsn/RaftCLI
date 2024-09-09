@@ -5,12 +5,13 @@ use std::process::{Command, Stdio};
 use std::fs;
 use std::path::Path;
 use std::io;
-use crate::raft_cli_utils::{is_docker_available, is_esp_idf_env, utils_get_sys_type_list};
+use crate::raft_cli_utils::{is_docker_available, is_esp_idf_env, utils_get_build_args_vec, utils_get_sys_type_list};
 use crate::raft_cli_utils::check_app_folder_valid;
 use crate::raft_cli_utils::check_for_raft_artifacts_deletion;
 use crate::raft_cli_utils::execute_and_capture_output;
 use crate::raft_cli_utils::convert_path_for_docker;
 use crate::raft_cli_utils::CommandError;
+use crate::systype_config::{systype_config_extract_systype_info, SysTypeConfig};
 
 pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: bool, app_folder: String,
             force_docker_arg: bool, no_docker_arg: bool, idf_path_full: Option<String>) 
@@ -51,6 +52,9 @@ fn build_raft_app_for_sys_type(sys_type: String, clean: bool, clean_only: bool, 
             force_docker_arg: bool, no_docker_arg: bool, idf_path_full: Option<String>) 
                             -> Result<String, Box<dyn std::error::Error>> {
 
+    // Get the configuration details for the systype
+    let systype_config = systype_config_extract_systype_info(app_folder.clone(), sys_type.clone());
+
     // Flags indicating the build folder and "build_raft_artifacts" folder should be deleted
     let mut delete_build_folder = false;
     let mut delete_build_raft_artifacts_folder = false;
@@ -85,11 +89,11 @@ fn build_raft_app_for_sys_type(sys_type: String, clean: bool, clean_only: bool, 
         let idf_path = idf_path_full.unwrap_or("idf.py".to_string());
 
         // Build without docker
-        build_without_docker(app_folder.clone(), sys_type.clone(), clean, clean_only,
+        build_without_docker(app_folder.clone(), sys_type.clone(), systype_config, clean, clean_only,
                     delete_build_folder, delete_build_raft_artifacts_folder, idf_path)
     } else if is_docker_available() {
         // Build with docker
-        build_with_docker(app_folder.clone(), sys_type.clone(), clean, clean_only,
+        build_with_docker(app_folder.clone(), sys_type.clone(), systype_config, clean, clean_only,
                     delete_build_folder, delete_build_raft_artifacts_folder)
     } else 
     {
@@ -109,7 +113,7 @@ fn build_raft_app_for_sys_type(sys_type: String, clean: bool, clean_only: bool, 
 }
 
 // Build with docker and return output as a string
-fn build_with_docker(project_dir: String, systype_name: String, clean: bool, clean_only: bool,
+fn build_with_docker(project_dir: String, systype_name: String, systype_config: SysTypeConfig, clean: bool, clean_only: bool,
             delete_build_folder: bool, delete_raft_artifacts_folder: bool) -> Result<String, std::io::Error> {
 
     // Build with docker
@@ -148,14 +152,12 @@ fn build_with_docker(project_dir: String, systype_name: String, clean: bool, cle
         command_sequence += "rm -rf ./build_raft_artifacts; ";
     }
 
-    command_sequence += "idf.py -B ";
-    command_sequence += &build_dir;
-    if clean {
-        command_sequence += " fullclean";
-    }
-    if !clean_only {
-        command_sequence += " build";
-    }
+    // Get the build command sequence as a string vector
+    let build_args = utils_get_build_args_vec(build_dir.clone(), systype_name.clone(), systype_config, clean, clean_only);
+
+    // Append the build command to the command sequence
+    command_sequence += "idf.py";
+    command_sequence += build_args.join(" ").as_str();
 
     let docker_run_args = vec![
         "run", "--rm",
@@ -198,7 +200,7 @@ fn build_with_docker(project_dir: String, systype_name: String, clean: bool, cle
 }
 
 // Build without docker
-fn build_without_docker(project_dir: String, systype_name: String, clean: bool, clean_only: bool,
+fn build_without_docker(project_dir: String, systype_name: String, systype_config: SysTypeConfig, clean: bool, clean_only: bool,
     delete_build_folder: bool, delete_raft_artifacts_folder: bool,
     idf_path: String) -> Result<String, std::io::Error> {
     
@@ -226,16 +228,10 @@ fn build_without_docker(project_dir: String, systype_name: String, clean: bool, 
     }
 
     // IDF args in a vector of Strings
-    let mut idf_run_args = vec!["-B".to_string(), build_dir];
-    if clean {
-        idf_run_args.push("fullclean".to_string());
-    }
-    if !clean_only {
-        idf_run_args.push("build".to_string());
-    }
+    let idf_build_args = utils_get_build_args_vec(build_dir.clone(), systype_name.clone(), systype_config, clean, clean_only);
     
     // Execute the command and handle the output
-    match execute_and_capture_output(idf_path.clone(), &idf_run_args, project_dir.clone()) {
+    match execute_and_capture_output(idf_path.clone(), &idf_build_args, project_dir.clone()) {
         Ok((output, success_flag)) => {
             if success_flag {
                 Ok(output) // Return the output directly

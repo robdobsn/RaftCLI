@@ -15,6 +15,8 @@ use remove_dir_all::remove_dir_contents;
 use crossbeam::thread;
 use ini::Ini;
 
+use crate::systype_config::SysTypeConfig;
+
 /// @brief Get a list of SysTypes
 /// @param build_sys_type The SysType if specified on the command line
 /// @param app_folder The app folder
@@ -104,7 +106,9 @@ pub fn utils_get_sys_type_list(
     Ok(sys_types)
 }
 
-// Check the app folder is valid
+/// @brief Check the app folder is valid
+/// @param app_folder The app folder
+/// @return true if the app folder is valid
 pub fn check_app_folder_valid(app_folder: String) -> bool {
     // The app folder is valid if it exists and contains a CMakeLists.txt file
     // and a folder called systypes 
@@ -335,6 +339,8 @@ pub fn get_build_folder_name(sys_type: String, app_folder: String) -> String {
     build_folder_name
 }
 
+// TODO - remove this when the flash_args.json file is used
+
 pub fn get_device_type(sys_type: String, app_folder: String) -> String {
     // Get build folder
     let build_folder = get_build_folder_name(sys_type, app_folder);
@@ -445,4 +451,26 @@ pub fn read_platform_ini(project_dir: String) -> Result<Ini, Box<dyn std::error:
     } else {
         Err(Box::new(std::io::Error::new(std::io::ErrorKind::NotFound, "platform.ini not found")))
     }
+}
+
+pub fn utils_get_build_args_vec(build_dir: String, _systype_name: String, systype_config: SysTypeConfig, clean: bool, clean_only: bool) -> Vec<String> {
+    
+    // Build folder argument (for idf.py)
+    let mut build_args = vec!["-B".to_string(), build_dir];
+
+    // Check if systype_config contains a valid target_chip
+    if !systype_config.target_chip.is_empty() {
+        build_args.push(format!("-DIDF_TARGET={}", systype_config.target_chip));
+    }
+    if clean {
+        build_args.push("fullclean".to_string());
+    }
+    if !clean_only {
+        build_args.push("build".to_string());
+    }
+
+    // Debug
+    // println!("build_args: {:?}", build_args);
+
+    build_args
 }

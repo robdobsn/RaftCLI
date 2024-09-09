@@ -33,6 +33,8 @@ pub fn flash_raft_app(
     }
     let sys_type = sys_type_list.unwrap()[0].clone();
 
+    // TODO - use the contents of the flasher_args.json file instead of the following code
+    
     // Get device type string
     let device_type = get_device_type(sys_type.clone(), app_folder.clone());
 
