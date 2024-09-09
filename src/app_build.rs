@@ -5,7 +5,7 @@ use std::process::{Command, Stdio};
 use std::fs;
 use std::path::Path;
 use std::io;
-use crate::raft_cli_utils::{is_docker_available, is_esp_idf_env, utils_get_build_args_vec, utils_get_sys_type_list};
+use crate::raft_cli_utils::{is_docker_available, is_esp_idf_env, utils_setup_systype_build_and_get_args, utils_get_sys_type_list};
 use crate::raft_cli_utils::check_app_folder_valid;
 use crate::raft_cli_utils::check_for_raft_artifacts_deletion;
 use crate::raft_cli_utils::execute_and_capture_output;
@@ -153,7 +153,7 @@ fn build_with_docker(project_dir: String, systype_name: String, systype_config: 
     }
 
     // Get the build command sequence as a string vector
-    let build_args = utils_get_build_args_vec(build_dir.clone(), systype_name.clone(), systype_config, clean, clean_only);
+    let build_args = utils_setup_systype_build_and_get_args(project_dir.clone(), build_dir.clone(), systype_name.clone(), systype_config, clean, clean_only);
 
     // Append the build command to the command sequence
     command_sequence += "idf.py";
@@ -228,7 +228,7 @@ fn build_without_docker(project_dir: String, systype_name: String, systype_confi
     }
 
     // IDF args in a vector of Strings
-    let idf_build_args = utils_get_build_args_vec(build_dir.clone(), systype_name.clone(), systype_config, clean, clean_only);
+    let idf_build_args = utils_setup_systype_build_and_get_args(project_dir.clone(), build_dir.clone(), systype_name.clone(), systype_config, clean, clean_only);
     
     // Execute the command and handle the output
     match execute_and_capture_output(idf_path.clone(), &idf_build_args, project_dir.clone()) {

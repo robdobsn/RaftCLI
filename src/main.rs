@@ -17,6 +17,7 @@ use raft_cli_utils::is_wsl;
 use raft_cli_utils::check_target_folder_valid;
 mod app_ports;
 use app_ports::{PortsCmd, manage_ports};
+mod flat_key_values;
 
 #[derive(Clone, Parser, Debug)]
 enum Action {

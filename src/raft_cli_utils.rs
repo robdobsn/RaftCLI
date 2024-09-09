@@ -15,6 +15,7 @@ use remove_dir_all::remove_dir_contents;
 use crossbeam::thread;
 use ini::Ini;
 
+use crate::flat_key_values::FlatKeyValues;
 use crate::systype_config::SysTypeConfig;
 
 /// @brief Get a list of SysTypes
@@ -453,7 +454,8 @@ pub fn read_platform_ini(project_dir: String) -> Result<Ini, Box<dyn std::error:
     }
 }
 
-pub fn utils_get_build_args_vec(build_dir: String, _systype_name: String, systype_config: SysTypeConfig, clean: bool, clean_only: bool) -> Vec<String> {
+pub fn utils_setup_systype_build_and_get_args(project_dir: String, build_dir: String, systype_name: String, 
+            systype_config: SysTypeConfig, clean: bool, clean_only: bool) -> Vec<String> {
     
     // Build folder argument (for idf.py)
     let mut build_args = vec!["-B".to_string(), build_dir];
@@ -462,9 +464,18 @@ pub fn utils_get_build_args_vec(build_dir: String, _systype_name: String, systyp
     if !systype_config.target_chip.is_empty() {
         build_args.push(format!("-DIDF_TARGET={}", systype_config.target_chip));
     }
+
+    // Check for partition table path specification in systype_config
+    if !systype_config.partition_table_file.is_empty() {
+        utils_sdkconfig_prepare(project_dir, systype_name, systype_config);
+    }
+
+    // Clean
     if clean {
         build_args.push("fullclean".to_string());
     }
+
+    // Build
     if !clean_only {
         build_args.push("build".to_string());
     }
@@ -473,4 +484,73 @@ pub fn utils_get_build_args_vec(build_dir: String, _systype_name: String, systyp
     // println!("build_args: {:?}", build_args);
 
     build_args
+}
+
+pub fn utils_sdkconfig_prepare(app_folder: String, _systype_name: String, systype_config: SysTypeConfig) {
+
+    // Check if the sdkconfig.defaults file exists
+    if !systype_config.sdkconfig_defaults_file.is_empty() {
+        let sdkconfig_defaults_file = format!("{}/{}", app_folder, systype_config.sdkconfig_defaults_file);
+        if Path::new(&sdkconfig_defaults_file).exists() {
+
+            // Read the file as a flat key-value store
+            let sdkconfig_defaults = FlatKeyValues::load_from_file(&sdkconfig_defaults_file);
+            if sdkconfig_defaults.is_err() {
+                println!("Error reading the sdkconfig.defaults file: {}", sdkconfig_defaults.err().unwrap());
+                return;
+            }
+
+            // Get the sdkconfig.defaults ini file
+            let mut sdkconfig_defaults = sdkconfig_defaults.unwrap();
+
+            // Check if a partition table file is specified in the systype_config
+            if !systype_config.partition_table_file.is_empty() {
+
+                // TODO - remove
+                println!("partition_table_file: {}", systype_config.partition_table_file);
+
+                // Make sure the partition table file exists
+                let partition_table_file = format!("{}/{}", app_folder, systype_config.partition_table_file);
+                if Path::new(&partition_table_file).exists() {
+
+                    // TODO - remove
+                    println!("partition_table_file: {} exists", partition_table_file);
+
+                    // Get the value for CONFIG_PARTITION_TABLE_CUSTOM_FILENAME immutably
+                    let partition_table_filename = sdkconfig_defaults.get("CONFIG_PARTITION_TABLE_CUSTOM_FILENAME").cloned();
+                    let partition_table_filename = partition_table_filename.as_ref();
+                    let reqd_partition_table_filename = format!("\"{}\"", systype_config.partition_table_file);
+
+                    // Check if the CONFIG_PARTITION_TABLE_CUSTOM_FILENAME value matches the partition table file
+                    if partition_table_filename.is_none() || !partition_table_filename.unwrap().eq_ignore_ascii_case(&reqd_partition_table_filename) {
+                        // Update the CONFIG_PARTITION_TABLE_CUSTOM_FILENAME value
+                        sdkconfig_defaults.insert("CONFIG_PARTITION_TABLE_CUSTOM_FILENAME".to_string(), reqd_partition_table_filename.clone());
+
+                        // TODO - remove
+                        let tmp_filename = partition_table_filename.unwrap().clone();
+                        println!(
+                            "CONFIG_PARTITION_TABLE_CUSTOM_FILENAME in sdkconfig was {} updated with {}",
+                            tmp_filename,
+                            reqd_partition_table_filename
+                        );
+                    } else {
+                        println!("partition_table_file: {} already set correctly", partition_table_file);
+                    }
+
+                    // Ensure the CONFIG_PARTITION_TABLE_CUSTOM value is set to y
+                    let partition_table_custom = sdkconfig_defaults.get("CONFIG_PARTITION_TABLE_CUSTOM");
+                    if partition_table_custom.is_none() || partition_table_custom.unwrap() != "y" {
+                        sdkconfig_defaults.insert("CONFIG_PARTITION_TABLE_CUSTOM".to_string(), "y".to_string());
+                    }
+
+                } else {
+                    println!("Error: partition table file not found: {}", partition_table_file);
+                }
+            }
+
+            // Write the sdkconfig.defaults file (if modified)
+            let _ = sdkconfig_defaults.save();
+        }
+    }
+
 }
