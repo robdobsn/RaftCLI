@@ -23,9 +23,7 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: 
         return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "Invalid app folder")));
     }
 
-    // TODO - extend this to handle multiple SysTypes
-    
-    // Determine the Systype to build
+    // Get list of systypes
     let sys_type_list = utils_get_sys_type_list(build_sys_type, app_folder.clone());
     if sys_type_list.is_err() {
         return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "Error determining SysType")));
@@ -33,7 +31,25 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: 
     if sys_type_list.as_ref().unwrap().is_empty() {
         return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "No SysType found")));
     }
-    let sys_type = sys_type_list.unwrap()[0].clone();
+
+    // Iterate through the SysTypes and build each one
+    let mut build_str = String::new();
+    for sys_type in sys_type_list.unwrap() {
+        let build_result: Result<String, Box<dyn std::error::Error>> = build_raft_app_for_sys_type(sys_type.clone(), clean, clean_only, app_folder.clone(),
+                    force_docker_arg, no_docker_arg, idf_path_full.clone());
+        if build_result.is_err() {
+            return build_result;
+        }
+        build_str += build_result.unwrap().as_str();
+    }
+
+    Ok(build_str)
+}
+
+// Build the app for a specific SysType
+fn build_raft_app_for_sys_type(sys_type: String, clean: bool, clean_only: bool, app_folder: String,
+            force_docker_arg: bool, no_docker_arg: bool, idf_path_full: Option<String>) 
+                            -> Result<String, Box<dyn std::error::Error>> {
 
     // Flags indicating the build folder and "build_raft_artifacts" folder should be deleted
     let mut delete_build_folder = false;
