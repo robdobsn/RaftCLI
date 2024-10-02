@@ -27,6 +27,8 @@ enum Action {
     Monitor(MonitorCmd),
     #[clap(name = "run", about = "Build, flash and monitor a raft app", alias = "r")]
     Run(RunCmd),
+    #[clap(name = "flash", about = "Flash firmware to the device", alias = "f")]
+    Flash(FlashCmd),    
     #[clap(name = "ports", about = "Manage serial ports", alias = "p")]
     Ports(PortsCmd),
 }
@@ -112,6 +114,9 @@ struct RunCmd {
     // Add an option to specify the serial port
     #[clap(short = 'p', long, help = "Serial port")]
     port: Option<String>,
+    // Add an option to specify an IP address/hostname for OTA
+    #[clap(short = 'o', long, help = "IP address or hostname for OTA flashing")]
+    ip_addr: Option<String>,    
     // Option to specify the monitor baud rate
     #[clap(short = 'b', long, help = "Monitor baud rate")]
     monitor_baud: Option<u32>,
@@ -132,6 +137,34 @@ struct RunCmd {
     log: bool,
     #[arg(short = 'g', long, default_value = "./logs", help = "Folder for log files")]
     log_folder: Option<String>,
+    // Option to specify vendor ID
+    #[clap(short = 'v', long, help = "Vendor ID")]
+    vid: Option<String>,
+}
+
+// Define arguments for the 'flash' subcommand
+#[derive(Clone, Parser, Debug)]
+struct FlashCmd {
+    // Option to specify the app folder
+    app_folder: Option<String>,
+    // Option to specify the system type
+    #[clap(short = 's', long, help = "System type to flash")]
+    sys_type: Option<String>,
+    // Option to specify a serial port
+    #[clap(short = 'p', long, help = "Serial port")]
+    port: Option<String>,
+    // Option to force native serial port when in WSL
+    #[clap(short = 'n', long, help = "Native serial port when in WSL")]
+    native_serial_port: bool,
+    // Option to specify an IP address/hostname for OTA flashing
+    #[clap(short = 'o', long, help = "IP address or hostname for OTA flashing")]
+    ip_addr: Option<String>,
+    // Option to specify flash baud rate
+    #[clap(short = 'f', long, help = "Flash baud rate")]
+    flash_baud: Option<u32>,
+    // Option to specify flashing tool
+    #[clap(short = 't', long, help = "Flash tool (e.g. esptool)")]
+    flash_tool: Option<String>,
     // Option to specify vendor ID
     #[clap(short = 'v', long, help = "Vendor ID")]
     vid: Option<String>,
@@ -233,12 +266,12 @@ fn main() {
             // Flash the app
             let result = flash_raft_app(&cmd.sys_type,
                         app_folder.clone(), 
+                        cmd.ip_addr.clone(),
                         cmd.port.clone(),
                         cmd.native_serial_port,
                         cmd.vid.clone(),
                         cmd.flash_baud.unwrap_or(1000000),
-                        cmd.flash_tool,
-                        result.unwrap());
+                        cmd.flash_tool);
             if result.is_err() {
                 println!("Flash operation failed {:?}", result);
                 std::process::exit(1);
@@ -272,6 +305,25 @@ fn main() {
                 }
             }
         }
+        Action::Flash(cmd) => {
+
+            // Get the app folder (or default to current folder)
+            let app_folder = cmd.app_folder.unwrap_or(".".to_string());
+
+            // Flash the app
+            let result = flash_raft_app(&cmd.sys_type,
+                app_folder.clone(), 
+                cmd.ip_addr.clone(),
+                cmd.port.clone(),
+                cmd.native_serial_port,
+                cmd.vid.clone(),
+                cmd.flash_baud.unwrap_or(1000000),
+                cmd.flash_tool);
+            if result.is_err() {
+                println!("Flash operation failed {:?}", result);
+                std::process::exit(1);
+            }
+        }        
         Action::Ports(cmd) => {
             manage_ports(&cmd);
         }

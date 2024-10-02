@@ -276,59 +276,90 @@ pub fn get_build_folder_name(sys_type: String, app_folder: String) -> String {
     build_folder_name
 }
 
-pub fn get_device_type(sys_type: String, app_folder: String) -> String {
-    // Get build folder
-    let build_folder = get_build_folder_name(sys_type, app_folder);
+// pub fn get_device_type(sys_type: String, app_folder: String) -> String {
+//     // Get build folder
+//     let build_folder = get_build_folder_name(sys_type, app_folder);
 
-    // Read the project_description.json file
-    let project_description = fs::read_to_string(format!("{}/project_description.json", build_folder));
+//     // Read the project_description.json file
+//     let project_description = fs::read_to_string(format!("{}/project_description.json", build_folder));
 
-    // Check for errors reading the project_description.json file
-    if project_description.is_err() {
-        println!("Error reading the project_description.json file: {}", project_description.err().unwrap());
-        return "esp32".to_string();
-    }
+//     // Check for errors reading the project_description.json file
+//     if project_description.is_err() {
+//         println!("Error reading the project_description.json file: {}", project_description.err().unwrap());
+//         return "esp32".to_string();
+//     }
 
-    // Extract the device type from the project_description.json file
-    let project_description = project_description.unwrap();
-    let device_type_regex = Regex::new(r#""target":\s*"([^"]+)""#).unwrap();
-    let device_type = device_type_regex.captures(&project_description);
+//     // Extract the device type from the project_description.json file
+//     let project_description = project_description.unwrap();
+//     let device_type_regex = Regex::new(r#""target":\s*"([^"]+)""#).unwrap();
+//     let device_type = device_type_regex.captures(&project_description);
 
-    // Check for errors extracting the device type
-    if device_type.is_none() {
-        println!("Error extracting the device type from the project_description.json file");
-        return "esp32".to_string();
-    }
+//     // Check for errors extracting the device type
+//     if device_type.is_none() {
+//         println!("Error extracting the device type from the project_description.json file");
+//         return "esp32".to_string();
+//     }
 
-    // Return the device type
-    device_type.unwrap()[1].to_string()
-}
+//     // Return the device type
+//     device_type.unwrap()[1].to_string()
+// }
 
-pub fn extract_flash_cmd_args(
-    _output: String,
-    device_type: String,
+pub fn build_flash_command_args(
+    build_folder: String,
     port: &str,
     flash_baud: u32,
 ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    // Flash arguments file
+    let flash_args_file = format!("{}/flasher_args.json", build_folder);
+
+    // Read the flash arguments json file
+    let flash_args = fs::read_to_string(&flash_args_file)?;
+
+    // Extract the flash arguments
+    let flash_args: serde_json::Value = serde_json::from_str(&flash_args)?;
+
     // Flash baud string
     let flash_baud = format!("{}", flash_baud);
 
-    // Flash command parts
-    let esptool_args = vec![
-        "-p", port,
-        "-b", flash_baud.as_str(),
-        "--before", "default_reset",
-        "--after", "hard_reset",
-        "--chip", &device_type,
-        "write_flash",
-        "@flash_args",
+    // Extract flash settings
+    let flash_mode = flash_args["flash_settings"]["flash_mode"].as_str().unwrap();
+    let flash_size = flash_args["flash_settings"]["flash_size"].as_str().unwrap();
+    let flash_freq = flash_args["flash_settings"]["flash_freq"].as_str().unwrap();
+    let chip_type = flash_args["extra_esptool_args"]["chip"].as_str().unwrap();
+
+    // Create initial esptool arguments
+    let mut esptool_args = vec![
+        "-p".to_string(),
+        port.to_string(),
+        "-b".to_string(),
+        flash_baud,
+        "--before".to_string(),
+        "default_reset".to_string(),
+        "--after".to_string(),
+        "hard_reset".to_string(),
+        "--chip".to_string(),
+        chip_type.to_string(),
+        "write_flash".to_string(),
+        "--flash_mode".to_string(),
+        flash_mode.to_string(),
+        "--flash_size".to_string(),
+        flash_size.to_string(),
+        "--flash_freq".to_string(),
+        flash_freq.to_string(),
     ];
 
-    // Create a vector of strings from esptool_args
-    let esptool_args: Vec<String> = esptool_args.iter().map(|s| s.to_string()).collect();
+    // Extract and append flash files and their offsets
+    if let Some(flash_files) = flash_args["flash_files"].as_object() {
+        for (offset, file_path) in flash_files {
+            let full_path = format!("{}/{}", build_folder, file_path.as_str().unwrap());
+            esptool_args.push(offset.clone());
+            esptool_args.push(full_path);
+        }
+    }
 
     Ok(esptool_args)
 }
+
 
 // Check the target folder is valid
 pub fn check_target_folder_valid(target_folder: &str, clean: bool) -> bool {
