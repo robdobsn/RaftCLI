@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::fs;
 use std::error::Error;
-use regex::Regex;
+// use regex::Regex;
 use std::fmt::{self, Display, Formatter};
 use std::io::{self, BufRead, BufReader};
 use std::sync::{Arc, Mutex};
