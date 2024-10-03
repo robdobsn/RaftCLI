@@ -1,16 +1,17 @@
-use crate::raft_cli_utils::get_build_folder_name;
 use crate::raft_cli_utils::utils_get_sys_type;
 use std::fs::File;
-use std::io::{self, Read, Write};
+use std::io::{self, BufReader, Read, Write};
 use std::net::TcpStream;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 // ProgressReader implementation to track file upload progress
 struct ProgressReader<R> {
     inner: R,
     chunk_size: usize,
     total_read: u64,
+    total_sent: u64,
     progress: Arc<Mutex<ProgressTracker>>,
 }
 
@@ -20,20 +21,38 @@ impl<R: Read> ProgressReader<R> {
             inner,
             chunk_size,
             total_read: 0,
+            total_sent: 0,
             progress,
         }
     }
-}
 
-impl<R: Read> Read for ProgressReader<R> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let read_size = std::cmp::min(self.chunk_size, buf.len());
-        let n = self.inner.read(&mut buf[..read_size])?;
-        self.total_read += n as u64;
-        println!("Read {} bytes, total: {}", n, self.total_read);
-        let mut progress = self.progress.lock().unwrap();
-        progress.update(n);
-        Ok(n)
+    fn read_and_send<W: Write>(&mut self, mut stream: W) -> io::Result<()> {
+        let mut buf = vec![0; self.chunk_size];
+        loop {
+            let n = self.inner.read(&mut buf)?;
+            if n == 0 {
+                break;
+            }
+            self.total_read += n as u64;
+
+            // Write the chunk to the stream and flush it immediately
+            stream.write_all(&buf[..n])?;
+            stream.flush()?;
+
+            // Update total bytes sent
+            self.total_sent += n as u64;
+
+            // Update progress after each chunk is sent
+            let mut progress = self.progress.lock().unwrap();
+            progress.update(n);
+
+            // Provide detailed feedback on sent data
+            // println!(
+            //     "Chunk sent: {} bytes | Total sent: {} bytes",
+            //     n, self.total_sent
+            // );
+        }
+        Ok(())
     }
 }
 
@@ -41,6 +60,7 @@ impl<R: Read> Read for ProgressReader<R> {
 struct ProgressTracker {
     total_size: u64,
     bytes_read: u64,
+    last_update: Instant,
 }
 
 impl ProgressTracker {
@@ -48,20 +68,28 @@ impl ProgressTracker {
         Self {
             total_size,
             bytes_read: 0,
+            last_update: Instant::now(),
         }
     }
 
     fn update(&mut self, bytes: usize) {
         self.bytes_read += bytes as u64;
-        let percentage = (self.bytes_read as f64 / self.total_size as f64) * 100.0;
-        println!(
-            "Progress: {:.2}% | {}/{} bytes",
-            percentage, self.bytes_read, self.total_size
-        );
+        // Display progress if at least 500ms have passed since the last update
+        if self.last_update.elapsed() >= Duration::from_millis(500) {
+            let percentage = (self.bytes_read as f64 / self.total_size as f64) * 100.0;
+            println!(
+                "Progress: {:.2}% | {}/{} bytes",
+                percentage, self.bytes_read, self.total_size
+            );
+
+            // Update the last update time
+            self.last_update = Instant::now();
+        }
     }
 }
 
-fn perform_ota_flash_basic_http(
+// Function to perform OTA flash using basic TCP stream and progress tracking
+fn perform_ota_flash_basic_http_with_streaming(
     fw_image_path: &str,
     fw_image_name: &str,
     ip_addr: &str,
@@ -83,15 +111,16 @@ fn perform_ota_flash_basic_http(
     let file = File::open(fw_image_path)?;
     let progress_tracker = Arc::new(Mutex::new(ProgressTracker::new(file_size)));
 
-    // Create a ProgressReader that owns the file
-    let mut reader = ProgressReader::new(file, 2880, progress_tracker.clone());
+    // Create a ProgressReader that owns the file and wrap it in a BufReader for better I/O performance
+    let file_reader = BufReader::new(file);
+    let mut progress_reader = ProgressReader::new(file_reader, 1024, progress_tracker.clone());
 
     // Connect to the server
     let addr = format!("{}:{}", ip_addr, port);
     let mut stream = TcpStream::connect(&addr)?;
     println!("Connected to {}", addr);
 
-    // Construct the multipart body
+    // Construct the multipart headers and boundaries
     let boundary = "----CustomBoundary123456";
     let start_boundary = format!("--{}\r\n", boundary);
     let content_disposition = format!(
@@ -101,22 +130,11 @@ fn perform_ota_flash_basic_http(
     let content_type = "Content-Type: application/octet-stream\r\n\r\n";
     let end_boundary = format!("\r\n--{}--\r\n", boundary);
 
-    // Read the file content into a buffer
-    let mut file_content = Vec::new();
-    reader.read_to_end(&mut file_content)?;
-
-    // Create the complete HTTP body
-    let mut body_content = Vec::new();
-    body_content.extend_from_slice(start_boundary.as_bytes());
-    body_content.extend_from_slice(content_disposition.as_bytes());
-    body_content.extend_from_slice(content_type.as_bytes());
-    body_content.extend_from_slice(&file_content);
-    body_content.extend_from_slice(end_boundary.as_bytes());
-
     // Calculate Content-Length
-    let content_length = body_content.len();
+    let headers_length = start_boundary.len() + content_disposition.len() + content_type.len();
+    let content_length = headers_length + file_size as usize + end_boundary.len();
 
-    // Create HTTP POST request manually
+    // Create HTTP POST request headers
     let request = format!(
         "POST /api/espFwUpdate HTTP/1.1\r\n\
          Host: {}\r\n\
@@ -126,12 +144,21 @@ fn perform_ota_flash_basic_http(
         ip_addr, boundary, content_length
     );
 
-    // Write request headers to stream
+    // Write request headers to the stream
     stream.write_all(request.as_bytes())?;
-    // Write body content to stream
-    stream.write_all(&body_content)?;
+    stream.write_all(start_boundary.as_bytes())?;
+    stream.write_all(content_disposition.as_bytes())?;
+    stream.write_all(content_type.as_bytes())?;
+    stream.flush()?;
 
-    // Read the response
+    // Stream the file content to the server with progress feedback
+    progress_reader.read_and_send(&mut stream)?;
+
+    // Write the end boundary to signal the end of the multipart request
+    stream.write_all(end_boundary.as_bytes())?;
+    stream.flush()?;
+
+    // Read and display the response from the server
     let mut response = String::new();
     stream.read_to_string(&mut response)?;
     println!("Response: {}", response);
@@ -171,7 +198,7 @@ pub fn ota_raft_app(
         println!("Flashing {} FW image is {}", sys_type, fw_image_path);
 
         // Call the synchronous version of perform_ota_flash with progress tracking
-        match perform_ota_flash_basic_http(&fw_image_path, &fw_image_name, &ip_addr, ip_port) {
+        match perform_ota_flash_basic_http_with_streaming(&fw_image_path, &fw_image_name, &ip_addr, ip_port) {
             Ok(_) => println!("OTA flash successful"),
             Err(e) => println!("OTA flash failed: {:?}", e),
         }
