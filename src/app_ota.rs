@@ -5,6 +5,51 @@ use std::net::TcpStream;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use std::collections::VecDeque;
+
+// Struct to track data rate over a period (e.g., 5 seconds)
+struct DataRateTracker {
+    interval_duration: Duration,          // The duration over which we want to track the rate (e.g., 5 seconds)
+    data_points: VecDeque<(Instant, u64)>, // Store timestamps and amount of data sent at each point
+    total_data_in_interval: u64,           // The total amount of data sent in the current interval
+}
+
+impl DataRateTracker {
+    fn new(interval_duration: Duration) -> Self {
+        Self {
+            interval_duration,
+            data_points: VecDeque::new(),
+            total_data_in_interval: 0,
+        }
+    }
+
+    // Method to add data sent to the tracker
+    fn add_data(&mut self, bytes_sent: u64) {
+        let now = Instant::now();
+        self.data_points.push_back((now, bytes_sent));
+        self.total_data_in_interval += bytes_sent;
+
+        // Remove data points that are older than the interval duration
+        while let Some(&(timestamp, _)) = self.data_points.front() {
+            if now.duration_since(timestamp) > self.interval_duration {
+                let (_, old_data) = self.data_points.pop_front().unwrap();
+                self.total_data_in_interval -= old_data;
+            } else {
+                break;
+            }
+        }
+    }
+
+    // Method to calculate the average rate over the interval duration
+    fn get_average_rate(&self) -> f64 {
+        let duration_secs = self.interval_duration.as_secs_f64();
+        if duration_secs > 0.0 {
+            (self.total_data_in_interval as f64) / duration_secs // Bytes per second
+        } else {
+            0.0
+        }
+    }
+}
 
 // ProgressReader implementation to track file upload progress
 struct ProgressReader<R> {
@@ -61,6 +106,7 @@ struct ProgressTracker {
     total_size: u64,
     bytes_read: u64,
     last_update: Instant,
+    rate_tracker: DataRateTracker,
 }
 
 impl ProgressTracker {
@@ -69,17 +115,29 @@ impl ProgressTracker {
             total_size,
             bytes_read: 0,
             last_update: Instant::now(),
+            rate_tracker: DataRateTracker::new(Duration::from_secs(5)), // Track over 5 seconds
         }
     }
 
     fn update(&mut self, bytes: usize) {
         self.bytes_read += bytes as u64;
-        // Display progress if at least 500ms have passed since the last update
+
+        // Add data to rate tracker
+        self.rate_tracker.add_data(bytes as u64);
+
+        // Display progress every 500ms
         if self.last_update.elapsed() >= Duration::from_millis(500) {
             let percentage = (self.bytes_read as f64 / self.total_size as f64) * 100.0;
+
+            // Calculate the rate over the last 5 seconds
+            let rate = self.rate_tracker.get_average_rate(); // Bytes/second
+
             println!(
-                "Progress: {:.2}% | {}/{} bytes",
-                percentage, self.bytes_read, self.total_size
+                "Progress: {:.2}% | {}/{} bytes | Rate: {:.2} KB/s",
+                percentage,
+                self.bytes_read,
+                self.total_size,
+                rate / 1024.0 // Convert rate to KB/s for display
             );
 
             // Update the last update time
@@ -161,13 +219,17 @@ fn perform_ota_flash_basic_http_with_streaming(
     // Read and display the response from the server
     let mut response = String::new();
     stream.read_to_string(&mut response)?;
-    println!("Response: {}", response);
+    // println!("Response: {}", response);
 
     // Check response for success
-    if response.contains("200 OK") {
-        println!("OTA flash successful");
+    if response.contains("200 OK") && response.contains("\"rslt\":\"ok\"") {
+        // println!("OTA flash successful");
     } else {
         println!("OTA flash failed with response: {}", response);
+        return Err(Box::new(io::Error::new(
+            io::ErrorKind::Other,
+            "OTA flash failed",
+        )));
     }
 
     Ok(())
