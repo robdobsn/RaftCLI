@@ -58,6 +58,8 @@ In this case use the -d option, i.e. `raft run -d` or `raft build -d` to disable
 
 ```
 $ raft new .
+OR
+$ raft n .
 ```
 This creates a new raft app in the current folder. 
 
@@ -98,6 +100,8 @@ To build an existing raft app use:
 
 ```
 raft build
+OR
+raft b
 ```
 
 This will build the raft app in the current folder using Docker (unless you are in a prompt with the ESP IDF already sourced in which case ESP IDF will be used natively). If your raft app has multiple SysTypes then you can define which SysType to build using the -s option.
@@ -124,12 +128,14 @@ Options:
   -h, --help                 Print help
 ```
 
-## Flashing the firmware to a development board
+## Build and flash firmware to a development board
 
-To program a development board, use:
+To build and flash a development board, use:
 
 ```
 raft run
+OR
+raft r
 ```
 
 This will first build the firmware (and all of the build options are availble as above), then it will flash the firmare to the Espressif processor and then start a serial monitor.
@@ -170,6 +176,8 @@ Options:
 
 ```
 raft monitor
+OR
+raft m
 ```
 
 This starts the serial monitor, displaying serial output received from the device and sending keyboard commands to the device. If a serial port isn't specified (with the -p option) then the most likely suitable port will be used. To specify the baud rate for monitoring use -b.
@@ -204,6 +212,8 @@ To list available serial ports use:
 
 ```
 raft ports
+OR
+raft p
 ```
 
 Manage serial ports
@@ -221,6 +231,68 @@ Options:
   -D, --debug                            Debug mode
       --preferred-vids <PREFERRED_VIDS>  Preferred VIDs (comma separated list)
   -h, --help                             Print help
+
+## Flash firmware to a development board (without rebuilding)
+
+To flash firmware, use:
+
+```
+raft flash
+OR
+raft f
+```
+
+This will flash the firmare to the Espressif processor.
+
+If the serial port is not specified (with the -p option) then the most likely suitable serial port will be tried. You can also specify baud rate for flashing using -f option. This program generally uses the espressif esptool to do the actual work of flashing. If you need to specify the full path to this tool then use the -t option.
+
+```
+Flash firmware to the device
+
+Usage: raft.exe flash [OPTIONS] [APP_FOLDER]
+
+Arguments:
+  [APP_FOLDER]
+
+Options:
+  -s, --sys-type <SYS_TYPE>      System type to flash
+  -p, --port <PORT>              Serial port
+  -n, --native-serial-port       Native serial port when in WSL
+  -f, --flash-baud <FLASH_BAUD>  Flash baud rate
+  -t, --flash-tool <FLASH_TOOL>  Flash tool (e.g. esptool)
+  -v, --vid <VID>                Vendor ID
+  -h, --help                     Print help
+```
+
+## OTA (Over-the-air) Update Firmware (using WiFi/Ethernet connection)
+
+To use OTA updates the device must be connected to a WiFi or Ethernet network and the IP address (or hostname) of the device must be known.
+
+```
+raft ota
+OR
+raft o
+```
+
+A connection (TCP) is made to the device and the standard HTTP POST protocol with form data is used to send the new firmware to the device. If required the -c option can be used which forces the use of the curl application to send the data - otherwise sending is done using the rust TcpStream mechanism which also permits rate and progress information to be shown.
+
+Only the main binary of the application is written. The file-system and other partitions on the device including non-volatile storage are not affected by this operation.
+
+```
+Over-the-air update
+
+Usage: raft.exe ota [OPTIONS] <IP_ADDR> [APP_FOLDER]
+
+Arguments:
+  <IP_ADDR>
+  [APP_FOLDER]
+
+Options:
+  -p, --ip-port <IP_PORT>    IP Port
+  -s, --sys-type <SYS_TYPE>  System type to ota update
+  -c, --use-curl             Use curl for OTA
+  -h, --help                 Print help
+```
 
 ### Build from source
 
