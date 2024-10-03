@@ -11,6 +11,8 @@ mod app_build;
 use app_build::build_raft_app;
 mod app_flash;
 use app_flash::flash_raft_app;
+mod app_ota;
+use app_ota::ota_raft_app;
 mod raft_cli_utils;
 use raft_cli_utils::is_wsl;
 use raft_cli_utils::check_target_folder_valid;
@@ -28,7 +30,9 @@ enum Action {
     #[clap(name = "run", about = "Build, flash and monitor a raft app", alias = "r")]
     Run(RunCmd),
     #[clap(name = "flash", about = "Flash firmware to the device", alias = "f")]
-    Flash(FlashCmd),    
+    Flash(FlashCmd),
+    #[clap(name = "ota", about = "Over-the-air update", alias = "o")]
+    Ota(OtaCmd),
     #[clap(name = "ports", about = "Manage serial ports", alias = "p")]
     Ports(PortsCmd),
 }
@@ -156,9 +160,6 @@ struct FlashCmd {
     // Option to force native serial port when in WSL
     #[clap(short = 'n', long, help = "Native serial port when in WSL")]
     native_serial_port: bool,
-    // Option to specify an IP address/hostname for OTA flashing
-    #[clap(short = 'o', long, help = "IP address or hostname for OTA flashing")]
-    ip_addr: Option<String>,
     // Option to specify flash baud rate
     #[clap(short = 'f', long, help = "Flash baud rate")]
     flash_baud: Option<u32>,
@@ -168,6 +169,24 @@ struct FlashCmd {
     // Option to specify vendor ID
     #[clap(short = 'v', long, help = "Vendor ID")]
     vid: Option<String>,
+}
+
+// Define arguments for the 'ota' subcommand
+#[derive(Clone, Parser, Debug)]
+struct OtaCmd {
+    // IP address/hostname for OTA
+    ip_addr: String,
+    // Option to specify the app folder
+    app_folder: Option<String>,
+    // Option to specify the IP Port
+    #[clap(short = 'p', long, help = "IP Port")]
+    ip_port: Option<u16>,
+    // Option to specify the system type
+    #[clap(short = 's', long, help = "System type to ota update")]
+    sys_type: Option<String>,
+    // Option to use curl for OTA
+    #[clap(short = 'c', long, help = "Use curl for OTA")]
+    use_curl: bool,
 }
 
 // Main CLI struct that includes the subcommands
@@ -266,7 +285,6 @@ fn main() {
             // Flash the app
             let result = flash_raft_app(&cmd.sys_type,
                         app_folder.clone(), 
-                        cmd.ip_addr.clone(),
                         cmd.port.clone(),
                         cmd.native_serial_port,
                         cmd.vid.clone(),
@@ -313,7 +331,6 @@ fn main() {
             // Flash the app
             let result = flash_raft_app(&cmd.sys_type,
                 app_folder.clone(), 
-                cmd.ip_addr.clone(),
                 cmd.port.clone(),
                 cmd.native_serial_port,
                 cmd.vid.clone(),
@@ -323,7 +340,23 @@ fn main() {
                 println!("Flash operation failed {:?}", result);
                 std::process::exit(1);
             }
-        }        
+        }
+        Action::Ota(cmd) => {
+
+            // Get the app folder (or default to current folder)
+            let app_folder = cmd.app_folder.unwrap_or(".".to_string());
+
+            // OTA the app
+            let result = ota_raft_app(&cmd.sys_type,
+                app_folder.clone(), 
+                cmd.ip_addr.clone(),
+                cmd.ip_port.clone(),
+                cmd.use_curl);
+            if result.is_err() {
+                println!("OTA operation failed {:?}", result);
+                std::process::exit(1);
+            }
+        }
         Action::Ports(cmd) => {
             manage_ports(&cmd);
         }
