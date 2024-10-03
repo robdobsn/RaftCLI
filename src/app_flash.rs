@@ -59,10 +59,10 @@ pub fn flash_raft_app(
     println!("Flash command: {}", flash_cmd.clone());
     println!("Flash command args: {:?}", flash_cmd_args);
     println!("Flash command app folder: {}", app_folder.clone());
-    println!("Flash command build folder: {}", build_folder);
+    // println!("Flash command build folder: {}", build_folder);
 
     // Execute the flash command and check for errors
-    let (output, success_flag) = execute_and_capture_output(flash_cmd.clone(), &flash_cmd_args, build_folder.clone())?;
+    let (output, success_flag) = execute_and_capture_output(flash_cmd.clone(), &flash_cmd_args, app_folder.clone())?;
     if !success_flag {
         let err_msg = format!("Flash executed with errors: {}", output);
         return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, err_msg)));
