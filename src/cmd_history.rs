@@ -69,6 +69,7 @@ impl CommandHistory {
         if self.position < self.history.len() {
             Some(&self.history[self.position])
         } else {
+            self.position = self.history.len();
             None
         }
     }
@@ -98,14 +99,9 @@ mod tests {
         assert_eq!(command_history.get_next(), Some("second command"));
         assert_eq!(command_history.get_next(), Some("third command"));
         assert_eq!(command_history.get_next(), None);
+        assert_eq!(command_history.get_next(), None);
 
         // Cleanup
         let _ = fs::remove_file(test_history_path);
     }
-}   
-
-// fn main() {
-//     let mut command_history = CommandHistory::new("raftcli_history.txt");
-//     command_history.add_command("test command");
-//     println!("Previous command: {:?}", command_history.get_previous());
-// }
+}

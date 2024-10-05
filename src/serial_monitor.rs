@@ -155,6 +155,11 @@ impl TerminalOut {
         self.print("", false);
     }
 
+    fn add_str_to_command_buffer(&mut self, s: &str) {
+        self.command_buffer.push_str(s);
+        self.print("", true);
+    }
+
     fn backspace_command_buffer(&mut self) {
         if self.command_buffer.len() > 0 {
             self.command_buffer.pop();
@@ -365,12 +370,16 @@ pub fn start_native(
                         }
                         KeyCode::Up => {
                             if let Some(previous_command) = command_history.lock().unwrap().get_previous() {
-                                println!("\r> {}", previous_command);
+                                terminal_out.lock().unwrap().clear_command_buffer();
+                                terminal_out.lock().unwrap().add_str_to_command_buffer(previous_command);
                             }
                         }
                         KeyCode::Down => {
                             if let Some(next_command) = command_history.lock().unwrap().get_next() {
-                                println!("\r> {}", next_command);
+                                terminal_out.lock().unwrap().clear_command_buffer();
+                                terminal_out.lock().unwrap().add_str_to_command_buffer(next_command);
+                            } else {
+                                terminal_out.lock().unwrap().clear_command_buffer();
                             }
                         }
                         _ => {}
