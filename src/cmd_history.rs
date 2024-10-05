@@ -27,9 +27,11 @@ impl CommandHistory {
             }
         }
 
+        let position = history.len();
+
         CommandHistory {
             history,
-            position: 0,
+            position,
             history_file_path: history_file_path.to_string(),
         }
     }
