@@ -14,7 +14,7 @@ use std::sync::{
 use std::thread;
 use std::time::Duration;
 
-use crate::app_ports::{select_most_likely_port, PortsCmd};
+use crate::{app_ports::{select_most_likely_port, PortsCmd}, cmd_history::CommandHistory};
 
 struct LogFileInfo {
     file: std::fs::File,
@@ -189,6 +189,7 @@ struct CommandAndTime {
 }
 
 pub fn start_native(
+    app_folder: String,
     port: Option<String>,
     baud_rate: u32,
     no_reconnect: bool,
@@ -196,6 +197,13 @@ pub fn start_native(
     log_folder: String,
     vid: Option<String>
 ) -> Result<(), Box<dyn std::error::Error>> {
+
+    // Command history in the app folder
+    let mut history_file_path = std::path::PathBuf::from(&app_folder);
+    history_file_path.push("raftcli_history.txt");
+    let history_file_path_str = history_file_path.to_str().unwrap().to_string();
+    let command_history = Arc::new(Mutex::new(CommandHistory::new(&history_file_path_str)));
+
     // Open log file if required
     let log_file = if log {
         let file = open_log_file(log, log_folder)?;
@@ -337,12 +345,15 @@ pub fn start_native(
                         KeyCode::Enter => {
                             // print!("⏎");
                             let key_detect_time = std::time::Instant::now();
+                            let user_input = terminal_out.lock().unwrap().get_command_buffer();
                             let command: CommandAndTime = CommandAndTime {
-                                user_input: terminal_out.lock().unwrap().get_command_buffer(),
+                                user_input: user_input.clone(),
                                 _time: key_detect_time
                             };
                             // println!("Time to get command buffer: {:?}", key_detect_time.elapsed());
                             serial_write_tx.send(command).expect("Failed to send command to write thread");
+                            // Add the command to history
+                            command_history.lock().unwrap().add_command(&user_input);
                             // println!("Time to send command: {:?}", key_detect_time.elapsed());
                             terminal_out.lock().unwrap().clear_command_buffer();
                         }
@@ -351,6 +362,16 @@ pub fn start_native(
                         }
                         KeyCode::Char(c) => {
                             terminal_out.lock().unwrap().add_to_command_buffer(c);
+                        }
+                        KeyCode::Up => {
+                            if let Some(previous_command) = command_history.lock().unwrap().get_previous() {
+                                println!("\r> {}", previous_command);
+                            }
+                        }
+                        KeyCode::Down => {
+                            if let Some(next_command) = command_history.lock().unwrap().get_next() {
+                                println!("\r> {}", next_command);
+                            }
                         }
                         _ => {}
                     }
@@ -367,6 +388,7 @@ pub fn start_native(
 }
 
 pub fn start_non_native(
+    app_folder: String,
     port: Option<String>,
     baud: u32,
     no_reconnect: bool,
@@ -377,6 +399,7 @@ pub fn start_non_native(
     // Setup args
     let mut args = vec![
         "monitor".to_string(),
+        app_folder.clone(),
         "-b".to_string(),
         baud.to_string(),
     ];

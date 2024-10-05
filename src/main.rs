@@ -18,6 +18,7 @@ use raft_cli_utils::is_wsl;
 use raft_cli_utils::check_target_folder_valid;
 mod app_ports;
 use app_ports::{PortsCmd, manage_ports};
+mod cmd_history;
 
 #[derive(Clone, Parser, Debug)]
 enum Action {
@@ -73,6 +74,8 @@ struct BuildCmd {
 // Define arguments specific to the `monitor` subcommand
 #[derive(Clone, Parser, Debug)]
 struct MonitorCmd {
+    // Add an option to specify the app folder
+    app_folder: Option<String>,
     // Add an option to specify the serial port
     #[clap(short = 'p', long, help = "Serial port")]
     port: Option<String>,
@@ -241,13 +244,20 @@ fn main() {
         
         Action::Monitor(cmd) => {
 
+            let app_folder = cmd.app_folder.unwrap_or(".".to_string());
             let monitor_baud = cmd.monitor_baud.unwrap_or(115200);
             let log = cmd.log;
-            let log_folder = cmd.log_folder.unwrap_or("./logs".to_string());
+            let mut log_folder = cmd.log_folder.unwrap_or("./logs".to_string());
+            // If the log_folder is relative then apply the app_folder as a prefix to it using path::join
+            if !log_folder.starts_with("/") {
+                let mut log_folder_path = std::path::PathBuf::from(&app_folder);
+                log_folder_path.push(log_folder);
+                log_folder = log_folder_path.to_str().unwrap().to_string();
+            }
 
             // Start the serial monitor
             if !cmd.native_serial_port && is_wsl() {
-                let result = serial_monitor::start_non_native(cmd.port, monitor_baud, cmd.no_reconnect, log, log_folder, cmd.vid);
+                let result = serial_monitor::start_non_native(app_folder, cmd.port, monitor_baud, cmd.no_reconnect, log, log_folder, cmd.vid);
                 match result {
                     Ok(()) => std::process::exit(0),
                     Err(e) => {
@@ -257,7 +267,7 @@ fn main() {
                 }
             }
 
-            let result = serial_monitor::start_native(cmd.port, monitor_baud, cmd.no_reconnect, log, log_folder, cmd.vid);
+            let result = serial_monitor::start_native(app_folder, cmd.port, monitor_baud, cmd.no_reconnect, log, log_folder, cmd.vid);
             match result {
                 Ok(()) => std::process::exit(0),
                 Err(e) => {
@@ -304,7 +314,7 @@ fn main() {
 
             // Start the serial monitor
             if !cmd.native_serial_port && is_wsl() {
-                let result = serial_monitor::start_non_native(cmd.port.clone(), monitor_baud, cmd.no_reconnect, log, log_folder, cmd.vid.clone());
+                let result = serial_monitor::start_non_native(app_folder, cmd.port.clone(), monitor_baud, cmd.no_reconnect, log, log_folder, cmd.vid.clone());
                 match result {
                     Ok(()) => std::process::exit(0),
                     Err(e) => {
@@ -314,7 +324,7 @@ fn main() {
                 }
             }
 
-            let result = serial_monitor::start_native(cmd.port, monitor_baud, cmd.no_reconnect, log, log_folder,cmd.vid);
+            let result = serial_monitor::start_native(app_folder, cmd.port, monitor_baud, cmd.no_reconnect, log, log_folder,cmd.vid);
             match result {
                 Ok(()) => std::process::exit(0),
                 Err(e) => {
