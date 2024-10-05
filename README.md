@@ -182,6 +182,8 @@ raft m
 
 This starts the serial monitor, displaying serial output received from the device and sending keyboard commands to the device. If a serial port isn't specified (with the -p option) then the most likely suitable port will be used. To specify the baud rate for monitoring use -b.
 
+When in the serial monitor up-arrow and down-arrow show prior command history (as when using bash linux shell).
+
 Logging of received serial data can be enabled using the -l option. This is very useful when debugging as it automatically names log files with their start date and time and provides a record of test runs when developing firmware. The folder ./logs is generally used for log files but this can be changed using the -g option. 
 
 The -r option is used to suppress automatic reconnection of serial ports during serial monitoring. Normally the serial monitor remains running even if a development board is disconnected. This makes development easier as it is often necessary to reset or disconnect a development board and having to restart the serial monitor each time is a nuissance. But if required the -r option can be specified which will disable reconnection.
@@ -191,7 +193,10 @@ The -n option is only relevant when using Windows Subsystem for Linux (WSL). The
 ```
 Monitor a serial port
 
-Usage: raft monitor [OPTIONS]
+Usage: raft.exe monitor [OPTIONS] [APP_FOLDER]
+
+Arguments:
+  [APP_FOLDER]
 
 Options:
   -p, --port <PORT>                  Serial port
