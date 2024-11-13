@@ -8,6 +8,7 @@ add_compile_definitions(SYSTEM_VERSION="{{project_semver}}")
 set(RAFT_COMPONENTS
     {{inc_raft_sysmods}}
     {{inc_raft_webserver}}
+    {{{inc_raft_i2c_sysmod}}}
 )
 
 # File system

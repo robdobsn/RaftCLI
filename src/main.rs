@@ -1,3 +1,5 @@
+#![recursion_limit = "512"]
+
 // RaftCLI: Main module
 // Rob Dobson 2024
 

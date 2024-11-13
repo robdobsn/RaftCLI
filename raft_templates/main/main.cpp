@@ -8,12 +8,13 @@
 {{{include_raft_sysmods}}}
 {{{include_raft_webserver}}}
 {{{include_user_sysmod}}}
+{{{include_raft_i2c}}}
 
 // Entry point
 extern "C" void app_main(void)
 {
     RaftCoreApp raftCoreApp;
-    {{{register_raft_sysmods}}}{{{register_raft_webserver}}}{{{register_user_sysmod}}}
+    {{{register_raft_sysmods}}}{{{register_raft_webserver}}}{{{register_raft_i2c}}}{{{register_user_sysmod}}}
     // Loop forever
     while (1)
     {
