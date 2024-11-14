@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::env;
 use std::path::Path;
 use std::path::PathBuf;
@@ -10,6 +11,11 @@ use std::io::{self, BufRead, BufReader};
 use std::sync::{Arc, Mutex};
 use remove_dir_all::remove_dir_contents;
 use crossbeam::thread;
+
+pub fn default_esp_idf_version() -> String {
+    // Default ESP-IDF version
+    "5.3.1".to_string()
+}
 
 pub fn utils_get_sys_type(
     build_sys_type: &Option<String>, 
@@ -126,10 +132,12 @@ impl Display for CommandError {
 
 impl Error for CommandError {}
 
-pub fn execute_and_capture_output(command: String, args: &Vec<String>, cur_dir: String) -> Result<(String, bool), CommandError> {
+pub fn execute_and_capture_output(command: String, args: &Vec<String>, cur_dir: String, env_vars_to_add: HashMap<String, String>) -> Result<(String, bool), CommandError> {
+    
     let process = Command::new(command.clone())
         .current_dir(cur_dir)
         .args(args)
+        .envs(env_vars_to_add.iter())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn();
@@ -400,10 +408,215 @@ pub fn is_esp_idf_env() -> bool {
     env::var("IDF_PATH").is_ok()
 }
 
+// Check if the ESP IDF version is correct
+pub fn idf_version_ok(required_esp_idf_version: String) -> bool {
+    // Run the idf.py --version command
+    let idf_output = Command::new("idf.py")
+        .arg("--version")
+        .output()
+        .expect("Failed to run idf.py --version");
+
+    // TODO remove
+    println!("idf_version returned from idf.py: {:?}", idf_output);
+
+    // Check if the command was successful
+    if !idf_output.status.success() {
+        println!("Failed to run idf.py --version");
+        return false;
+    }
+
+    // Extract the version string from the output
+    let idf_version_output = String::from_utf8_lossy(&idf_output.stdout);
+    let idf_version = idf_version_output
+        .split_whitespace() // Split by whitespace
+        .nth(1)             // Get the second token (e.g., "v5.3.1-dirty")
+        .unwrap_or("")      // Fallback to an empty string if parsing fails
+        .trim_start_matches('v') // Remove the leading 'v' if present
+        .split('-')         // Split by '-' to ignore any suffix like '-dirty'
+        .next()             // Take the first part (e.g., "5.3.1")
+        .unwrap_or("");
+
+    // Normalize both versions to major.minor.patch format
+    let idf_version_normalized = idf_version.split('.').take(3).collect::<Vec<&str>>().join(".");
+    let required_version_normalized = required_esp_idf_version.split('.').take(3).collect::<Vec<&str>>().join(".");
+
+    // Debugging: Print normalized versions
+    println!(
+        "idf_version_normalized: {:?}, required_version_normalized: {:?}",
+        idf_version_normalized, required_version_normalized
+    );
+
+    // Compare the normalized versions
+    if idf_version_normalized != required_version_normalized {
+        println!(
+            "Error: ESP-IDF version mismatch: Required: {}, Found: {}",
+            required_version_normalized, idf_version_normalized
+        );
+        return false;
+    }
+
+    true
+}
+
 // Function to check if Docker is available
 pub fn is_docker_available() -> bool {
     Command::new("docker")
         .arg("--version")
         .output()
         .map_or(false, |output| output.status.success())
+}
+
+pub fn get_esp_idf_version_from_dockerfile(dockerfile_path: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let dockerfile_path = Path::new(dockerfile_path).join("Dockerfile");
+    let dockerfile_content = fs::read_to_string(dockerfile_path)?;
+    for line in dockerfile_content.lines() {
+        if line.starts_with("FROM espressif/idf:") {
+            let version = line.replace("FROM espressif/idf:", "").trim().to_string();
+            // Remove the 'v' prefix if it exists
+            if version.starts_with('v') {
+                return Ok(version[1..].to_string());
+            }
+            return Ok(version);
+        }
+    }
+    Err(Box::new(std::io::Error::new(
+        std::io::ErrorKind::NotFound,
+        "ESP-IDF version not found in Dockerfile",
+    )))
+}
+
+pub fn find_matching_esp_idf(target_version: String, user_path: Option<String>) -> Option<PathBuf> {
+    // 1. Check user-specified path
+    if let Some(path) = user_path {
+        let user_dir = Path::new(&path);
+        if user_dir.is_dir() {
+            // Check if the folder is an ESP-IDF folder by checking if it contains a file named export.sh
+            if user_dir.join("export.sh").is_file() {
+                // TODO remove
+                println!("Found required ESP IDF folder {:?}", user_dir);
+                return Some(user_dir.to_path_buf());
+            }
+            // If it's a directory, look for subfolders named esp-idf-vx.y.z
+            if let Some(matching_path) = user_dir
+                .read_dir()
+                .ok()?
+                .filter_map(|entry| entry.ok())
+                .map(|entry| entry.path())
+                .find(|p| p.file_name().map_or(false, |name| name.to_string_lossy().ends_with(&target_version)))
+            {
+                // TODO remove
+                println!("Found matching path: {:?}", matching_path);
+                return Some(matching_path);
+            }
+        }
+    }
+
+    // 2. Default paths based on the platform
+    let default_paths = get_default_esp_idf_paths();
+
+    // TODO remove
+    println!("Searching default paths: {:?}", default_paths);
+
+    for path in default_paths {
+        if path.is_dir() {
+            if let Some(matching_path) = path
+                .read_dir()
+                .ok()?
+                .filter_map(|entry| entry.ok())
+                .map(|entry| entry.path())
+                .find(|p| p.file_name().map_or(false, |name| name.to_string_lossy().ends_with(&target_version)))
+            {
+                // TODO remove
+                println!("Found matching path: {:?}", matching_path);
+                return Some(matching_path);
+            }
+        }
+    }
+
+    // TODO remove
+    println!("No matching ESP-IDF found for {:?}", target_version);
+    None
+}
+
+// Helper function to get default paths based on OS
+fn get_default_esp_idf_paths() -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+
+    #[cfg(target_os = "linux")]
+    paths.push(dirs::home_dir().unwrap_or_default().join("esp"));
+
+    #[cfg(target_os = "windows")]
+    paths.push(PathBuf::from("C:\\Espressif\\frameworks"));
+
+    #[cfg(target_os = "macos")]
+    paths.push(dirs::home_dir().unwrap_or_default().join("esp"));
+
+    paths
+}
+
+pub fn prepare_esp_idf(idf_path: &Path) -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {
+    let mut env_vars = HashMap::new();
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    {
+        let export_script = idf_path.join("export.sh");
+        if export_script.exists() {
+            println!("Capturing ESP-IDF environment from {}", idf_path.display());
+            let output = Command::new("bash")
+                .arg("-c")
+                .arg(format!("source {} && env", export_script.display()))
+                .stdout(Stdio::piped())
+                .output()?;
+            if !output.status.success() {
+                return Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "Failed to capture ESP-IDF environment",
+                )));
+            }
+
+            // Parse the environment variables
+            for line in String::from_utf8_lossy(&output.stdout).lines() {
+                if let Some((key, value)) = line.split_once('=') {
+                    env_vars.insert(key.to_string(), value.to_string());
+                }
+            }
+        } else {
+            return Err(Box::new(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "export.sh not found in ESP-IDF folder",
+            )));
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let export_script = idf_path.join("export.bat");
+        if export_script.exists() {
+            println!("Capturing ESP-IDF environment from {}", idf_path.display());
+            let output = Command::new("cmd")
+                .args(["/C", export_script.to_str().unwrap(), "&&", "set"])
+                .stdout(Stdio::piped())
+                .output()?;
+            if !output.status.success() {
+                return Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "Failed to capture ESP-IDF environment",
+                )));
+            }
+
+            // Parse the environment variables
+            for line in String::from_utf8_lossy(&output.stdout).lines() {
+                if let Some((key, value)) = line.split_once('=') {
+                    env_vars.insert(key.to_string(), value.to_string());
+                }
+            }
+        } else {
+            return Err(Box::new(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "export.bat not found in ESP-IDF folder",
+            )));
+        }
+    }
+
+    Ok(env_vars)
 }

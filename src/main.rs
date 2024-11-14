@@ -68,9 +68,12 @@ struct BuildCmd {
     // Option to disable docker
     #[clap(long, help = "Do not use docker for build")]
     no_docker: bool,
-    // Option to specify path to idf.py
-    #[clap(short = 'i', long, help = "Full path to idf.py (when not using docker)")]
-    idf_path: Option<String>,
+    // Option to find matching esp idf and source it ready to build locally
+    #[clap(short = 'i', long, help = "Find and use local ESP IDF matching Dockerfile version")]
+    idf_local_build: bool,    
+    // Option to specify path to ESP IDF folder
+    #[clap(short = 'e', long, help = "Full path to ESP IDF folder for local build (when not using docker)")]
+    esp_idf_path: Option<String>,
 }
 
 // Define arguments specific to the `monitor` subcommand
@@ -117,9 +120,12 @@ struct RunCmd {
     // Option to disable docker
     #[clap(long, help = "Do not use docker for build")]
     no_docker: bool,
-    // Option to specify path to idf.py
-    #[clap(short = 'i', long, help = "Full path to idf.py (when not using docker)")]
-    idf_path: Option<String>,    
+    // Option to find matching esp idf and source it ready to build locally
+    #[clap(short = 'i', long, help = "Find and use local ESP IDF matching Dockerfile version")]
+    idf_local_build: bool,    
+    // Option to specify path to ESP IDF folder
+    #[clap(short = 'e', long, help = "Full path to ESP IDF folder for local build (when not using docker)")]
+    esp_idf_path: Option<String>,
     // Add an option to specify the serial port
     #[clap(short = 'p', long, help = "Serial port")]
     port: Option<String>,
@@ -234,7 +240,8 @@ fn main() {
             // Get the app folder (or default to current folder)
             let app_folder = cmd.app_folder.unwrap_or(".".to_string());
             let result = build_raft_app(&cmd.sys_type, cmd.clean, 
-                        cmd.clean_only, app_folder, cmd.docker, cmd.no_docker, cmd.idf_path);
+                        cmd.clean_only, app_folder, cmd.docker, cmd.no_docker, 
+                        cmd.idf_local_build, cmd.esp_idf_path);
             // println!("{:?}", result);
 
             // Check for build error
@@ -259,7 +266,8 @@ fn main() {
 
             // Start the serial monitor
             if !cmd.native_serial_port && is_wsl() {
-                let result = serial_monitor::start_non_native(app_folder, cmd.port, monitor_baud, cmd.no_reconnect, log, log_folder, cmd.vid);
+                let result = serial_monitor::start_non_native(app_folder, 
+                            cmd.port, monitor_baud, cmd.no_reconnect, log, log_folder, cmd.vid);
                 match result {
                     Ok(()) => std::process::exit(0),
                     Err(e) => {
@@ -269,7 +277,8 @@ fn main() {
                 }
             }
 
-            let result = serial_monitor::start_native(app_folder, cmd.port, monitor_baud, cmd.no_reconnect, log, log_folder, cmd.vid);
+            let result = serial_monitor::start_native(app_folder, 
+                            cmd.port, monitor_baud, cmd.no_reconnect, log, log_folder, cmd.vid);
             match result {
                 Ok(()) => std::process::exit(0),
                 Err(e) => {
@@ -286,7 +295,9 @@ fn main() {
 
             // Build the app
             let result = build_raft_app(&cmd.sys_type, cmd.clean, false,
-                        app_folder.clone(), cmd.docker, cmd.no_docker, cmd.idf_path);
+                        app_folder.clone(), cmd.docker, cmd.no_docker,
+                        cmd.idf_local_build, 
+                        cmd.esp_idf_path);
 
             // Check for build error
             if result.is_err() {
@@ -316,7 +327,8 @@ fn main() {
 
             // Start the serial monitor
             if !cmd.native_serial_port && is_wsl() {
-                let result = serial_monitor::start_non_native(app_folder, cmd.port.clone(), monitor_baud, cmd.no_reconnect, log, log_folder, cmd.vid.clone());
+                let result = serial_monitor::start_non_native(app_folder, 
+                            cmd.port.clone(), monitor_baud, cmd.no_reconnect, log, log_folder, cmd.vid.clone());
                 match result {
                     Ok(()) => std::process::exit(0),
                     Err(e) => {
@@ -326,7 +338,8 @@ fn main() {
                 }
             }
 
-            let result = serial_monitor::start_native(app_folder, cmd.port, monitor_baud, cmd.no_reconnect, log, log_folder,cmd.vid);
+            let result = serial_monitor::start_native(app_folder, 
+                            cmd.port, monitor_baud, cmd.no_reconnect, log, log_folder,cmd.vid);
             match result {
                 Ok(()) => std::process::exit(0),
                 Err(e) => {

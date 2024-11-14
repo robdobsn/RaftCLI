@@ -1,17 +1,22 @@
 
+use std::collections::HashMap;
 use std::process::{Command, Stdio};
 use std::fs;
-use std::path::Path;
 use std::io;
-use crate::raft_cli_utils::{is_docker_available, is_esp_idf_env, utils_get_sys_type};
+use std::path::Path;
+use crate::raft_cli_utils::{default_esp_idf_version, find_matching_esp_idf, is_docker_available, is_esp_idf_env, prepare_esp_idf, utils_get_sys_type};
 use crate::raft_cli_utils::check_app_folder_valid;
 use crate::raft_cli_utils::check_for_raft_artifacts_deletion;
 use crate::raft_cli_utils::execute_and_capture_output;
 use crate::raft_cli_utils::convert_path_for_docker;
 use crate::raft_cli_utils::CommandError;
+use crate::raft_cli_utils::get_esp_idf_version_from_dockerfile;
+use crate::raft_cli_utils::idf_version_ok;
 
 pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: bool, app_folder: String,
-            force_docker_arg: bool, no_docker_arg: bool, idf_path_full: Option<String>) 
+            force_docker_arg: bool, no_docker_arg: bool, 
+            use_local_idf_matching_dockerfile_idf: bool, 
+            idf_path_full: Option<String>) 
                             -> Result<String, Box<dyn std::error::Error>> {
 
     // println!("Building the app in folder: {} clean {} clean_only {} no_docker_arg {}", app_folder, clean, clean_only, no_docker_arg);
@@ -57,9 +62,14 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: 
     }
 
     // Handle building with or without docker
-    let build_result = if (is_esp_idf_env() && !force_docker) || no_docker {
-        // Get idf path
-        let idf_path = idf_path_full.unwrap_or("idf.py".to_string());
+    let build_result = if use_local_idf_matching_dockerfile_idf || no_docker || !is_docker_available() && !force_docker {
+        // Get idf path which should be the path specified in the idf_path_full if it exists or, if not then it should be
+        // the path specified in an environment variable IDF_PATH
+        let idf_path = if idf_path_full.is_none() {
+            std::env::var("IDF_PATH").ok()
+        } else {
+            idf_path_full.clone()
+        };
 
         // Build without docker
         build_without_docker(app_folder.clone(), sys_type.clone(), clean, clean_only,
@@ -150,7 +160,7 @@ fn build_with_docker(project_dir: String, systype_name: String, clean: bool, cle
 
     // Execute the Docker command and capture its output
     let docker_command = "docker".to_string();
-    match execute_and_capture_output(docker_command.clone(), &docker_run_args, project_dir.clone()) {
+    match execute_and_capture_output(docker_command.clone(), &docker_run_args, project_dir.clone(), HashMap::new()) {
         Ok((output, success_flag)) => {
             if success_flag {
                 // Success - return the output as a String
@@ -177,11 +187,15 @@ fn build_with_docker(project_dir: String, systype_name: String, clean: bool, cle
 // Build without docker
 fn build_without_docker(project_dir: String, systype_name: String, clean: bool, clean_only: bool,
     delete_build_folder: bool, delete_raft_artifacts_folder: bool,
-    idf_path: String) -> Result<String, std::io::Error> {
+    idf_path: Option<String>) -> Result<String, std::io::Error> {
     
-    // Build with docker
-    println!("Raft build SysType {} in {}{} (no Docker)",  systype_name, project_dir.clone(),
-                    if clean { " (clean first)" } else { "" });
+    // Debug
+    println!(
+        "Raft build SysType {} in {}{} (no Docker)",
+        systype_name,
+        project_dir,
+        if clean { " (clean first)" } else { "" }
+    );
     
     // Folders
     let build_dir = format!("build/{}", systype_name);
@@ -211,8 +225,43 @@ fn build_without_docker(project_dir: String, systype_name: String, clean: bool, 
         idf_run_args.push("build".to_string());
     }
     
+    // Get required ESP IDF version from Dockerfile
+    let required_esp_idf_version = get_esp_idf_version_from_dockerfile(&project_dir).unwrap_or(default_esp_idf_version());
+
+    // // TODO remove
+    // println!("Required ESP-IDF version: {:?} esp_idf_env_set {:?}", esp_idf_version, is_esp_idf_env());
+
+    // Check if we an ESP IDF environment is set and the version is correct
+    let mut idf_env_vars_to_add: HashMap<String, String> = HashMap::new();
+    let esp_idf_ok = is_esp_idf_env() && idf_version_ok(required_esp_idf_version.clone());
+    if !esp_idf_ok {
+
+        // Use the IDF path provided or the IDF_PATH environment variable
+        let idf_path: Option<String> = idf_path.or_else(|| std::env::var("IDF_PATH").ok());
+
+        // No ESP IDF found so try to find one
+        let idf_found_at_path = find_matching_esp_idf(required_esp_idf_version.clone(), idf_path);
+
+        // TODO remove
+        println!("IDF found {:?}", idf_found_at_path);
+
+        // Prepare the ESP-IDF environment
+        if idf_found_at_path.is_some() {
+            let idf_prep_result = prepare_esp_idf(idf_found_at_path.unwrap().as_path());
+            if idf_prep_result.is_err() {
+                return Err(std::io::Error::new(std::io::ErrorKind::Other, "No ESP-IDF environment variables found"));
+            }
+            idf_env_vars_to_add = idf_prep_result.unwrap();
+        } else {
+            return Err(std::io::Error::new(std::io::ErrorKind::Other, "No matching ESP-IDF found"));
+        }
+           
+        // return Err(std::io::Error::new(std::io::ErrorKind::Other, "ESP-IDF environment not found"));
+    }
+
     // Execute the command and handle the output
-    match execute_and_capture_output(idf_path.clone(), &idf_run_args, project_dir.clone()) {
+    let idf_py_command = "idf.py".to_string();
+    match execute_and_capture_output(idf_py_command.clone(), &idf_run_args, project_dir.clone(), idf_env_vars_to_add) {
         Ok((output, success_flag)) => {
             if success_flag {
                 Ok(output) // Return the output directly
@@ -241,3 +290,4 @@ fn build_without_docker(project_dir: String, systype_name: String, clean: bool, 
         }
     }
 }
+

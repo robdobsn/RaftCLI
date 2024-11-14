@@ -8,6 +8,8 @@ use serde_json::{json, Map, Value as JsonValue};
 use regex::Regex;
 use dialoguer::Input;
 
+use crate::raft_cli_utils::default_esp_idf_version;
+
 // Define the schema for the user input
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct ConfigQuestion {
@@ -136,7 +138,7 @@ fn get_schema() -> serde_json::Value {
         {
             "key": "esp_idf_version",
             "prompt": "ESP-IDF Version",
-            "default": "5.3.1",
+            "default": default_esp_idf_version(),
             "datatype": "string",
             "description": "The version of the ESP-IDF to use",
             "pattern": r"^\d+\.\d+(\.\d+)?(-[\da-zA-Z-]+(\.[\da-zA-Z-]+)*)?$",

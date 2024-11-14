@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use crate::app_ports::select_most_likely_port;
 use crate::app_ports::PortsCmd;
 use crate::raft_cli_utils::build_flash_command_args;
@@ -62,7 +63,7 @@ pub fn flash_raft_app(
     // println!("Flash command build folder: {}", build_folder);
 
     // Execute the flash command and check for errors
-    let (output, success_flag) = execute_and_capture_output(flash_cmd.clone(), &flash_cmd_args, app_folder.clone())?;
+    let (output, success_flag) = execute_and_capture_output(flash_cmd.clone(), &flash_cmd_args, app_folder.clone(), HashMap::new())?;
     if !success_flag {
         let err_msg = format!("Flash executed with errors: {}", output);
         return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, err_msg)));
