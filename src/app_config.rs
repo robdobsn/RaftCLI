@@ -68,21 +68,21 @@ fn get_schema() -> serde_json::Value {
             "message": "Target chip must be one of esp32, esp32s3, esp32c3, esp32c6",
             "error": "Invalid target chip"
         },
-        {
-            "key": "use_spiram",
-            "prompt": "Use SPIRAM (PSRAM)",
-            "default": "false",
-            "datatype": "boolean",
-            "description": "Specify whether SPIRAM (PSRAM) should be used",
-            "pattern": "^(true|false|y|n)$",
-            "message": "Input must be true or false",
-            "error": "Invalid SPIRAM choice"
-        },
-        {
-            "key": "add_use_spiram_to_sdkconfig",
-            "condition": "use_spiram",
-            "generator": "\n# SPIRAM\nCONFIG_SPIRAM=y\n"
-        },
+        // {
+        //     "key": "use_spiram",
+        //     "prompt": "Use SPIRAM (PSRAM)",
+        //     "default": "false",
+        //     "datatype": "boolean",
+        //     "description": "Specify whether SPIRAM (PSRAM) should be used",
+        //     "pattern": "^(true|false|t|f|yes|no|y|n)$",
+        //     "message": "Input must be true or false",
+        //     "error": "Invalid SPIRAM choice"
+        // },
+        // {
+        //     "key": "add_use_spiram_to_sdkconfig",
+        //     "condition": "use_spiram",
+        //     "generator": "\n# SPIRAM\nCONFIG_SPIRAM=y\n"
+        // },
         {
             "key": "flash_size_for_partition_table",
             "prompt": "Flash Size in MB (e.g. 4, 8, 16, 32)",
@@ -101,7 +101,7 @@ fn get_schema() -> serde_json::Value {
         {
             "key": "flash_size_4MB_sdkconfig",
             "condition": "{{flash_size_for_partition_table}}==4",
-            "generator": "\n# Flash size\nCONFIG_ESPTOOLPY_FLASHSIZE_4MB=y\n\n"
+            "generator": "# Flash size\nCONFIG_ESPTOOLPY_FLASHSIZE_4MB=y"
         },
         {
             "key": "flash_size_8MB",
@@ -111,7 +111,7 @@ fn get_schema() -> serde_json::Value {
         {
             "key": "flash_size_8MB_sdkconfig",
             "condition": "{{flash_size_for_partition_table}}==8",
-            "generator": "\n# Flash size\nCONFIG_ESPTOOLPY_FLASHSIZE_8MB=y\n\n"
+            "generator": "# Flash size\nCONFIG_ESPTOOLPY_FLASHSIZE_8MB=y"
         },
         {
             "key": "flash_size_8MB",
@@ -121,7 +121,7 @@ fn get_schema() -> serde_json::Value {
         {
             "key": "flash_size_16MB_sdkconfig",
             "condition": "{{flash_size_for_partition_table}}==16",
-            "generator": "\n# Flash size\nCONFIG_ESPTOOLPY_FLASHSIZE_16MB=y\n\n"
+            "generator": "# Flash size\nCONFIG_ESPTOOLPY_FLASHSIZE_16MB=y"
         },
         {
             "key": "flash_size_32MB",
@@ -131,7 +131,7 @@ fn get_schema() -> serde_json::Value {
         {
             "key": "flash_size_32MB_sdkconfig",
             "condition": "{{flash_size_for_partition_table}}==32",
-            "generator": "\n# Flash size\nCONFIG_ESPTOOLPY_FLASHSIZE_32MB=y\n\n"
+            "generator": "# Flash size\nCONFIG_ESPTOOLPY_FLASHSIZE_32MB=y"
         },
         {
             "key": "esp_idf_version",
@@ -149,7 +149,7 @@ fn get_schema() -> serde_json::Value {
             "default": "true",
             "datatype": "boolean",
             "description": "Create a user SysMod",
-            "pattern": "^(true|false|y|n)$",
+            "pattern": "^(true|false|t|f|yes|no|y|n)$",
             "message": "Create user SysMod must be true or false",
             "error": "Invalid user SysMod choice"
         },
@@ -196,7 +196,7 @@ fn get_schema() -> serde_json::Value {
             "default": "true",
             "datatype": "boolean",
             "description": "Use the Raft SysMods library",
-            "pattern": "^(true|false|y|n)$",
+            "pattern": "^(true|false|t|f|yes|no|y|n)$",
             "message": "Use Raft SysMods must be true or false",
             "error": "Invalid Raft SysMods choice"
         },
@@ -222,7 +222,7 @@ fn get_schema() -> serde_json::Value {
             "default": "true",
             "datatype": "boolean",
             "description": "Use the Raft WebServer library",
-            "pattern": "^(true|false|y|n)$",
+            "pattern": "^(true|false|t|f|yes|no|y|n)$",
             "message": "Use Raft WebServer must be true or false",
             "error": "Invalid Raft WebServer choice"
         },
@@ -263,7 +263,7 @@ fn get_schema() -> serde_json::Value {
             "default": "true",
             "datatype": "boolean",
             "description": "Specify whether Raft BLE support should be added",
-            "pattern": "^(true|false|y|n)$",
+            "pattern": "^(true|false|t|f|yes|no|y|n)$",
             "message": "Input must be true or false",
             "error": "Invalid BLE support choice"
         },
@@ -274,7 +274,7 @@ fn get_schema() -> serde_json::Value {
             "default": "true",
             "datatype": "boolean",
             "description": "Specify whether Raft BLE Peripheral support should be added",
-            "pattern": "^(true|false|y|n)$",
+            "pattern": "^(true|false|t|f|yes|no|y|n)$",
             "message": "Input must be true or false",
             "error": "Invalid BLE peripheral support choice"
         },
@@ -285,7 +285,7 @@ fn get_schema() -> serde_json::Value {
             "default": "false",
             "datatype": "boolean",
             "description": "Specify whether Raft BLE Central support should be added",
-            "pattern": "^(true|false|y|n)$",
+            "pattern": "^(true|false|t|f|yes|no|y|n)$",
             "message": "Input must be true or false",
             "error": "Invalid BLE central support choice"
         },
@@ -310,7 +310,7 @@ fn get_schema() -> serde_json::Value {
             "default": "true",
             "datatype": "boolean",
             "description": "Specify whether Raft I2C bus support should be added",
-            "pattern": "^(true|false|y|n)$",
+            "pattern": "^(true|false|t|f|yes|no|y|n)$",
             "message": "Input must be true or false",
             "error": "Invalid I2C support choice"
         },
