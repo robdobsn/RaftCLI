@@ -5,6 +5,11 @@ The simplest way to build this application is to [use the raft command line inte
 Follow the instructions to install the Raft CLI and then:
 
 ```
-raft run -p SERIAL_PORT
+raft run
 ```
 
+Links to further information:
+
+- [Raft command line documentation](https://github.com/robdobsn/RaftCLI)
+
+- [Raft Framework documentation](https://github.com/robdobsn/RaftCore/wiki)
