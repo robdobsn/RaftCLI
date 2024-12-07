@@ -21,6 +21,8 @@ use raft_cli_utils::check_target_folder_valid;
 mod app_ports;
 use app_ports::{PortsCmd, manage_ports};
 mod cmd_history;
+mod time_tracker;
+mod serial_rx_handler;
 
 #[derive(Clone, Parser, Debug)]
 enum Action {

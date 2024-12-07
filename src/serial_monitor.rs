@@ -14,6 +14,7 @@ use std::sync::{
 };
 use std::thread;
 use std::time::Duration;
+use crate::{serial_rx_handler, time_tracker::TimeTracker};
 
 use crate::{app_ports::{select_most_likely_port, PortsCmd}, cmd_history::CommandHistory};
 
@@ -202,6 +203,49 @@ struct CommandAndTime {
     _time: std::time::Instant,
 }
 
+fn process_serial_data(
+    buffer: &[u8],
+    line_buffer: &mut String,
+    time_tracker: &mut TimeTracker,
+    serial_read_tx: &mpsc::Sender<String>,
+    log_file: &SharedLogFile,
+) {
+    // Line received time
+    let line_received_time = chrono::Local::now();
+
+    // Convert buffer to a UTF-8 string
+    let received_data = String::from_utf8_lossy(buffer);
+
+    // Append received data to the line buffer
+    line_buffer.push_str(&received_data);
+
+    // Split lines on `\n`
+    while let Some(newline_pos) = line_buffer.find('\n') {
+        // Extract the line up to and including the newline
+        let full_line = line_buffer[..newline_pos+1].to_string();
+
+        // Remove the processed part from the line buffer
+        *line_buffer = line_buffer[newline_pos + 1..].to_string();
+
+        // Process the line through serial_rx_handler
+        let processed_line =
+            serial_rx_handler::process_line(&full_line, time_tracker, line_received_time);
+
+        // Send the processed line to serial_read_tx
+        if let Err(err) = serial_read_tx.send(processed_line.clone()) {
+            eprintln!("Error sending data to channel: {}", err);
+        }
+
+        // Optionally write the processed line to the log file
+        if let Ok(mut log_file) = log_file.lock() {
+            if let Some(log_file_info) = log_file.as_mut() {
+                write!(log_file_info.file, "{}", processed_line).unwrap();
+                log_file_info.last_write = std::time::Instant::now();
+            }
+        }
+    }
+}
+
 pub fn start_native(
     app_folder: String,
     port: Option<String>,
@@ -273,6 +317,10 @@ pub fn start_native(
     // Clone the Arc for the terminal output
     let terminal_out_clone = Arc::clone(&terminal_out);
 
+    // Line buffer and time tracker
+    let mut line_buffer = String::new();
+    let mut time_tracker = TimeTracker::new();
+
     // Spawn a thread to handle reading from the serial port
     thread::spawn(move || {
         while r.load(Ordering::SeqCst) {
@@ -283,15 +331,23 @@ pub fn start_native(
             };
             match result {
                 Ok(n) if n > 0 => {
-                    let received = String::from_utf8_lossy(&buffer[..n]);
-                    serial_read_tx.send(received.to_string())
-                        .expect("Failed to send data to main thread");
-                    if let Ok(mut log_file) = log_file.lock() {
-                        if let Some(log_file_info) = log_file.as_mut() {
-                            write!(log_file_info.file, "{}", received).unwrap();
-                            log_file_info.last_write = std::time::Instant::now();
-                        }
-                    }
+                    // Process the received data
+                    process_serial_data(
+                        &buffer[..n],
+                        &mut line_buffer,
+                        &mut time_tracker,
+                        &serial_read_tx,
+                        &log_file,
+                    );
+                    // let received = String::from_utf8_lossy(&buffer[..n]);
+                    // serial_read_tx.send(received.to_string())
+                    //     .expect("Failed to send data to main thread");
+                    // if let Ok(mut log_file) = log_file.lock() {
+                    //     if let Some(log_file_info) = log_file.as_mut() {
+                    //         write!(log_file_info.file, "{}", received).unwrap();
+                    //         log_file_info.last_write = std::time::Instant::now();
+                    //     }
+                    // }
                 }
                 Ok(_) => {}
                 Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {}

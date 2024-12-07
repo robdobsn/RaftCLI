@@ -1,0 +1,994 @@
+(255548 10:54:48.670662)  MQTTClient: socketConnect took 1 ms[0m
+
+(260548 10:54:50.604994)  MQTTClient: loop socket select timeout[0m
+
+(260550 10:54:50.721766)  MQTTClient: loop ERROR connId 49 CLOSED[0m
+
+10:54:54.229582 
+
+10:54:54.229582 reset
+
+10:54:54.229582 {"req":"reset","rslt":"ok"}
+
+(265070 10:54:55.129661)  wifi:state: run -> init (0x0)
+
+(265074 10:54:55.131772)  wifi:pm stop, total sleep time: 208437438 us / 264432994 us
+
+10:54:55.131772 
+
+(265075 10:54:55.131772)  wifi:<ba-del>idx:0, tid:0
+
+(265076 10:54:55.134777)  wifi:new:<6,0>, old:<6,0>, ap:<255,255>, sta:<6,0>, prof:1, snd_ch_cfg:0x0
+
+(265079 10:54:55.165690)  NetSys: WiFi disconnected, retry to connect to the AP retries 0
+
+(265110 10:54:55.165690)  wifi:flush txq
+
+(265110 10:54:55.165690)  wifi:stop sw txq
+
+(265111 10:54:55.168845)  wifi:lmac stop hw txq
+
+10:54:55.168845 ESP-ROM:esp32s3-20210327
+
+10:54:55.168845 Build:Mar 27 2021
+
+10:54:55.175938 rst:0xc (RTC_SW_CPU_RST),boot:0xb (SPI_FAST_FLASH_BOOT)
+
+10:54:55.175938 Saved PC:0x40375d8c
+
+10:54:55.175938 SPIWP:0xee
+
+10:54:55.175938 mode:DIO, clock div:1
+
+10:54:55.175938 load:0x3fce2810,len:0x178c
+
+10:54:55.193001 load:0x403c8700,len:0x4
+
+10:54:55.193001 load:0x403c8704,len:0xc10
+
+10:54:55.193001 load:0x403cb700,len:0x2dc0
+
+10:54:55.193001 entry 0x403c8904
+
+(26 10:54:55.196605)  boot: ESP-IDF v5.3.1 2nd stage bootloader[0m
+
+(26 10:54:55.198610)  boot: compile time Nov 20 2024 22:02:32[0m
+
+(26 10:54:55.198610)  boot: Multicore bootloader[0m
+
+(27 10:54:55.200819)  boot: chip revision: v0.1[0m
+
+(27 10:54:55.200819)  boot.esp32s3: Boot SPI Speed : 80MHz[0m
+
+(27 10:54:55.203148)  boot.esp32s3: SPI Mode       : DIO[0m
+
+(27 10:54:55.203148)  boot.esp32s3: SPI Flash Size : 4MB[0m
+
+(27 10:54:55.205317)  boot: Enabling RNG early entropy source...[0m
+
+(28 10:54:55.205317)  boot: Partition Table:[0m
+
+(28 10:54:55.207827)  boot: ## Label            Usage          Type ST Offset   Length[0m
+
+(28 10:54:55.209826)  boot:  0 nvs              WiFi data        01 02 00009000 00015000[0m
+
+(29 10:54:55.211905)  boot:  1 otadata          OTA data         01 00 0001e000 00002000[0m
+
+(29 10:54:55.213930)  boot:  2 app0             OTA app          00 10 00020000 001b0000[0m
+
+(29 10:54:55.213930)  boot:  3 app1             OTA app          00 11 001d0000 001b0000[0m
+
+(30 10:54:55.216326)  boot:  4 fs               Unknown data     01 83 00380000 00080000[0m
+
+(30 10:54:55.218333)  boot: End of partition table[0m
+
+(30 10:54:55.247900)  esp_image: segment 0: paddr=00020020 vaddr=3c140020 size=439d0h (276944) map[0m
+
+(81 10:54:55.252887)  esp_image: segment 1: paddr=000639f8 vaddr=3fc9ee00 size=05804h ( 22532) load[0m
+
+(86 10:54:55.259471)  esp_image: segment 2: paddr=00069204 vaddr=40374000 size=06e14h ( 28180) load[0m
+
+(92 10:54:55.371491)  esp_image: segment 3: paddr=00070020 vaddr=42000020 size=13d784h (1300356) map[0m
+
+(326 10:54:55.511298)  esp_image: segment 4: paddr=001ad7ac vaddr=4037ae14 size=13f70h ( 81776) load[0m
+
+(344 10:54:55.522574)  esp_image: segment 5: paddr=001c1724 vaddr=600fe100 size=00004h (     4) load[0m
+
+(355 10:54:55.524411)  boot: Loaded app from partition at offset 0x20000[0m
+
+(356 10:54:55.532854)  boot: Disabling RNG early entropy source...[0m
+
+(357 10:54:55.532854)  cpu_start: Multicore app[0m
+
+(366 10:54:55.535641)  cpu_start: Pro cpu start user code[0m
+
+(366 10:54:55.535641)  cpu_start: cpu freq: 160000000 Hz[0m
+
+(366 10:54:55.538023)  app_init: Application information:[0m
+
+(366 10:54:55.538023)  app_init: Project name:     TestS3[0m
+
+(366 10:54:55.540174)  app_init: App version:      v5.5.0-113-g22c95cb-dirty[0m
+
+(367 10:54:55.542178)  app_init: Compile time:     Nov 20 2024 22:02:28[0m
+
+(367 10:54:55.542178)  app_init: ELF file SHA256:  72dd8dd61...[0m
+
+(367 10:54:55.544766)  app_init: ESP-IDF:          v5.3.1[0m
+
+(367 10:54:55.546475)  efuse_init: Min chip rev:     v0.0[0m
+
+(367 10:54:55.546475)  efuse_init: Max chip rev:     v0.99 [0m
+
+(368 10:54:55.548650)  efuse_init: Chip rev:         v0.1[0m
+
+(368 10:54:55.550650)  heap_init: Initializing. RAM available for dynamic allocation:[0m
+
+(368 10:54:55.550650)  heap_init: At 3FCAB6E8 len 0003E028 (248 KiB): RAM[0m
+
+(368 10:54:55.553177)  heap_init: At 3FCE9710 len 00005724 (21 KiB): RAM[0m
+
+(369 10:54:55.554752)  heap_init: At 3FCF0000 len 00008000 (32 KiB): DRAM[0m
+
+(369 10:54:55.554752)  heap_init: At 600FE104 len 00001EE4 (7 KiB): RTCRAM[0m
+
+(370 10:54:55.556946)  spi_flash: detected chip: gd[0m
+
+(370 10:54:55.556946)  spi_flash: flash io: dio[0m
+
+(370 10:54:55.560376)  spi_flash: Detected size(16384k) larger than the size in the binary image header(4096k). Using the size in the binary image header.[0m
+
+(382 10:54:55.560376)  RaftJsonNVS: nvs_flash_init() OK
+
+(383 10:54:55.562527)  sleep: Configure to isolate all GPIO pins in sleep state[0m
+
+(384 10:54:55.564132)  sleep: Enable automatic switching of GPIO sleep configuration[0m
+
+(384 10:54:55.564132)  coexist: coex firmware version: 4482466[0m
+
+(385 10:54:55.566392)  coexist: coexist rom version e7ae62f[0m
+
+(385 10:54:55.566392)  main_task: Started on CPU0[0m
+
+(386 10:54:55.568501)  main_task: Calling app_main()[0m
+
+(393 10:54:55.570130)  SysMan: getFriendlyName Scader (isSet Y nvsStr Scader default TestS3 uniqueStr f412faf99d62)
+
+(393 10:54:55.571666)  SysMan: systemName TestS3 systemVersion 6.5.0 friendlyName Scader (user-set) (default TestS3) serialNo <<NONE>> nvsNamespace system
+
+(394 10:54:55.574301)  SysMan: loopSleepMs 1 slowSysModThresholdUs 100000 monitorPeriodMs 30000 rebootAfterNHours 24 rebootIfDiscMins 10 supervisorEnable Y systemUniqueString f412faf99d62 altHwPrefix 
+
+(395 10:54:55.576014)  RaftApp: TestS3 6.5.0 (built Nov 20 2024 22:02:41) Heap (int) 269864 (all) 269864[0m
+
+(396 10:54:55.611325)  DetectHardware: detectHardware() returning generic[0m
+
+(443 10:54:55.611325)  BLEBusDevMan: BLEBusDeviceManager setup
+
+(444 10:54:55.630270)  BLEBus: setup name BusBLE
+
+(462 10:54:55.633035)  BLE_INIT: BT controller compile version [aa16a46][0m
+
+(464 10:54:55.633035)  BLE_INIT: Bluetooth MAC: f4:12:fa:f9:9d:62[0m
+
+(465 10:54:55.675427)  phy_init: phy_version 680,a6008b2,Jun  4 2024,16:41:10[0m
+
+(507 10:54:55.677150)  BLEMan: setup maxPktLen 500 using service loop outQSlots 15 minMsBetweenSends 50 advIntervalMs 200
+
+(508 10:54:55.688688)  BLEMan: setup uuidCmdRespService aa76677e-9cfd-4626-a510-0d305be57c8d uuidCmdRespCommand aa76677e-9cfd-4626-a510-0d305be57c8e uuidCmdRespResponse aa76677e-9cfd-4626-a510-0d305be57c8f
+
+(509 10:54:55.688688)  ESPOTAUpdate: setup otaDirect YES
+
+(521 10:54:55.691374)  FileSys: setup LittleFS partition size total 524288, used 73728
+
+(521 10:54:55.693404)  FileSys: localFileSystemSetup LittleFS initialised ok
+
+(522 10:54:55.693404)  FileSys: sdFileSystemSetup SD disabled
+
+(525 10:54:55.695612)  SysMan: getFriendlyName Scader (isSet Y nvsStr Scader default TestS3 uniqueStr f412faf99d62)
+
+(528 10:54:55.697329)  pp: pp rom version: e7ae62f[0m
+
+(528 10:54:55.697329)  net80211: net80211 rom version: e7ae62f[0m
+
+(530 10:54:55.708528)  wifi:wifi driver task: 3fccd1d0, prio:23, stack:6656, core=0
+
+(540 10:54:55.708528)  wifi:wifi firmware version: ccaebfa
+
+(541 10:54:55.710942)  wifi:wifi certification version: v7.0
+
+(541 10:54:55.710942)  wifi:config NVS flash: enabled
+
+(541 10:54:55.713185)  wifi:config nano formating: disabled
+
+(542 10:54:55.713185)  wifi:Init data frame dynamic rx buffer num: 32
+
+(542 10:54:55.715325)  wifi:Init static rx mgmt buffer num: 5
+
+(542 10:54:55.715325)  wifi:Init management short buffer num: 32
+
+(542 10:54:55.717464)  wifi:Init dynamic tx buffer num: 32
+
+(543 10:54:55.717464)  wifi:Init static tx FG buffer num: 2
+
+(543 10:54:55.719710)  wifi:Init static rx buffer size: 1600
+
+(543 10:54:55.719710)  wifi:Init static rx buffer num: 10
+
+(543 10:54:55.721910)  wifi:Init dynamic rx buffer num: 32
+
+(545 10:54:55.721910)  wifi_init: rx ba win: 6[0m
+
+(545 10:54:55.721910)  wifi_init: accept mbox: 6[0m
+
+(546 10:54:55.724558)  wifi_init: tcpip mbox: 32[0m
+
+(546 10:54:55.724558)  wifi_init: udp mbox: 6[0m
+
+(546 10:54:55.726733)  wifi_init: tcp mbox: 6[0m
+
+(546 10:54:55.726733)  wifi_init: tcp tx win: 5760[0m
+
+(546 10:54:55.728992)  wifi_init: tcp rx win: 5760[0m
+
+(546 10:54:55.728992)  wifi_init: tcp mss: 1440[0m
+
+(547 10:54:55.731103)  NetSys: startWifi threshold 3 set to 0
+
+(548 10:54:55.733150)  wifi:Password length matches WPA2 standards, authmode threshold changes from OPEN to WPA2
+
+(549 10:54:55.733150)  NetSys: setup connecting to ssid rdint01
+
+(551 10:54:55.735397)  wifi:mode : sta (f4:12:fa:f9:9d:60)
+
+(552 10:54:55.735397)  wifi:enable tsf
+
+(553 10:54:55.735397)  NetSys: startWifi init complete
+
+(556 10:54:55.738161)  NetSys: setup OK
+
+(557 10:54:55.738161)  NetMan: setup network OK "wifiSTA":"1","wifiAP":"0","eth":"0","hostname":"Scader"
+
+(562 10:54:55.740293)  wifi:new:<6,0>, old:<1,0>, ap:<255,255>, sta:<6,0>, prof:1, snd_ch_cfg:0x0
+
+(564 10:54:55.742301)  wifi:state: init -> auth (0xb0)
+
+(569 10:54:55.748364)  SerialConsole: setup USB JTAG OK enabled YES rxBufLen 5000 txBufLen 1500
+
+(571 10:54:55.748364)  StatePub: setup num publication recs 1
+
+(578 10:54:55.748364)  wifi:state: auth -> assoc (0x0)
+
+(580 10:54:55.751376)  RaftClientListener: socketListenerTask (listenerSocketId 48) listening on port 80
+
+(582 10:54:55.754952)  WebServer: serveStaticFiles servePaths /=/local,/files/local=/local,/files/sd=/sd addResult OK
+
+(587 10:54:55.766305)  wifi:state: assoc -> run (0x10)
+
+(594 10:54:55.766305)  ScaderRelays: setup disabled
+
+(598 10:54:55.781627)  ScaderShades: setup disabled
+
+(602 10:54:55.781627)  ScaderOpener: setup disabled
+
+(605 10:54:55.781627)  ScaderRFID: setup disabled
+
+(614 10:54:55.788829)  ScaderElecMeters: setup disabled
+
+(618 10:54:55.788829)  ScaderLocks: setup disabled
+
+(621 10:54:55.788829)  ScaderLEDPixels: setup disabled
+
+(624 10:54:55.796871)  ScaderPulseCounter: setup disabled
+
+(625 10:54:55.798935)  ScaderTest: ----------------------- setup enabled
+
+(630 10:54:55.798935)  wifi:connected with rdint01, aid = 4, channel 6, BW20, bssid = 6e:d7:9a:17:90:59
+
+(631 10:54:55.802175)  wifi:security: WPA2-PSK, phy: bgn, rssi: -67
+
+(634 10:54:55.802175)  wifi:pm start, type: 1
+
+10:54:55.802175 
+
+(635 10:54:55.805146)  wifi:dp: 1, bi: 102400, li: 3, scale listen interval from 307200 us to 307200 us
+
+(635 10:54:55.810454)  wifi:set rx beacon pti, rx_bcn_pti: 14, bcn_timeout: 25000, mt_pti: 14, mt_time: 10000
+
+(642 10:54:55.816826)  wifi:<ba-add>idx:0 (ifx:0, 6e:d7:9a:17:90:59), tid:0, ssn:0, winSize:64
+
+(644 10:54:55.816826)  DevMan: addRestAPIEndpoints added devman
+
+(649 10:54:55.819512)  WebServer: addRestAPIEndpoints added webcerts API
+
+(650 10:54:55.821700)  WebServer: setupEndpoints serverEnabled Y port 80 apiPrefix api/
+
+(651 10:54:55.821700)  ScaderRelays: addRestAPIEndpoints scader relays
+
+(654 10:54:55.823904)  ScaderRFID: addRestAPIEndpoints scader rfid
+
+(655 10:54:55.823904)  ScaderElecMeters: addRestAPIEndpoints setup elec
+
+(656 10:54:55.826388)  ScaderLocks: addRestAPIEndpoints scader door
+
+(656 10:54:55.828456)  ScaderLEDPixels: addRestAPIEndpoints scader LEDPixels
+
+(657 10:54:55.828456)  ScaderPulseCounter: addRestAPIEndpoints scader pulse counter
+
+(659 10:54:55.830616)  StatePub: registerDataSource registered msgGenFn for topic devjson
+
+(659 10:54:55.892651)  SysMan: pauseWiFiForBLEConn YES
+
+(660 10:54:55.892651)  SysMan: setStatusChangeCB sysMod BLEMan cbValid 1 sysModFound OK
+
+(725 10:54:55.999530)  wifi:AP's beacon interval = 102400 us, DTIM period = 1
+
+(2638 10:54:57.908915)  esp_netif_handlers: sta ip: 192.168.86.175, mask: 255.255.255.0, gw: 192.168.86.1[0m
+
+(2650 10:54:57.908915)  NetSys: setupMDNS OK hostname Scader
+
+(3428 10:54:58.676729)  NetSys: time sync 2024-11-21 10:54:58.372
+
+10:54:59.226171 
+
+10:54:59.226171 reset
+
+10:54:59.226171 {"req":"reset","rslt":"ok"}
+
+(4951 10:55:00.123276)  wifi:state: run -> init (0x0)
+
+(4955 10:55:00.125211)  wifi:pm stop, total sleep time: 2605480 us / 4320600 us
+
+10:55:00.125211 
+
+(4956 10:55:00.125211)  wifi:<ba-del>idx:0, tid:0
+
+(4957 10:55:00.128040)  wifi:new:<6,0>, old:<6,0>, ap:<255,255>, sta:<6,0>, prof:1, snd_ch_cfg:0x0
+
+(4960 10:55:00.159284)  NetSys: WiFi disconnected, retry to connect to the AP retries 0
+
+(4989 10:55:00.159284)  wifi:flush txq
+
+(4989 10:55:00.159284)  wifi:stop sw txq
+
+(4990 10:55:00.159284)  wifi:lmac stop hw txq
+
+10:55:00.163072 ESP-ROM:esp32s3-20210327
+
+10:55:00.163072 Build:Mar 27 2021
+
+10:55:00.163072 rst:0xc (RTC_SW_CPU_RST),boot:0xb (SPI_FAST_FLASH_BOOT)
+
+10:55:00.168379 Saved PC:0x40375d8c
+
+10:55:00.168379 SPIWP:0xee
+
+10:55:00.168379 mode:DIO, clock div:1
+
+10:55:00.168379 load:0x3fce2810,len:0x178c
+
+10:55:00.168379 load:0x403c8700,len:0x4
+
+10:55:00.184494 load:0x403c8704,len:0xc10
+
+10:55:00.184494 load:0x403cb700,len:0x2dc0
+
+10:55:00.184494 entry 0x403c8904
+
+(26 10:55:00.187453)  boot: ESP-IDF v5.3.1 2nd stage bootloader[0m
+
+(26 10:55:00.187453)  boot: compile time Nov 20 2024 22:02:32[0m
+
+(26 10:55:00.189633)  boot: Multicore bootloader[0m
+
+(27 10:55:00.189633)  boot: chip revision: v0.1[0m
+
+(27 10:55:00.191865)  boot.esp32s3: Boot SPI Speed : 80MHz[0m
+
+(27 10:55:00.191865)  boot.esp32s3: SPI Mode       : DIO[0m
+
+(27 10:55:00.194045)  boot.esp32s3: SPI Flash Size : 4MB[0m
+
+(27 10:55:00.196055)  boot: Enabling RNG early entropy source...[0m
+
+(28 10:55:00.196055)  boot: Partition Table:[0m
+
+(28 10:55:00.198273)  boot: ## Label            Usage          Type ST Offset   Length[0m
+
+(28 10:55:00.200275)  boot:  0 nvs              WiFi data        01 02 00009000 00015000[0m
+
+(29 10:55:00.201931)  boot:  1 otadata          OTA data         01 00 0001e000 00002000[0m
+
+(29 10:55:00.201931)  boot:  2 app0             OTA app          00 10 00020000 001b0000[0m
+
+(29 10:55:00.204096)  boot:  3 app1             OTA app          00 11 001d0000 001b0000[0m
+
+(30 10:55:00.206099)  boot:  4 fs               Unknown data     01 83 00380000 00080000[0m
+
+(30 10:55:00.207952)  boot: End of partition table[0m
+
+(30 10:55:00.239394)  esp_image: segment 0: paddr=00020020 vaddr=3c140020 size=439d0h (276944) map[0m
+
+(81 10:55:00.244388)  esp_image: segment 1: paddr=000639f8 vaddr=3fc9ee00 size=05804h ( 22532) load[0m
+
+(86 10:55:00.250959)  esp_image: segment 2: paddr=00069204 vaddr=40374000 size=06e14h ( 28180) load[0m
+
+(92 10:55:00.250959)  esp_image: segment 3: paddr=00070020 vaddr=42000020 size=13d784h (1300356) map[0m
+
+(326 10:55:00.502726)  esp_image: segment 4: paddr=001ad7ac vaddr=4037ae14 size=13f70h ( 81776) load[0m
+
+(344 10:55:00.514046)  esp_image: segment 5: paddr=001c1724 vaddr=600fe100 size=00004h (     4) load[0m
+
+(355 10:55:00.515858)  boot: Loaded app from partition at offset 0x20000[0m
+
+(356 10:55:00.524360)  boot: Disabling RNG early entropy source...[0m
+
+(357 10:55:00.524360)  cpu_start: Multicore app[0m
+
+(366 10:55:00.526726)  cpu_start: Pro cpu start user code[0m
+
+(366 10:55:00.526726)  cpu_start: cpu freq: 160000000 Hz[0m
+
+(366 10:55:00.528943)  app_init: Application information:[0m
+
+(366 10:55:00.528943)  app_init: Project name:     TestS3[0m
+
+(366 10:55:00.531161)  app_init: App version:      v5.5.0-113-g22c95cb-dirty[0m
+
+(367 10:55:00.532872)  app_init: Compile time:     Nov 20 2024 22:02:28[0m
+
+(367 10:55:00.532872)  app_init: ELF file SHA256:  72dd8dd61...[0m
+
+(367 10:55:00.535105)  app_init: ESP-IDF:          v5.3.1[0m
+
+(367 10:55:00.536614)  efuse_init: Min chip rev:     v0.0[0m
+
+(367 10:55:00.536614)  efuse_init: Max chip rev:     v0.99 [0m
+
+(368 10:55:00.538785)  efuse_init: Chip rev:         v0.1[0m
+
+(368 10:55:00.540789)  heap_init: Initializing. RAM available for dynamic allocation:[0m
+
+(368 10:55:00.540789)  heap_init: At 3FCAB6E8 len 0003E028 (248 KiB): RAM[0m
+
+(368 10:55:00.543072)  heap_init: At 3FCE9710 len 00005724 (21 KiB): RAM[0m
+
+(369 10:55:00.544683)  heap_init: At 3FCF0000 len 00008000 (32 KiB): DRAM[0m
+
+(369 10:55:00.544683)  heap_init: At 600FE104 len 00001EE4 (7 KiB): RTCRAM[0m
+
+(370 10:55:00.546910)  spi_flash: detected chip: gd[0m
+
+(370 10:55:00.546910)  spi_flash: flash io: dio[0m
+
+(370 10:55:00.550160)  spi_flash: Detected size(16384k) larger than the size in the binary image header(4096k). Using the size in the binary image header.[0m
+
+(382 10:55:00.550160)  RaftJsonNVS: nvs_flash_init() OK
+
+(383 10:55:00.552500)  sleep: Configure to isolate all GPIO pins in sleep state[0m
+
+(384 10:55:00.554308)  sleep: Enable automatic switching of GPIO sleep configuration[0m
+
+(384 10:55:00.554308)  coexist: coex firmware version: 4482466[0m
+
+(384 10:55:00.556484)  coexist: coexist rom version e7ae62f[0m
+
+(385 10:55:00.556484)  main_task: Started on CPU0[0m
+
+(386 10:55:00.558658)  main_task: Calling app_main()[0m
+
+(393 10:55:00.560318)  SysMan: getFriendlyName Scader (isSet Y nvsStr Scader default TestS3 uniqueStr f412faf99d62)
+
+(393 10:55:00.561904)  SysMan: systemName TestS3 systemVersion 6.5.0 friendlyName Scader (user-set) (default TestS3) serialNo <<NONE>> nvsNamespace system
+
+(394 10:55:00.564932)  SysMan: loopSleepMs 1 slowSysModThresholdUs 100000 monitorPeriodMs 30000 rebootAfterNHours 24 rebootIfDiscMins 10 supervisorEnable Y systemUniqueString f412faf99d62 altHwPrefix 
+
+(395 10:55:00.566692)  RaftApp: TestS3 6.5.0 (built Nov 20 2024 22:02:41) Heap (int) 269864 (all) 269864[0m
+
+(396 10:55:00.602764)  DetectHardware: detectHardware() returning generic[0m
+
+(443 10:55:00.602764)  BLEBusDevMan: BLEBusDeviceManager setup
+
+(444 10:55:00.621613)  BLEBus: setup name BusBLE
+
+(462 10:55:00.624429)  BLE_INIT: BT controller compile version [aa16a46][0m
+
+(464 10:55:00.624429)  BLE_INIT: Bluetooth MAC: f4:12:fa:f9:9d:62[0m
+
+(465 10:55:00.667267)  phy_init: phy_version 680,a6008b2,Jun  4 2024,16:41:10[0m
+
+(508 10:55:00.669045)  BLEMan: setup maxPktLen 500 using service loop outQSlots 15 minMsBetweenSends 50 advIntervalMs 200
+
+(509 10:55:00.681083)  BLEMan: setup uuidCmdRespService aa76677e-9cfd-4626-a510-0d305be57c8d uuidCmdRespCommand aa76677e-9cfd-4626-a510-0d305be57c8e uuidCmdRespResponse aa76677e-9cfd-4626-a510-0d305be57c8f
+
+(509 10:55:00.681083)  ESPOTAUpdate: setup otaDirect YES
+
+(522 10:55:00.683673)  FileSys: setup LittleFS partition size total 524288, used 73728
+
+(522 10:55:00.686339)  FileSys: localFileSystemSetup LittleFS initialised ok
+
+(523 10:55:00.686339)  FileSys: sdFileSystemSetup SD disabled
+
+(527 10:55:00.688718)  SysMan: getFriendlyName Scader (isSet Y nvsStr Scader default TestS3 uniqueStr f412faf99d62)
+
+(530 10:55:00.690714)  pp: pp rom version: e7ae62f[0m
+
+(530 10:55:00.690714)  net80211: net80211 rom version: e7ae62f[0m
+
+(532 10:55:00.701278)  wifi:wifi driver task: 3fccd1d0, prio:23, stack:6656, core=0
+
+(542 10:55:00.701278)  wifi:wifi firmware version: ccaebfa
+
+(542 10:55:00.703768)  wifi:wifi certification version: v7.0
+
+(543 10:55:00.703768)  wifi:config NVS flash: enabled
+
+(543 10:55:00.705939)  wifi:config nano formating: disabled
+
+(543 10:55:00.705939)  wifi:Init data frame dynamic rx buffer num: 32
+
+(543 10:55:00.708185)  wifi:Init static rx mgmt buffer num: 5
+
+(544 10:55:00.708185)  wifi:Init management short buffer num: 32
+
+(544 10:55:00.710253)  wifi:Init dynamic tx buffer num: 32
+
+(544 10:55:00.710253)  wifi:Init static tx FG buffer num: 2
+
+(544 10:55:00.712531)  wifi:Init static rx buffer size: 1600
+
+(545 10:55:00.712531)  wifi:Init static rx buffer num: 10
+
+(545 10:55:00.714716)  wifi:Init dynamic rx buffer num: 32
+
+(546 10:55:00.714716)  wifi_init: rx ba win: 6[0m
+
+(546 10:55:00.714716)  wifi_init: accept mbox: 6[0m
+
+(546 10:55:00.717627)  wifi_init: tcpip mbox: 32[0m
+
+(546 10:55:00.717627)  wifi_init: udp mbox: 6[0m
+
+(547 10:55:00.719858)  wifi_init: tcp mbox: 6[0m
+
+(547 10:55:00.719858)  wifi_init: tcp tx win: 5760[0m
+
+(547 10:55:00.721946)  wifi_init: tcp rx win: 5760[0m
+
+(547 10:55:00.721946)  wifi_init: tcp mss: 1440[0m
+
+(548 10:55:00.724151)  NetSys: startWifi threshold 3 set to 0
+
+(549 10:55:00.725714)  wifi:Password length matches WPA2 standards, authmode threshold changes from OPEN to WPA2
+
+(550 10:55:00.725714)  NetSys: setup connecting to ssid rdint01
+
+(552 10:55:00.727831)  wifi:mode : sta (f4:12:fa:f9:9d:60)
+
+(553 10:55:00.727831)  wifi:enable tsf
+
+(554 10:55:00.727831)  NetSys: startWifi init complete
+
+(557 10:55:00.730837)  NetSys: setup OK
+
+(557 10:55:00.730837)  NetMan: setup network OK "wifiSTA":"1","wifiAP":"0","eth":"0","hostname":"Scader"
+
+(563 10:55:00.733106)  wifi:new:<6,0>, old:<1,0>, ap:<255,255>, sta:<6,0>, prof:1, snd_ch_cfg:0x0
+
+(565 10:55:00.734738)  wifi:state: init -> auth (0xb0)
+
+(570 10:55:00.738210)  SerialConsole: setup USB JTAG OK enabled YES rxBufLen 5000 txBufLen 1500
+
+(572 10:55:00.738210)  StatePub: setup num publication recs 1
+
+(579 10:55:00.742181)  RaftClientListener: socketListenerTask (listenerSocketId 48) listening on port 80
+
+(581 10:55:00.742181)  wifi:state: auth -> assoc (0x0)
+
+(583 10:55:00.751719)  WebServer: serveStaticFiles servePaths /=/local,/files/local=/local,/files/sd=/sd addResult OK
+
+(592 10:55:00.759713)  wifi:state: assoc -> run (0x10)
+
+(595 10:55:00.759713)  ScaderRelays: setup disabled
+
+(600 10:55:00.775022)  ScaderShades: setup disabled
+
+(604 10:55:00.775022)  ScaderOpener: setup disabled
+
+(612 10:55:00.775022)  ScaderRFID: setup disabled
+
+(616 10:55:00.782190)  ScaderElecMeters: setup disabled
+
+(620 10:55:00.782190)  ScaderLocks: setup disabled
+
+(623 10:55:00.782190)  ScaderLEDPixels: setup disabled
+
+(630 10:55:00.790009)  wifi:connected with rdint01, aid = 4, channel 6, BW20, bssid = 6e:d7:9a:17:90:59
+
+(631 10:55:00.793764)  wifi:security: WPA2-PSK, phy: bgn, rssi: -67
+
+(634 10:55:00.793764)  wifi:pm start, type: 1
+
+10:55:00.793764 
+
+(635 10:55:00.796539)  wifi:dp: 1, bi: 102400, li: 3, scale listen interval from 307200 us to 307200 us
+
+(635 10:55:00.799765)  wifi:set rx beacon pti, rx_bcn_pti: 14, bcn_timeout: 25000, mt_pti: 14, mt_time: 10000
+
+(640 10:55:00.803613)  ScaderPulseCounter: setup disabled
+
+(641 10:55:00.803613)  ScaderTest: ----------------------- setup enabled
+
+(644 10:55:00.807268)  DevMan: addRestAPIEndpoints added devman
+
+(645 10:55:00.807268)  wifi:AP's beacon interval = 102400 us, DTIM period = 1
+
+(648 10:55:00.816890)  wifi:<ba-add>idx:0 (ifx:0, 6e:d7:9a:17:90:59), tid:0, ssn:0, winSize:64
+
+(657 10:55:00.818721)  WebServer: addRestAPIEndpoints added webcerts API
+
+(658 10:55:00.818721)  WebServer: setupEndpoints serverEnabled Y port 80 apiPrefix api/
+
+(659 10:55:00.821862)  ScaderRelays: addRestAPIEndpoints scader relays
+
+(663 10:55:00.823947)  ScaderRFID: addRestAPIEndpoints scader rfid
+
+(663 10:55:00.823947)  ScaderElecMeters: addRestAPIEndpoints setup elec
+
+(664 10:55:00.826558)  ScaderLocks: addRestAPIEndpoints scader door
+
+(665 10:55:00.826558)  ScaderLEDPixels: addRestAPIEndpoints scader LEDPixels
+
+(666 10:55:00.829205)  ScaderPulseCounter: addRestAPIEndpoints scader pulse counter
+
+(667 10:55:00.831286)  StatePub: registerDataSource registered msgGenFn for topic devjson
+
+(668 10:55:00.831286)  SysMan: pauseWiFiForBLEConn YES
+
+(668 10:55:00.935790)  SysMan: setStatusChangeCB sysMod BLEMan cbValid 1 sysModFound OK
+
+(1638 10:55:01.904701)  esp_netif_handlers: sta ip: 192.168.86.175, mask: 255.255.255.0, gw: 192.168.86.1[0m
+
+(1650 10:55:01.904701)  NetSys: setupMDNS OK hostname Scader
+
+(5373 10:55:05.640658)  MQTTClient: socketConnect took 2 ms[0m
+
+(5493 10:55:05.654981)  wifi:<ba-add>idx:1 (ifx:0, 6e:d7:9a:17:90:59), tid:1, ssn:0, winSize:64
+
+(5496 10:55:05.766707)  NetSys: time sync 2024-11-21 10:55:05.424
+
+(5673 10:55:05.938593)  SysMan: {"f":"Scader","n":"TestS3","v":"6.5.0","r":"generic","hpInt":91348,"hpMin":87800,"hpAll":91348,"NetMan":{"hostname":"Scader","wifiSTA":{"en":1,"conn":1,"SSID":"rdint01","RSSI":-65,"IP":"192.168.86.175","MAC":"f4:12:fa:f9:9d:60","paused":0}},"BLEMan":{"s":"disco","rxBPS":0.0,"txBPS":0.0},"SysMan":{"avgUs":336.58,"maxUs":4650,"minUs":0,"slowUs":{"MQTTMan":4331,"CommsMan":2151}},"ESPOTAUpdate":{"Bps":0.0,"stMs":0,"bytes":0,"wrPS":0.0,"elapS":5.3,"blk":0}}
+
+10:55:10.440861 
+
+10:55:10.440861 reset
+
+10:55:10.440861 {"req":"reset","rslt":"ok"}
+
+(10374 10:55:10.534139)  MQTTClient: loop socket select timeout[0m
+
+(10375 10:55:10.645498)  MQTTClient: loop ERROR connId 49 CLOSED[0m
+
+(11174 10:55:11.337632)  wifi:state: run -> init (0x0)
+
+(11178 10:55:11.339718)  wifi:pm stop, total sleep time: 7216154 us / 10543382 us
+
+10:55:11.339718 
+
+(11179 10:55:11.339718)  wifi:<ba-del>idx:0, tid:0
+
+(11180 10:55:11.339718)  wifi:<ba-del>idx:1, tid:1
+
+(11180 10:55:11.343098)  wifi:new:<6,0>, old:<6,0>, ap:<255,255>, sta:<6,0>, prof:1, snd_ch_cfg:0x0
+
+(11183 10:55:11.381414)  NetSys: WiFi disconnected, retry to connect to the AP retries 0
+
+(11222 10:55:11.381414)  wifi:flush txq
+
+(11222 10:55:11.381414)  wifi:stop sw txq
+
+(11223 10:55:11.384778)  wifi:lmac stop hw txq
+
+10:55:11.384778 ESP-ROM:esp32s3-20210327
+
+10:55:11.384778 Build:Mar 27 2021
+
+10:55:11.388348 rst:0xc (RTC_SW_CPU_RST),boot:0xb (SPI_FAST_FLASH_BOOT)
+
+10:55:11.388348 Saved PC:0x40375d8c
+
+10:55:11.388348 SPIWP:0xee
+
+10:55:11.388348 mode:DIO, clock div:1
+
+10:55:11.402610 load:0x3fce2810,len:0x178c
+
+10:55:11.402610 load:0x403c8700,len:0x4
+
+10:55:11.402610 load:0x403c8704,len:0xc10
+
+10:55:11.402610 load:0x403cb700,len:0x2dc0
+
+10:55:11.409162 entry 0x403c8904
+
+(26 10:55:11.409162)  boot: ESP-IDF v5.3.1 2nd stage bootloader[0m
+
+(26 10:55:11.411517)  boot: compile time Nov 20 2024 22:02:32[0m
+
+(26 10:55:11.411517)  boot: Multicore bootloader[0m
+
+(27 10:55:11.413556)  boot: chip revision: v0.1[0m
+
+(27 10:55:11.413556)  boot.esp32s3: Boot SPI Speed : 80MHz[0m
+
+(27 10:55:11.415757)  boot.esp32s3: SPI Mode       : DIO[0m
+
+(27 10:55:11.415757)  boot.esp32s3: SPI Flash Size : 4MB[0m
+
+(27 10:55:11.417847)  boot: Enabling RNG early entropy source...[0m
+
+(28 10:55:11.417847)  boot: Partition Table:[0m
+
+(28 10:55:11.419892)  boot: ## Label            Usage          Type ST Offset   Length[0m
+
+(28 10:55:11.421898)  boot:  0 nvs              WiFi data        01 02 00009000 00015000[0m
+
+(28 10:55:11.423595)  boot:  1 otadata          OTA data         01 00 0001e000 00002000[0m
+
+(29 10:55:11.425076)  boot:  2 app0             OTA app          00 10 00020000 001b0000[0m
+
+(29 10:55:11.427080)  boot:  3 app1             OTA app          00 11 001d0000 001b0000[0m
+
+(30 10:55:11.428814)  boot:  4 fs               Unknown data     01 83 00380000 00080000[0m
+
+(30 10:55:11.428814)  boot: End of partition table[0m
+
+(30 10:55:11.463898)  esp_image: segment 0: paddr=00020020 vaddr=3c140020 size=439d0h (276944) map[0m
+
+(81 10:55:11.468864)  esp_image: segment 1: paddr=000639f8 vaddr=3fc9ee00 size=05804h ( 22532) load[0m
+
+(86 10:55:11.475454)  esp_image: segment 2: paddr=00069204 vaddr=40374000 size=06e14h ( 28180) load[0m
+
+(92 10:55:11.585477)  esp_image: segment 3: paddr=00070020 vaddr=42000020 size=13d784h (1300356) map[0m
+
+(326 10:55:11.727243)  esp_image: segment 4: paddr=001ad7ac vaddr=4037ae14 size=13f70h ( 81776) load[0m
+
+(344 10:55:11.738547)  esp_image: segment 5: paddr=001c1724 vaddr=600fe100 size=00004h (     4) load[0m
+
+(355 10:55:11.740442)  boot: Loaded app from partition at offset 0x20000[0m
+
+(356 10:55:11.748829)  boot: Disabling RNG early entropy source...[0m
+
+(357 10:55:11.748829)  cpu_start: Multicore app[0m
+
+(366 10:55:11.751221)  cpu_start: Pro cpu start user code[0m
+
+(366 10:55:11.751221)  cpu_start: cpu freq: 160000000 Hz[0m
+
+(366 10:55:11.753357)  app_init: Application information:[0m
+
+(366 10:55:11.753357)  app_init: Project name:     TestS3[0m
+
+(366 10:55:11.755396)  app_init: App version:      v5.5.0-113-g22c95cb-dirty[0m
+
+(367 10:55:11.756978)  app_init: Compile time:     Nov 20 2024 22:02:28[0m
+
+(367 10:55:11.756978)  app_init: ELF file SHA256:  72dd8dd61...[0m
+
+(367 10:55:11.759197)  app_init: ESP-IDF:          v5.3.1[0m
+
+(367 10:55:11.761173)  efuse_init: Min chip rev:     v0.0[0m
+
+(367 10:55:11.761173)  efuse_init: Max chip rev:     v0.99 [0m
+
+(368 10:55:11.763323)  efuse_init: Chip rev:         v0.1[0m
+
+(368 10:55:11.765320)  heap_init: Initializing. RAM available for dynamic allocation:[0m
+
+(368 10:55:11.765320)  heap_init: At 3FCAB6E8 len 0003E028 (248 KiB): RAM[0m
+
+(368 10:55:11.767579)  heap_init: At 3FCE9710 len 00005724 (21 KiB): RAM[0m
+
+(369 10:55:11.769587)  heap_init: At 3FCF0000 len 00008000 (32 KiB): DRAM[0m
+
+(369 10:55:11.769587)  heap_init: At 600FE104 len 00001EE4 (7 KiB): RTCRAM[0m
+
+(370 10:55:11.771724)  spi_flash: detected chip: gd[0m
+
+(370 10:55:11.771724)  spi_flash: flash io: dio[0m
+
+(370 10:55:11.774912)  spi_flash: Detected size(16384k) larger than the size in the binary image header(4096k). Using the size in the binary image header.[0m
+
+(382 10:55:11.774912)  RaftJsonNVS: nvs_flash_init() OK
+
+(383 10:55:11.777862)  sleep: Configure to isolate all GPIO pins in sleep state[0m
+
+(384 10:55:11.779883)  sleep: Enable automatic switching of GPIO sleep configuration[0m
+
+(384 10:55:11.779883)  coexist: coex firmware version: 4482466[0m
+
+(385 10:55:11.782225)  coexist: coexist rom version e7ae62f[0m
+
+(385 10:55:11.782225)  main_task: Started on CPU0[0m
+
+(386 10:55:11.784324)  main_task: Calling app_main()[0m
+
+(393 10:55:11.786324)  SysMan: getFriendlyName Scader (isSet Y nvsStr Scader default TestS3 uniqueStr f412faf99d62)
+
+(394 10:55:11.788351)  SysMan: systemName TestS3 systemVersion 6.5.0 friendlyName Scader (user-set) (default TestS3) serialNo <<NONE>> nvsNamespace system
+
+(394 10:55:11.791137)  SysMan: loopSleepMs 1 slowSysModThresholdUs 100000 monitorPeriodMs 30000 rebootAfterNHours 24 rebootIfDiscMins 10 supervisorEnable Y systemUniqueString f412faf99d62 altHwPrefix 
+
+(395 10:55:11.793140)  RaftApp: TestS3 6.5.0 (built Nov 20 2024 22:02:41) Heap (int) 269864 (all) 269864[0m
+
+(396 10:55:11.827320)  DetectHardware: detectHardware() returning generic[0m
+
+(443 10:55:11.827320)  BLEBusDevMan: BLEBusDeviceManager setup
+
+(444 10:55:11.846218)  BLEBus: setup name BusBLE
+
+(462 10:55:11.849040)  BLE_INIT: BT controller compile version [aa16a46][0m
+
+(464 10:55:11.849040)  BLE_INIT: Bluetooth MAC: f4:12:fa:f9:9d:62[0m
+
+(465 10:55:11.891018)  phy_init: phy_version 680,a6008b2,Jun  4 2024,16:41:10[0m
+
+(507 10:55:11.892786)  BLEMan: setup maxPktLen 500 using service loop outQSlots 15 minMsBetweenSends 50 advIntervalMs 200
+
+(508 10:55:11.904207)  BLEMan: setup uuidCmdRespService aa76677e-9cfd-4626-a510-0d305be57c8d uuidCmdRespCommand aa76677e-9cfd-4626-a510-0d305be57c8e uuidCmdRespResponse aa76677e-9cfd-4626-a510-0d305be57c8f
+
+(509 10:55:11.904207)  ESPOTAUpdate: setup otaDirect YES
+
+(520 10:55:11.906802)  FileSys: setup LittleFS partition size total 524288, used 73728
+
+(521 10:55:11.908810)  FileSys: localFileSystemSetup LittleFS initialised ok
+
+(521 10:55:11.908810)  FileSys: sdFileSystemSetup SD disabled
+
+(525 10:55:11.911172)  SysMan: getFriendlyName Scader (isSet Y nvsStr Scader default TestS3 uniqueStr f412faf99d62)
+
+(527 10:55:11.913447)  pp: pp rom version: e7ae62f[0m
+
+(528 10:55:11.913447)  net80211: net80211 rom version: e7ae62f[0m
+
+(530 10:55:11.923994)  wifi:wifi driver task: 3fccd1d0, prio:23, stack:6656, core=0
+
+(540 10:55:11.923994)  wifi:wifi firmware version: ccaebfa
+
+(540 10:55:11.926174)  wifi:wifi certification version: v7.0
+
+(541 10:55:11.926174)  wifi:config NVS flash: enabled
+
+(541 10:55:11.928361)  wifi:config nano formating: disabled
+
+(541 10:55:11.928361)  wifi:Init data frame dynamic rx buffer num: 32
+
+(542 10:55:11.930493)  wifi:Init static rx mgmt buffer num: 5
+
+(542 10:55:11.930493)  wifi:Init management short buffer num: 32
+
+(542 10:55:11.932777)  wifi:Init dynamic tx buffer num: 32
+
+(542 10:55:11.932777)  wifi:Init static tx FG buffer num: 2
+
+(543 10:55:11.934780)  wifi:Init static rx buffer size: 1600
+
+(543 10:55:11.934780)  wifi:Init static rx buffer num: 10
+
+(543 10:55:11.936963)  wifi:Init dynamic rx buffer num: 32
+
+(544 10:55:11.936963)  wifi_init: rx ba win: 6[0m
+
+(544 10:55:11.936963)  wifi_init: accept mbox: 6[0m
+
+(545 10:55:11.939528)  wifi_init: tcpip mbox: 32[0m
+
+(545 10:55:11.939528)  wifi_init: udp mbox: 6[0m
+
+(545 10:55:11.941710)  wifi_init: tcp mbox: 6[0m
+
+(545 10:55:11.941710)  wifi_init: tcp tx win: 5760[0m
+
+(545 10:55:11.944225)  wifi_init: tcp rx win: 5760[0m
+
+(545 10:55:11.944225)  wifi_init: tcp mss: 1440[0m
+
+(546 10:55:11.946459)  NetSys: startWifi threshold 3 set to 0
+
+(547 10:55:11.948463)  wifi:Password length matches WPA2 standards, authmode threshold changes from OPEN to WPA2
+
+(548 10:55:11.948463)  NetSys: setup connecting to ssid rdint01
+
+(550 10:55:11.950728)  wifi:mode : sta (f4:12:fa:f9:9d:60)
+
+(551 10:55:11.950728)  wifi:enable tsf
+
+(552 10:55:11.950728)  NetSys: startWifi init complete
+
+(555 10:55:11.953876)  NetSys: setup OK
+
+(556 10:55:11.953876)  NetMan: setup network OK "wifiSTA":"1","wifiAP":"0","eth":"0","hostname":"Scader"
+
+(561 10:55:11.956074)  wifi:new:<6,0>, old:<1,0>, ap:<255,255>, sta:<6,0>, prof:1, snd_ch_cfg:0x0
+
+(563 10:55:11.957735)  wifi:state: init -> auth (0xb0)
+
+(568 10:55:11.959847)  SerialConsole: setup USB JTAG OK enabled YES rxBufLen 5000 txBufLen 1500
+
+(570 10:55:11.959847)  StatePub: setup num publication recs 1
+
+(576 10:55:11.962087)  RaftClientListener: socketListenerTask (listenerSocketId 48) listening on port 80
+
+(577 10:55:11.971635)  WebServer: serveStaticFiles servePaths /=/local,/files/local=/local,/files/sd=/sd addResult OK
+
+(587 10:55:11.971635)  ScaderRelays: setup disabled
+
+(588 10:55:11.982677)  wifi:state: auth -> assoc (0x0)
+
+(595 10:55:11.982677)  ScaderShades: setup disabled
+
+(598 10:55:11.993726)  ScaderOpener: setup disabled
+
+(599 10:55:11.993726)  wifi:state: assoc -> run (0x10)
+
+(605 10:55:11.993726)  ScaderRFID: setup disabled
+
+(610 10:55:12.005043)  ScaderElecMeters: setup disabled
+
+(617 10:55:12.005043)  ScaderLocks: setup disabled
+
+(621 10:55:12.005043)  ScaderLEDPixels: setup disabled
+
+(624 10:55:12.008659)  ScaderPulseCounter: setup disabled
+
+(625 10:55:12.021279)  ScaderTest: ----------------------- setup enabled
+
+(628 10:55:12.021279)  DevMan: addRestAPIEndpoints added devman
+
+(637 10:55:12.024845)  wifi:connected with rdint01, aid = 4, channel 6, BW20, bssid = 6e:d7:9a:17:90:59
+
+(638 10:55:12.024845)  wifi:security: WPA2-PSK, phy: bgn, rssi: -71
+
+(641 10:55:12.027040)  wifi:pm start, type: 1
+
+10:55:12.027040 
+
+(642 10:55:12.029176)  wifi:dp: 1, bi: 102400, li: 3, scale listen interval from 307200 us to 307200 us
+
+(642 10:55:12.030685)  wifi:set rx beacon pti, rx_bcn_pti: 14, bcn_timeout: 25000, mt_pti: 14, mt_time: 10000
+
+(646 10:55:12.030685)  WebServer: addRestAPIEndpoints added webcerts API
+
+(647 10:55:12.032766)  WebServer: setupEndpoints serverEnabled Y port 80 apiPrefix api/
+
+(648 10:55:12.042116)  ScaderRelays: addRestAPIEndpoints scader relays
+
+(650 10:55:12.042116)  wifi:<ba-add>idx:0 (ifx:0, 6e:d7:9a:17:90:59), tid:0, ssn:0, winSize:64
+
+(658 10:55:12.044432)  ScaderRFID: addRestAPIEndpoints scader rfid
+
+(659 10:55:12.044432)  ScaderElecMeters: addRestAPIEndpoints setup elec
+
+(660 10:55:12.046801)  ScaderLocks: addRestAPIEndpoints scader door
+
+(661 10:55:12.048810)  ScaderLEDPixels: addRestAPIEndpoints scader LEDPixels
+
+(662 10:55:12.048810)  ScaderPulseCounter: addRestAPIEndpoints scader pulse counter
+
+(663 10:55:12.051359)  StatePub: registerDataSource registered msgGenFn for topic devjson
+
+(663 10:55:12.061399)  SysMan: pauseWiFiForBLEConn YES
+
+(664 10:55:12.061399)  SysMan: setStatusChangeCB sysMod BLEMan cbValid 1 sysModFound OK
+
+(677 10:55:12.177138)  wifi:AP's beacon interval = 102400 us, DTIM period = 1
+
+(1646 10:55:13.145428)  esp_netif_handlers: sta ip: 192.168.86.175, mask: 255.255.255.0, gw: 192.168.86.1[0m
+
+(1658 10:55:13.145428)  NetSys: setupMDNS OK hostname Scader
+
+(5373 10:55:16.757724)  MQTTClient: socketConnect took 1 ms[0m
+
+(5669 10:55:17.163691)  SysMan: {"f":"Scader","n":"TestS3","v":"6.5.0","r":"generic","hpInt":91648,"hpMin":85516,"hpAll":91648,"NetMan":{"hostname":"Scader","wifiSTA":{"en":1,"conn":1,"SSID":"rdint01","RSSI":-73,"IP":"192.168.86.175","MAC":"f4:12:fa:f9:9d:60","paused":0}},"BLEMan":{"s":"disco","rxBPS":0.0,"txBPS":0.0},"SysMan":{"avgUs":336.83,"maxUs":3205,"minUs":0,"slowUs":{"MQTTMan":2830,"CommsMan":1920}},"ESPOTAUpdate":{"Bps":0.0,"stMs":0,"bytes":0,"wrPS":0.0,"elapS":5.3,"blk":0}}
+
+(6119 10:55:17.604632)  NetSys: time sync 2024-11-21 10:55:17.280
+
