@@ -1,6 +1,7 @@
 // RaftCLI: Serial monitor module
 // Rob Dobson 2024
 
+use chrono::Local;
 use crossterm::{
     cursor, event::{self, Event, KeyCode, KeyEventKind, KeyModifiers}, execute, style::{Color, ResetColor, SetForegroundColor}, terminal,
 };
@@ -57,6 +58,12 @@ impl TerminalOut {
         Ok(())
     }
 
+    fn get_current_time_with_ms() -> String {
+        let now = Local::now();
+        now.format("%H:%M:%S%.3f")
+            .to_string()
+    }
+
     fn print(&mut self, data: &str, force_show: bool) {
 
         if !force_show && self.is_error {
@@ -80,7 +87,9 @@ impl TerminalOut {
         ).unwrap();
 
         // Display the received data
-        self.display_serial_data(&data);
+        let timestamp = Self::get_current_time_with_ms();
+        let formatted_data = format!("{} {}", timestamp, data);
+        self.display_serial_data(&formatted_data);
 
         // Get the cursor position
         let (cursor_col, mut cursor_row) = cursor::position().unwrap();
