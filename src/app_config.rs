@@ -41,16 +41,6 @@ fn get_schema() -> serde_json::Value {
             "error": "Invalid project name"
         },
         {
-            "key": "project_semver",
-            "prompt": "Project Version (e.g. 1.0.0)",
-            "default": "1.0.0",
-            "datatype": "string",
-            "description": "The version of the project to create",
-            "pattern": r"^\d+\.\d+(\.\d+)?(-[\da-zA-Z-]+(\.[\da-zA-Z-]+)*)?$",
-            "message": "Project version must be in the form x.y.z",
-            "error": "Invalid project version"
-        },
-        {
             "key": "sys_type_name",
             "prompt": "System Type Name",
             "default": "SysTypeMain",

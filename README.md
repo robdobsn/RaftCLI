@@ -320,7 +320,6 @@ The following questions are asked to complete the scaffolding from template file
 | Question | Explanation |
 | -- | -- |
 | Project Name | name for your project |
-| Project Version | version number in semver format, e.g. 1.2.3 |
 | Target Chip | e.g. esp32, esp32s3 or esp32c3 |
 | SysType | the name of the main SysType (or system type) - SysTypes, for instance, allow a project to target different hardware - set the name for the main SysType that you want to create here - additional SysTypes are added manually |
 | ESP IDF Version | the version of the ESP IDF to use to build the app |

@@ -1,5 +1,6 @@
 # RaftCLI ToDo list
 
+- raft -f doesn't seem to work on wsl
 - config ini or similar in proj dir
   - define serial port or at least filter
   - define other flags

@@ -1,9 +1,6 @@
 # Set the target Espressif chip
 set(IDF_TARGET "{{target_chip}}")
 
-# System version
-add_compile_definitions(SYSTEM_VERSION="{{project_semver}}")
-
 # Raft components
 set(RAFT_COMPONENTS
     {{inc_raft_sysmods}}
