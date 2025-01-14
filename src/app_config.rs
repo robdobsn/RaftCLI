@@ -340,6 +340,21 @@ fn get_schema() -> serde_json::Value {
             "condition": "use_raft_i2c"
         },
         {
+            "key": "use_raft_core_dev_types",
+            "prompt": "Include Raft Core Device Types",
+            "default": "true",
+            "datatype": "boolean",
+            "description": "Specify whether device types JSON in RaftCore should be included",
+            "pattern": "^(true|false|t|f|yes|no|y|n)$",
+            "message": "Input must be true or false",
+            "error": "Invalid device types include choice"
+        },
+        {
+            "key": "inc_raft_core_dev_types",
+            "condition": "use_raft_core_dev_types",
+            "generator": "\nset(DEV_TYPE_JSON_FILES \"${raftcore_SOURCE_DIR}/devtypes/DeviceTypeRecords.json\")\n"
+        },
+        {
             "key": "depends_raft_i2c",
             "condition": "use_raft_i2c",
             "generator": "\n        RaftI2C"
