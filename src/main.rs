@@ -16,6 +16,7 @@ use app_flash::flash_raft_app;
 mod app_ota;
 use app_ota::ota_raft_app;
 mod app_debug_remote;
+mod terminal_io;
 mod raft_cli_utils;
 use raft_cli_utils::is_wsl;
 use raft_cli_utils::check_target_folder_valid;

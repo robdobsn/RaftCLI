@@ -1,15 +1,19 @@
 use crossterm::{
-    cursor,
     event::{self, Event, KeyCode, KeyModifiers},
-    execute,
-    style::{Color, Print, ResetColor, SetForegroundColor},
-    terminal::{self, Clear, ClearType},
+    terminal::{self},
 };
-use std::{io::{self, Read, Write}, sync::atomic::{AtomicBool, Ordering}};
-use std::net::{TcpStream, ToSocketAddrs};
-use std::sync::{mpsc, Arc, Mutex};
-use std::thread;
-use std::time::Duration;
+use std::{
+    io::{Read, Write},
+    net::{TcpStream, ToSocketAddrs},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc, Arc, Mutex,
+    },
+    thread,
+    time::Duration,
+};
+
+use crate::terminal_io::TerminalIO;
 
 pub fn start_debug_console<A: ToSocketAddrs>(
     server_address: A,
@@ -21,11 +25,10 @@ pub fn start_debug_console<A: ToSocketAddrs>(
     let stream_reader = Arc::new(Mutex::new(stream.try_clone()?)); // Separate reader
     let stream_writer = Arc::new(Mutex::new(stream)); // Separate writer
 
-    // Set up terminal for raw mode
-    terminal::enable_raw_mode()?;
-    execute!(io::stdout(), Clear(ClearType::All), cursor::MoveTo(0, 0))?;
+    let terminal_out = Arc::new(Mutex::new(TerminalIO::new()));
+    terminal_out.lock().unwrap().init()?; // Initialize terminal
 
-    let running= Arc::new(AtomicBool::new(true));
+    let running = Arc::new(AtomicBool::new(true));
     let running_clone = running.clone(); // Clone for use in threads
 
     // Channels for handling incoming and outgoing messages
@@ -36,6 +39,8 @@ pub fn start_debug_console<A: ToSocketAddrs>(
     {
         let stream_reader = Arc::clone(&stream_reader);
         let running_clone = Arc::clone(&running_clone);
+        let terminal_out = Arc::clone(&terminal_out);
+
         thread::spawn(move || {
             let mut buffer = [0; 512];
             while running_clone.load(Ordering::SeqCst) {
@@ -46,114 +51,68 @@ pub fn start_debug_console<A: ToSocketAddrs>(
                         output_tx.send(message).expect("Failed to send message");
                     }
                     Ok(_) => {} // No data received
-                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                        thread::sleep(Duration::from_millis(50)); // Avoid busy-waiting
-                    }
-                    Err(_) => {
-                        break; // Handle disconnection or critical errors
-                    }
+                    Err(_) => break, // Handle disconnection or critical errors
                 }
             }
+            terminal_out
+                .lock()
+                .unwrap()
+                .show_error("Disconnected from server.");
         });
     }
 
     // Thread for sending messages to the server
     {
         let stream_writer = Arc::clone(&stream_writer);
+
         thread::spawn(move || {
             while let Ok(message) = input_rx.recv() {
-                println!("Sending message: {}", message);
                 let mut stream = stream_writer.lock().unwrap();
-                match stream.write(format!("{}\n", message).as_bytes()) {
-                    Ok(_) => println!("Message sent to server: {}", message),
-                    Err(e) => {
-                        println!("Failed to send message: {}", e);
-                        break;
-                    }
+                if stream.write(format!("{}\n", message).as_bytes()).is_err() {
+                    break;
                 }
-                stream
-                    .flush()
-                    .unwrap_or_else(|e| println!("Flush failed: {}", e));
+                stream.flush().unwrap_or_else(|e| println!("Flush failed: {}", e));
             }
         });
     }
 
-    let mut command_buffer = String::new();
-    let mut cursor_row = 0; // Track the current row for scrolling
-
     // Main event loop for the terminal UI
     while running.load(Ordering::SeqCst) {
-        // Display incoming messages and scroll
+        // Display incoming messages
         if let Ok(message) = output_rx.try_recv() {
-            // Move to the next row for the new message
-            execute!(
-                io::stdout(),
-                cursor::MoveTo(0, cursor_row),
-                Clear(ClearType::CurrentLine),
-                Print(message)
-            )?;
-            io::stdout().flush()?;
-            cursor_row += 1;
-
-            // Scroll when the output reaches the bottom of the terminal
-            let (_, rows) = terminal::size()?;
-            if cursor_row >= rows - 1 {
-                cursor_row = rows - 2; // Keep cursor within bounds
-                execute!(io::stdout(), cursor::MoveTo(0, 0), terminal::ScrollUp(1))?;
-            }
-
-            // Keep the command buffer visible
-            execute!(
-                io::stdout(),
-                cursor::MoveTo(0, rows - 1),
-                Clear(ClearType::CurrentLine),
-                SetForegroundColor(Color::Yellow),
-                Print(format!("> {}", command_buffer)),
-                ResetColor
-            )?;
+            terminal_out.lock().unwrap().print(&message, true);
         }
 
         // Handle user input
         if event::poll(Duration::from_millis(50))? {
             if let Event::Key(key_event) = event::read()? {
+                let mut terminal_out = terminal_out.lock().unwrap();
+
                 match key_event.code {
                     KeyCode::Char(c)
-                    if key_event.modifiers == KeyModifiers::CONTROL
-                        && (c == 'c' || c == 'x') =>
-                {
-                    running.store(false, Ordering::SeqCst);
-                }
-                KeyCode::Esc => {
-                    running.store(false, Ordering::SeqCst);
-                }               
+                        if key_event.modifiers == KeyModifiers::CONTROL
+                            && (c == 'c' || c == 'x') =>
+                    {
+                        running.store(false, Ordering::SeqCst);
+                    }
+                    KeyCode::Esc => {
+                        running.store(false, Ordering::SeqCst);
+                    }
                     KeyCode::Enter => {
-                        println!("Received ENTER Sending command: {}", command_buffer);
+                        let command = terminal_out.get_command_buffer();
                         input_tx
-                            .send(command_buffer.clone()) // Send the command
+                            .send(command.clone())
                             .expect("Failed to send command");
-                        command_buffer.clear(); // Clear the buffer after sending
+                        terminal_out.clear_command_buffer();
                     }
                     KeyCode::Backspace => {
-                        if !command_buffer.is_empty() {
-                            command_buffer.pop(); // Remove the last character
-                        }
+                        terminal_out.backspace_command_buffer();
                     }
                     KeyCode::Char(c) => {
-                        command_buffer.push(c); // Append the new character
+                        terminal_out.add_to_command_buffer(c);
                     }
                     _ => {}
                 }
-
-                // Refresh the command buffer display
-                let (_, rows) = terminal::size()?; // Get terminal dimensions
-                execute!(
-                    io::stdout(),
-                    cursor::MoveTo(0, rows - 1), // Move to the last line
-                    Clear(ClearType::CurrentLine), // Clear the line
-                    SetForegroundColor(Color::Yellow), // Set text color
-                    Print(format!("> {}", command_buffer)), // Display the buffer
-                    ResetColor                   // Reset text color
-                )?;
             }
         }
     }
