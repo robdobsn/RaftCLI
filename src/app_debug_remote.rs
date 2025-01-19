@@ -13,47 +13,36 @@ use std::{
     time::Duration,
 };
 
-use crate::{console_log::{open_log_file, write_to_log}, terminal_io::TerminalIO};
+use crate::{
+    console_log::{open_log_file, write_to_log, SharedLogFile},
+    terminal_io::TerminalIO,
+};
 
-pub fn start_debug_console<A: ToSocketAddrs>(
-    app_folder: String,
-    server_address: A,
-    log: bool,
-    log_folder: String,
-    history_file_name: String,
-) -> Result<(), Box<dyn std::error::Error>> {
-
-    // Open log file if required
-    let log_file = if log {
-        let file = open_log_file(log, &log_folder)?;
-        file
-    } else {
-        Arc::new(Mutex::new(None))
-    };
-
-    // Connect to the server and clone the stream for separate read/write
+pub fn connect_to_server(
+    server_address: &impl ToSocketAddrs,
+) -> Result<TcpStream, Box<dyn std::error::Error>> {
     let stream = TcpStream::connect(server_address)?;
-    stream.set_write_timeout(Some(Duration::from_secs(5)))?;
-    stream.set_read_timeout(Some(Duration::from_secs(5)))?;
-    let stream_reader = Arc::new(Mutex::new(stream.try_clone()?)); // Separate reader
+    stream.set_nonblocking(true)?; // Set non-blocking mode
+    Ok(stream)
+}
+
+pub fn setup_threads(
+    running: Arc<AtomicBool>,
+    disconnected: Arc<AtomicBool>,
+    stream: TcpStream,
+    input_rx: Arc<Mutex<mpsc::Receiver<String>>>,
+    output_tx: mpsc::Sender<String>,
+    terminal_out: Arc<Mutex<TerminalIO>>,
+    log_file: SharedLogFile,
+) {
+    let stream_reader = Arc::new(Mutex::new(stream.try_clone().unwrap())); // Separate reader
     let stream_writer = Arc::new(Mutex::new(stream)); // Separate writer
-
-    // Command history in the app folder
-    let history_file_path = format!("{}/{}", app_folder, history_file_name);
-    let terminal_out = Arc::new(Mutex::new(TerminalIO::new(&history_file_path)));
-    terminal_out.lock().unwrap().init()?; // Initialize terminal
-
-    let running = Arc::new(AtomicBool::new(true));
-    let running_clone = running.clone(); // Clone for use in threads
-
-    // Channels for handling incoming and outgoing messages
-    let (input_tx, input_rx): (mpsc::Sender<String>, mpsc::Receiver<String>) = mpsc::channel();
-    let (output_tx, output_rx): (mpsc::Sender<String>, mpsc::Receiver<String>) = mpsc::channel();
 
     // Thread for receiving messages from the server
     {
         let stream_reader = Arc::clone(&stream_reader);
-        let running_clone = Arc::clone(&running_clone);
+        let running_clone = Arc::clone(&running);
+        let disconnected_clone = Arc::clone(&disconnected);
         let terminal_out = Arc::clone(&terminal_out);
 
         thread::spawn(move || {
@@ -67,12 +56,14 @@ pub fn start_debug_console<A: ToSocketAddrs>(
                         write_to_log(&log_file, &received);
                     }
                     Ok(_) => {} // No data received
-                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock 
-                               || e.kind() == std::io::ErrorKind::TimedOut => {
+                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock
+                        || e.kind() == std::io::ErrorKind::TimedOut =>
+                    {
                         // Expected timeout, continue looping
                     }
                     Err(_) => {
-                        // Handle disconnection or critical errors
+                        // Signal disconnection and exit thread
+                        disconnected_clone.store(true, Ordering::SeqCst);
                         break;
                     }
                 }
@@ -80,49 +71,115 @@ pub fn start_debug_console<A: ToSocketAddrs>(
             terminal_out
                 .lock()
                 .unwrap()
-                .show_error("Disconnected from server.");
+                .show_error("Disconnected from device.");
         });
     }
 
     // Thread for sending messages to the server
     {
         let stream_writer = Arc::clone(&stream_writer);
+        let running_clone = Arc::clone(&running);
+        let disconnected_clone = Arc::clone(&disconnected);
 
         thread::spawn(move || {
-            while let Ok(message) = input_rx.recv() {
-                let mut stream = stream_writer.lock().unwrap();
-                if stream.write(format!("{}\n", message).as_bytes()).is_err() {
+            while running_clone.load(Ordering::SeqCst) {
+                if disconnected_clone.load(Ordering::SeqCst) {
                     break;
                 }
-                stream.flush().unwrap_or_else(|e| println!("Flush failed: {}", e));
+                if let Ok(message) = input_rx.lock().unwrap().recv() {
+                    let mut stream = stream_writer.lock().unwrap();
+                    if stream.write(format!("{}\n", message).as_bytes()).is_err() {
+                        disconnected_clone.store(true, Ordering::SeqCst);
+                        break;
+                    }
+                    stream.flush().unwrap_or_else(|e| println!("Flush failed: {}", e));
+                }
             }
         });
     }
+}
 
-    // Main event loop for the terminal UI
+pub fn start_debug_console<A: ToSocketAddrs>(
+    app_folder: String,
+    server_address: A,
+    log: bool,
+    log_folder: String,
+    history_file_name: String,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Open log file if required
+    let log_file = open_log_file(log, &log_folder)?;
+
+    // Command history in the app folder
+    let history_file_path = format!("{}/{}", app_folder, history_file_name);
+    let terminal_out = Arc::new(Mutex::new(TerminalIO::new(&history_file_path)));
+    terminal_out.lock().unwrap().init()?; // Initialize terminal
+
+    let running = Arc::new(AtomicBool::new(true));
+    let disconnected = Arc::new(AtomicBool::new(false));
+
+    // Channels for handling incoming and outgoing messages
+    let (input_tx, input_rx): (mpsc::Sender<String>, mpsc::Receiver<String>) = mpsc::channel();
+    let (output_tx, output_rx): (mpsc::Sender<String>, mpsc::Receiver<String>) = mpsc::channel();
+
+    let input_rx = Arc::new(Mutex::new(input_rx)); // Wrap input_rx in Arc<Mutex<>> for reuse in threads.
+
     while running.load(Ordering::SeqCst) {
-        // Display incoming messages
-        if let Ok(message) = output_rx.try_recv() {
-            terminal_out.lock().unwrap().print(&message, true);
-        }
+        terminal_out
+            .lock()
+            .unwrap()
+            .show_info("Connecting to device...");
+        match connect_to_server(&server_address) {
+            Ok(stream) => {
+                disconnected.store(false, Ordering::SeqCst); // Reset disconnection signal
+                setup_threads(
+                    Arc::clone(&running),
+                    Arc::clone(&disconnected),
+                    stream,
+                    Arc::clone(&input_rx),
+                    output_tx.clone(),
+                    Arc::clone(&terminal_out),
+                    Arc::clone(&log_file),
+                );
 
-        // Handle keyboard input
-        if event::poll(Duration::from_millis(50))? {
-            if let Event::Key(key_event) = event::read()? {
-                if key_event.kind == KeyEventKind::Press {
-                    let mut terminal_out = terminal_out.lock().unwrap();
-                    let continue_running = terminal_out.handle_key_event(
-                        key_event,
-                        |command| {
-                            input_tx
-                                .send(command.clone())
-                                .expect("Failed to send command");
-                        },
-                    );
-                    if !continue_running {
-                        running.store(false, Ordering::SeqCst);
+                terminal_out
+                    .lock()
+                    .unwrap()
+                    .clear_info();
+                    
+                // Main event loop for the terminal UI
+                while running.load(Ordering::SeqCst) && !disconnected.load(Ordering::SeqCst) {
+                    // Display incoming messages
+                    if let Ok(message) = output_rx.try_recv() {
+                        terminal_out.lock().unwrap().print(&message, true);
+                    }
+
+                    // Handle keyboard input
+                    if event::poll(Duration::from_millis(50))? {
+                        if let Event::Key(key_event) = event::read()? {
+                            if key_event.kind == KeyEventKind::Press {
+                                let mut terminal_out = terminal_out.lock().unwrap();
+                                let continue_running = terminal_out.handle_key_event(
+                                    key_event,
+                                    |command| {
+                                        input_tx
+                                            .send(command.clone())
+                                            .expect("Failed to send command");
+                                    },
+                                );
+                                if !continue_running {
+                                    running.store(false, Ordering::SeqCst);
+                                }
+                            }
+                        }
                     }
                 }
+            }
+            Err(e) => {
+                terminal_out
+                    .lock()
+                    .unwrap()
+                    .show_error(&format!("Error: {}. Retrying in 5 seconds...", e));
+                thread::sleep(Duration::from_secs(5));
             }
         }
     }

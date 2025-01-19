@@ -172,6 +172,30 @@ impl TerminalIO {
         self.is_error = true;
     }
 
+    pub fn show_info(&mut self, info_msg: &str) {
+        // Move the cursor to the bottom line and clear it
+        execute!(
+            io::stdout(),
+            cursor::MoveTo(0, self.rows - 1),
+            terminal::Clear(ClearType::CurrentLine),
+            SetForegroundColor(Color::Green),
+        )
+        .unwrap();
+
+        // Display the info message
+        print!("> {}", info_msg);
+
+        // Reset the text color
+        execute!(io::stdout(), ResetColor).unwrap();
+
+        // Flush the output
+        io::stdout().flush().unwrap();
+    }
+
+    pub fn clear_info(&mut self) {
+        self.set_command_buffer("".to_string());
+    }
+
     pub fn display_received_data(&mut self, data: &str) {
         print!("{}", data);
         io::stdout().flush().unwrap();
