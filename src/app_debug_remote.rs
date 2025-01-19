@@ -13,13 +13,24 @@ use std::{
     time::Duration,
 };
 
-use crate::terminal_io::TerminalIO;
+use crate::{console_log::{open_log_file, write_to_log}, terminal_io::TerminalIO};
 
 pub fn start_debug_console<A: ToSocketAddrs>(
     app_folder: String,
     server_address: A,
+    log: bool,
+    log_folder: String,
     history_file_name: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
+
+    // Open log file if required
+    let log_file = if log {
+        let file = open_log_file(log, &log_folder)?;
+        file
+    } else {
+        Arc::new(Mutex::new(None))
+    };
+
     // Connect to the server and clone the stream for separate read/write
     let stream = TcpStream::connect(server_address)?;
     stream.set_write_timeout(Some(Duration::from_secs(5)))?;
@@ -51,8 +62,9 @@ pub fn start_debug_console<A: ToSocketAddrs>(
                 let mut stream = stream_reader.lock().unwrap();
                 match stream.read(&mut buffer) {
                     Ok(bytes_read) if bytes_read > 0 => {
-                        let message = String::from_utf8_lossy(&buffer[..bytes_read]).to_string();
-                        output_tx.send(message).expect("Failed to send message");
+                        let received = String::from_utf8_lossy(&buffer[..bytes_read]).to_string();
+                        output_tx.send(received.clone()).expect("Failed to send data");
+                        write_to_log(&log_file, &received);
                     }
                     Ok(_) => {} // No data received
                     Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock 

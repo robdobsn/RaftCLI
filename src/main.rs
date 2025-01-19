@@ -18,6 +18,7 @@ use app_ota::ota_raft_app;
 mod app_debug_remote;
 mod terminal_io;
 mod raft_cli_utils;
+mod console_log;
 use raft_cli_utils::is_wsl;
 use raft_cli_utils::check_target_folder_valid;
 mod app_ports;
@@ -214,6 +215,10 @@ struct DebugRemoteCmd {
     // Address for remote debugging
     #[clap(short = 'a', long, help = "Device address", default_value = "raftdevice:8080")]
     device_address: String,
+    #[clap(short = 'l', long, help = "Log debug console data to file")]
+    log: bool,
+    #[clap(short = 'g', long, default_value = "./logs", help = "Folder for log files")]
+    log_folder: Option<String>,    
 }
 
 // Main CLI struct that includes the subcommands
@@ -406,7 +411,16 @@ fn main() {
 
         Action::DebugRemote(cmd) => {
             let app_folder = cmd.app_folder.unwrap_or(".".to_string());
+            let log = cmd.log;
+            let mut log_folder = cmd.log_folder.unwrap_or("./logs".to_string());
+            // If the log_folder is relative then apply the app_folder as a prefix to it using path::join
+            if !log_folder.starts_with("/") {
+                let mut log_folder_path = std::path::PathBuf::from(&app_folder);
+                log_folder_path.push(log_folder);
+                log_folder = log_folder_path.to_str().unwrap().to_string();
+            }
             if let Err(e) = app_debug_remote::start_debug_console(app_folder, cmd.device_address,
+                            log, log_folder,
                             HISTORY_FILE_NAME.to_string()) {
                 eprintln!("Error starting debug console: {}", e);
             }

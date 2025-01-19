@@ -14,33 +14,7 @@ use std::sync::{
 use std::thread;
 use std::time::Duration;
 
-use crate::{app_ports::{select_most_likely_port, PortsCmd}, terminal_io::TerminalIO};
-
-struct LogFileInfo {
-    file: std::fs::File,
-    last_write: std::time::Instant,
-}
-type SharedLogFile = Arc<Mutex<Option<LogFileInfo>>>;
-
-// Logging to file
-fn open_log_file(log_to_file: bool, log_folder: String) -> Result<SharedLogFile, std::io::Error> {
-    if log_to_file && log_folder.len() > 0 && log_folder != "none" {
-        // Create a log file
-        let name = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
-        let log_file_name = format!("{}/{}.log", log_folder, name);
-        std::fs::create_dir_all(&log_folder)?;
-        // Open the log file
-        let file = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(log_file_name)?;
-        return Ok(Arc::new(Mutex::new(Some(LogFileInfo {
-            file,
-            last_write: std::time::Instant::now(),
-        }))));
-    }
-    Ok(Arc::new(Mutex::new(None)))
-}
+use crate::{app_ports::{select_most_likely_port, PortsCmd}, console_log::{open_log_file, write_to_log}, terminal_io::TerminalIO};
 
 struct CommandAndTime {
     user_input: String,
@@ -58,12 +32,9 @@ pub fn start_native(
     history_file_name: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
 
-    // Command history in the app folder
-    let history_file_path = format!("{}/{}", app_folder, history_file_name);
-
     // Open log file if required
     let log_file = if log {
-        let file = open_log_file(log, log_folder)?;
+        let file = open_log_file(log, &log_folder)?;
         file
     } else {
         Arc::new(Mutex::new(None))
@@ -109,6 +80,9 @@ pub fn start_native(
     // Clone the Arc for the serial communication thread
     let serial_port_clone = Arc::clone(&serial_port);
 
+    // Command history in the app folder
+    let history_file_path = format!("{}/{}", app_folder, history_file_name);
+    
     // Terminal output
     let terminal_io = Arc::new(Mutex::new(TerminalIO::new(&history_file_path)));
     terminal_io.lock().unwrap().init().unwrap();
@@ -129,12 +103,7 @@ pub fn start_native(
                     let received = String::from_utf8_lossy(&buffer[..n]);
                     serial_read_tx.send(received.to_string())
                         .expect("Failed to send data to main thread");
-                    if let Ok(mut log_file) = log_file.lock() {
-                        if let Some(log_file_info) = log_file.as_mut() {
-                            write!(log_file_info.file, "{}", received).unwrap();
-                            log_file_info.last_write = std::time::Instant::now();
-                        }
-                    }
+                    write_to_log(&log_file, &received);
                 }
                 Ok(_) => {}
                 Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {}

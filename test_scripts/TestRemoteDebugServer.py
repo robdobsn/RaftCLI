@@ -47,7 +47,7 @@ def handle_client(client_socket, client_address):
                 print(f"[{client_address}] Received line: {repr(line)}")
 
                 # Interpret the line and respond
-                if line.lower() == "hheelllloo":
+                if line.lower() == "hello":
                     response = "Hi there!"
                 else:
                     response = "Please say hello"
