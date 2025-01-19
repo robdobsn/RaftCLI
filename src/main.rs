@@ -15,6 +15,7 @@ mod app_flash;
 use app_flash::flash_raft_app;
 mod app_ota;
 use app_ota::ota_raft_app;
+mod app_debug_remote;
 mod raft_cli_utils;
 use raft_cli_utils::is_wsl;
 use raft_cli_utils::check_target_folder_valid;
@@ -38,6 +39,8 @@ enum Action {
     Ota(OtaCmd),
     #[clap(name = "ports", about = "Manage serial ports", alias = "p")]
     Ports(PortsCmd),
+    #[clap(name = "debug", about = "Start remote debug console", alias = "d")]
+    DebugRemote(DebugRemoteCmd),    
 }
 
 // Define arguments specific to the `new` subcommand
@@ -198,6 +201,14 @@ struct OtaCmd {
     // Option to use curl for OTA
     #[clap(short = 'c', long, help = "Use curl for OTA")]
     use_curl: bool,
+}
+
+// Define arguments specific to the `debug` subcommand
+#[derive(Clone, Parser, Debug)]
+struct DebugRemoteCmd {
+    // Address for remote debugging
+    #[clap(short = 'a', long, help = "Device address", default_value = "raftdevice:8080")]
+    device_address: String,
 }
 
 // Main CLI struct that includes the subcommands
@@ -385,6 +396,12 @@ fn main() {
         Action::Ports(cmd) => {
             manage_ports(&cmd);
         }
+
+        Action::DebugRemote(cmd) => {
+            if let Err(e) = app_debug_remote::start_debug_console(cmd.device_address) {
+                eprintln!("Error starting debug console: {}", e);
+            }
+        }        
     }
     std::process::exit(0);
 }
