@@ -2,7 +2,7 @@
 // Rob Dobson 2024
 
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers}, terminal,
+    event::{self, Event, KeyEventKind}, terminal,
 };
 use serialport_fix_stop_bits::{new, SerialPort};
 use std::io::Write;
@@ -14,7 +14,7 @@ use std::sync::{
 use std::thread;
 use std::time::Duration;
 
-use crate::{app_ports::{select_most_likely_port, PortsCmd}, cmd_history::CommandHistory, terminal_io::TerminalIO};
+use crate::{app_ports::{select_most_likely_port, PortsCmd}, terminal_io::TerminalIO};
 
 struct LogFileInfo {
     file: std::fs::File,
@@ -58,10 +58,7 @@ pub fn start_native(
 ) -> Result<(), Box<dyn std::error::Error>> {
 
     // Command history in the app folder
-    let mut history_file_path = std::path::PathBuf::from(&app_folder);
-    history_file_path.push("raftcli_history.txt");
-    let history_file_path_str = history_file_path.to_str().unwrap().to_string();
-    let command_history = Arc::new(Mutex::new(CommandHistory::new(&history_file_path_str)));
+    let history_file_path = format!("{}/raftcli_history.txt", app_folder);
 
     // Open log file if required
     let log_file = if log {
@@ -112,11 +109,11 @@ pub fn start_native(
     let serial_port_clone = Arc::clone(&serial_port);
 
     // Terminal output
-    let terminal_io = Arc::new(Mutex::new(TerminalIO::new()));
+    let terminal_io = Arc::new(Mutex::new(TerminalIO::new(&history_file_path)));
     terminal_io.lock().unwrap().init().unwrap();
 
     // Clone the Arc for the terminal output
-    let terminal_out_clone = Arc::clone(&terminal_io);
+    let terminal_io_clone = Arc::clone(&terminal_io);
 
     // Spawn a thread to handle reading from the serial port
     thread::spawn(move || {
@@ -141,11 +138,11 @@ pub fn start_native(
                 Ok(_) => {}
                 Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {}
                 Err(_e) => {
-                    terminal_out_clone.lock().unwrap().show_error("Serial port read error");
+                    terminal_io_clone.lock().unwrap().show_error("Serial port read error");
                     if no_reconnect {
                         break;
                     }
-                    terminal_out_clone.lock().unwrap().show_error("Serial port attempting to reconnect...");
+                    terminal_io_clone.lock().unwrap().show_error("Serial port attempting to reconnect...");
                     thread::sleep(Duration::from_millis(50));
                     match open_serial_port(&port, baud_rate) {
                         Ok(new_port) => {
@@ -186,62 +183,32 @@ pub fn start_native(
         if let Ok(received) = serial_read_rx.try_recv() {
             terminal_io.lock().unwrap().print(&received, true);
         }
-
+    
         // Handle keyboard input
-        if crossterm::event::poll(Duration::from_millis(0))? {
+        if crossterm::event::poll(Duration::from_millis(50))? {
             if let Event::Key(key_event) = event::read()? {
                 if key_event.kind == KeyEventKind::Press {
-                    match key_event.code {
-                        KeyCode::Char(c)
-                            if key_event.modifiers == KeyModifiers::CONTROL
-                                && (c == 'c' || c == 'x') =>
-                        {
-                            running.store(false, Ordering::SeqCst);
-                        }
-                        KeyCode::Esc => {
-                            running.store(false, Ordering::SeqCst);
-                        }
-                        KeyCode::Enter => {
-                            // print!("⏎");
+                    let mut terminal_io = terminal_io.lock().unwrap();
+                    let continue_running = terminal_io.handle_key_event(
+                        key_event,
+                        |command| {
                             let key_detect_time = std::time::Instant::now();
-                            let user_input = terminal_io.lock().unwrap().get_command_buffer();
-                            let command: CommandAndTime = CommandAndTime {
-                                user_input: user_input.clone(),
-                                _time: key_detect_time
+                            let command_to_send = CommandAndTime {
+                                user_input: command.clone(),
+                                _time: key_detect_time,
                             };
-                            // println!("Time to get command buffer: {:?}", key_detect_time.elapsed());
-                            serial_write_tx.send(command).expect("Failed to send command to write thread");
-                            // Add the command to history
-                            command_history.lock().unwrap().add_command(&user_input);
-                            // println!("Time to send command: {:?}", key_detect_time.elapsed());
-                            terminal_io.lock().unwrap().clear_command_buffer();
-                        }
-                        KeyCode::Backspace => {
-                            terminal_io.lock().unwrap().backspace_command_buffer();
-                        }
-                        KeyCode::Char(c) => {
-                            terminal_io.lock().unwrap().add_to_command_buffer(c);
-                        }
-                        KeyCode::Up => {
-                            if let Some(previous_command) = command_history.lock().unwrap().get_previous() {
-                                terminal_io.lock().unwrap().clear_command_buffer();
-                                terminal_io.lock().unwrap().add_str_to_command_buffer(previous_command);
-                            }
-                        }
-                        KeyCode::Down => {
-                            if let Some(next_command) = command_history.lock().unwrap().get_next() {
-                                terminal_io.lock().unwrap().clear_command_buffer();
-                                terminal_io.lock().unwrap().add_str_to_command_buffer(next_command);
-                            } else {
-                                terminal_io.lock().unwrap().clear_command_buffer();
-                            }
-                        }
-                        _ => {}
+                            serial_write_tx
+                                .send(command_to_send)
+                                .expect("Failed to send command to write thread");
+                        },
+                    );
+                    if !continue_running {
+                        running.store(false, Ordering::SeqCst);
                     }
                 }
             }
         }
-    }
+    }    
 
     // Clean up
     terminal::disable_raw_mode()?;

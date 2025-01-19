@@ -55,24 +55,23 @@ impl CommandHistory {
         }
     }
 
-    pub fn get_previous(&mut self) -> Option<&str> {
+    pub fn move_up(&mut self) {
         if self.position > 0 {
             self.position -= 1;
-            Some(&self.history[self.position])
-        } else {
-            None
-        }
+        } 
     }
 
-    pub fn get_next(&mut self) -> Option<&str> {
+    pub fn move_down(&mut self) {
         if self.position < self.history.len() {
             self.position += 1;
         }
+    }
+
+    pub fn get_current(&self) -> String {
         if self.position < self.history.len() {
-            Some(&self.history[self.position])
+            self.history[self.position].clone()
         } else {
-            self.position = self.history.len();
-            None
+            "".to_string()
         }
     }
 }
@@ -93,15 +92,22 @@ mod tests {
         command_history.add_command("second command");
         command_history.add_command("third command");
 
-        assert_eq!(command_history.get_previous(), Some("third command"));
-        assert_eq!(command_history.get_previous(), Some("second command"));
-        assert_eq!(command_history.get_previous(), Some("first command"));
-        assert_eq!(command_history.get_previous(), None);
+        command_history.move_up();
+        assert_eq!(command_history.get_current(), "third command");
+        command_history.move_up();
+        assert_eq!(command_history.get_current(), "second command");
+        command_history.move_up();
+        assert_eq!(command_history.get_current(), "first command");
+        command_history.move_up();
+        assert_eq!(command_history.get_current(), "first command");
 
-        assert_eq!(command_history.get_next(), Some("second command"));
-        assert_eq!(command_history.get_next(), Some("third command"));
-        assert_eq!(command_history.get_next(), None);
-        assert_eq!(command_history.get_next(), None);
+        command_history.move_down();
+        assert_eq!(command_history.get_current(), "second command");
+        command_history.move_down();
+        assert_eq!(command_history.get_current(), "third command");
+        command_history.move_down();
+        assert_eq!(command_history.get_current(), "third command");
+        command_history.move_down();
 
         // Cleanup
         let _ = fs::remove_file(test_history_path);

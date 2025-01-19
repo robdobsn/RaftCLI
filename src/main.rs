@@ -207,6 +207,8 @@ struct OtaCmd {
 // Define arguments specific to the `debug` subcommand
 #[derive(Clone, Parser, Debug)]
 struct DebugRemoteCmd {
+    // Add an option to specify the app folder
+    app_folder: Option<String>,
     // Address for remote debugging
     #[clap(short = 'a', long, help = "Device address", default_value = "raftdevice:8080")]
     device_address: String,
@@ -399,7 +401,8 @@ fn main() {
         }
 
         Action::DebugRemote(cmd) => {
-            if let Err(e) = app_debug_remote::start_debug_console(cmd.device_address) {
+            let app_folder = cmd.app_folder.unwrap_or(".".to_string());
+            if let Err(e) = app_debug_remote::start_debug_console(app_folder, cmd.device_address) {
                 eprintln!("Error starting debug console: {}", e);
             }
         }        
