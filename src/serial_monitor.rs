@@ -54,11 +54,12 @@ pub fn start_native(
     no_reconnect: bool,
     log: bool,
     log_folder: String,
-    vid: Option<String>
+    vid: Option<String>,
+    history_file_name: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
 
     // Command history in the app folder
-    let history_file_path = format!("{}/raftcli_history.txt", app_folder);
+    let history_file_path = format!("{}/{}", app_folder, history_file_name);
 
     // Open log file if required
     let log_file = if log {

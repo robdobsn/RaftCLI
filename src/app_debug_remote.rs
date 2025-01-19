@@ -1,6 +1,6 @@
 use crossterm::{
-    event::{self, Event, KeyCode, KeyModifiers},
-    terminal::{self},
+    event::{self, Event, KeyEventKind},
+    terminal,
 };
 use std::{
     io::{Read, Write},
@@ -18,6 +18,7 @@ use crate::terminal_io::TerminalIO;
 pub fn start_debug_console<A: ToSocketAddrs>(
     app_folder: String,
     server_address: A,
+    history_file_name: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Connect to the server and clone the stream for separate read/write
     let stream = TcpStream::connect(server_address)?;
@@ -27,8 +28,7 @@ pub fn start_debug_console<A: ToSocketAddrs>(
     let stream_writer = Arc::new(Mutex::new(stream)); // Separate writer
 
     // Command history in the app folder
-    let history_file_path = format!("{}/raftcli_history.txt", app_folder);
-
+    let history_file_path = format!("{}/{}", app_folder, history_file_name);
     let terminal_out = Arc::new(Mutex::new(TerminalIO::new(&history_file_path)));
     terminal_out.lock().unwrap().init()?; // Initialize terminal
 
@@ -39,38 +39,39 @@ pub fn start_debug_console<A: ToSocketAddrs>(
     let (input_tx, input_rx): (mpsc::Sender<String>, mpsc::Receiver<String>) = mpsc::channel();
     let (output_tx, output_rx): (mpsc::Sender<String>, mpsc::Receiver<String>) = mpsc::channel();
 
-// Thread for receiving messages from the server
-{
-    let stream_reader = Arc::clone(&stream_reader);
-    let running_clone = Arc::clone(&running_clone);
-    let terminal_out = Arc::clone(&terminal_out);
+    // Thread for receiving messages from the server
+    {
+        let stream_reader = Arc::clone(&stream_reader);
+        let running_clone = Arc::clone(&running_clone);
+        let terminal_out = Arc::clone(&terminal_out);
 
-    thread::spawn(move || {
-        let mut buffer = [0; 512];
-        while running_clone.load(Ordering::SeqCst) {
-            let mut stream = stream_reader.lock().unwrap();
-            match stream.read(&mut buffer) {
-                Ok(bytes_read) if bytes_read > 0 => {
-                    let message = String::from_utf8_lossy(&buffer[..bytes_read]).to_string();
-                    output_tx.send(message).expect("Failed to send message");
-                }
-                Ok(_) => {} // No data received
-                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock 
-                           || e.kind() == std::io::ErrorKind::TimedOut => {
-                    // Expected timeout, continue looping
-                }
-                Err(_) => {
-                    // Handle disconnection or critical errors
-                    break;
+        thread::spawn(move || {
+            let mut buffer = [0; 512];
+            while running_clone.load(Ordering::SeqCst) {
+                let mut stream = stream_reader.lock().unwrap();
+                match stream.read(&mut buffer) {
+                    Ok(bytes_read) if bytes_read > 0 => {
+                        let message = String::from_utf8_lossy(&buffer[..bytes_read]).to_string();
+                        output_tx.send(message).expect("Failed to send message");
+                    }
+                    Ok(_) => {} // No data received
+                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock 
+                               || e.kind() == std::io::ErrorKind::TimedOut => {
+                        // Expected timeout, continue looping
+                    }
+                    Err(_) => {
+                        // Handle disconnection or critical errors
+                        break;
+                    }
                 }
             }
-        }
-        terminal_out
-            .lock()
-            .unwrap()
-            .show_error("Disconnected from server.");
-    });
-}
+            terminal_out
+                .lock()
+                .unwrap()
+                .show_error("Disconnected from server.");
+        });
+    }
+
     // Thread for sending messages to the server
     {
         let stream_writer = Arc::clone(&stream_writer);
@@ -93,35 +94,22 @@ pub fn start_debug_console<A: ToSocketAddrs>(
             terminal_out.lock().unwrap().print(&message, true);
         }
 
-        // Handle user input
+        // Handle keyboard input
         if event::poll(Duration::from_millis(50))? {
             if let Event::Key(key_event) = event::read()? {
-                let mut terminal_out = terminal_out.lock().unwrap();
-
-                match key_event.code {
-                    KeyCode::Char(c)
-                        if key_event.modifiers == KeyModifiers::CONTROL
-                            && (c == 'c' || c == 'x') =>
-                    {
+                if key_event.kind == KeyEventKind::Press {
+                    let mut terminal_out = terminal_out.lock().unwrap();
+                    let continue_running = terminal_out.handle_key_event(
+                        key_event,
+                        |command| {
+                            input_tx
+                                .send(command.clone())
+                                .expect("Failed to send command");
+                        },
+                    );
+                    if !continue_running {
                         running.store(false, Ordering::SeqCst);
                     }
-                    KeyCode::Esc => {
-                        running.store(false, Ordering::SeqCst);
-                    }
-                    KeyCode::Enter => {
-                        let command = terminal_out.get_command_buffer();
-                        input_tx
-                            .send(command.clone())
-                            .expect("Failed to send command");
-                        terminal_out.clear_command_buffer();
-                    }
-                    KeyCode::Backspace => {
-                        terminal_out.backspace_command_buffer();
-                    }
-                    KeyCode::Char(c) => {
-                        terminal_out.add_char_to_command_buffer(c);
-                    }
-                    _ => {}
                 }
             }
         }

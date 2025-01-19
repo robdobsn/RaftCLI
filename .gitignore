@@ -1,3 +1,4 @@
 /target
 /test_target
 logs/
+.raftcli_history

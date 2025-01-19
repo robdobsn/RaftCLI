@@ -24,6 +24,8 @@ mod app_ports;
 use app_ports::{PortsCmd, manage_ports};
 mod cmd_history;
 
+const HISTORY_FILE_NAME: &str = ".raftcli_history"; // Default name, configurable if needed
+
 #[derive(Clone, Parser, Debug)]
 enum Action {
     #[clap(name = "new", about = "Create a new raft app", alias = "n")]
@@ -292,7 +294,8 @@ fn main() {
             }
 
             let result = serial_monitor::start_native(app_folder, 
-                            cmd.port, monitor_baud, cmd.no_reconnect, log, log_folder, cmd.vid);
+                        cmd.port, monitor_baud, cmd.no_reconnect, log, log_folder, cmd.vid,
+                        HISTORY_FILE_NAME.to_string());
             match result {
                 Ok(()) => std::process::exit(0),
                 Err(e) => {
@@ -353,7 +356,8 @@ fn main() {
             }
 
             let result = serial_monitor::start_native(app_folder, 
-                            cmd.port, monitor_baud, cmd.no_reconnect, log, log_folder,cmd.vid);
+                            cmd.port, monitor_baud, cmd.no_reconnect, log, log_folder,cmd.vid,
+                            HISTORY_FILE_NAME.to_string());
             match result {
                 Ok(()) => std::process::exit(0),
                 Err(e) => {
@@ -402,7 +406,8 @@ fn main() {
 
         Action::DebugRemote(cmd) => {
             let app_folder = cmd.app_folder.unwrap_or(".".to_string());
-            if let Err(e) = app_debug_remote::start_debug_console(app_folder, cmd.device_address) {
+            if let Err(e) = app_debug_remote::start_debug_console(app_folder, cmd.device_address,
+                            HISTORY_FILE_NAME.to_string()) {
                 eprintln!("Error starting debug console: {}", e);
             }
         }        
