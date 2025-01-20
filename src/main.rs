@@ -50,6 +50,8 @@ enum Action {
 // Define arguments specific to the `new` subcommand
 #[derive(Clone, Parser, Debug)]
 struct NewCmd {
+    // Option to specify the app folder (second positional argument, optional)
+    #[clap(help = "Path to the application folder", value_name = "APPLICATION_FOLDER")]
     base_folder: Option<String>,
     #[clap(short = 'c', long, help = "Clean the target folder")]
     clean: bool,
@@ -58,7 +60,8 @@ struct NewCmd {
 // Define arguments specific to the `build` subcommand
 #[derive(Clone, Parser, Debug)]
 struct BuildCmd {
-    // Add an option to specify the app folder
+    // Option to specify the app folder (second positional argument, optional)
+    #[clap(help = "Path to the application folder", value_name = "APPLICATION_FOLDER")]
     app_folder: Option<String>,
     // Add an option to specify the system type
     #[clap(short = 's', long, help = "System type to build")]
@@ -86,7 +89,8 @@ struct BuildCmd {
 // Define arguments specific to the `monitor` subcommand
 #[derive(Clone, Parser, Debug)]
 struct MonitorCmd {
-    // Add an option to specify the app folder
+    // Option to specify the app folder (second positional argument, optional)
+    #[clap(help = "Path to the application folder", value_name = "APPLICATION_FOLDER")]
     app_folder: Option<String>,
     // Add an option to specify the serial port
     #[clap(short = 'p', long, help = "Serial port")]
@@ -167,7 +171,8 @@ struct RunCmd {
 // Define arguments for the 'flash' subcommand
 #[derive(Clone, Parser, Debug)]
 struct FlashCmd {
-    // Option to specify the app folder
+    // Option to specify the app folder (second positional argument, optional)
+    #[clap(help = "Path to the application folder", value_name = "APPLICATION_FOLDER")]
     app_folder: Option<String>,
     // Option to specify the system type
     #[clap(short = 's', long, help = "System type to flash")]
@@ -192,9 +197,11 @@ struct FlashCmd {
 // Define arguments for the 'ota' subcommand
 #[derive(Clone, Parser, Debug)]
 struct OtaCmd {
-    // IP address/hostname for OTA
+    // IP address/hostname for OTA (required positional argument)
+    #[clap(help = "IP address or hostname for OTA", value_name = "IP_ADDRESS_OR_HOSTNAME")]
     ip_addr: String,
-    // Option to specify the app folder
+    // Option to specify the app folder (second positional argument, optional)
+    #[clap(help = "Path to the application folder", value_name = "APPLICATION_FOLDER")]
     app_folder: Option<String>,
     // Option to specify the IP Port
     #[clap(short = 'p', long, help = "IP Port")]
@@ -210,15 +217,19 @@ struct OtaCmd {
 // Define arguments specific to the `debug` subcommand
 #[derive(Clone, Parser, Debug)]
 struct DebugRemoteCmd {
-    // Add an option to specify the app folder
-    app_folder: Option<String>,
-    // Address for remote debugging
-    #[clap(short = 'a', long, help = "Device address", default_value = "raftdevice:8080")]
+    // Required positional argument for the device address
+    #[clap(help = "Device address for debugging (hostname or IP)", value_name = "IP_ADDRESS_OR_HOSTNAME")]
     device_address: String,
+    // Optional positional argument for the app folder
+    #[clap(help = "Path to the application folder", value_name = "APPLICATION_FOLDER")]
+    app_folder: Option<String>,
+    // Optional argument for the port with a default value
+    #[clap(short = 'p', long, help = "Port for debugging", default_value = "8080")]
+    port: u16,
     #[clap(short = 'l', long, help = "Log debug console data to file")]
     log: bool,
     #[clap(short = 'g', long, default_value = "./logs", help = "Folder for log files")]
-    log_folder: Option<String>,    
+    log_folder: Option<String>,
 }
 
 // Main CLI struct that includes the subcommands
@@ -419,9 +430,17 @@ fn main() {
                 log_folder_path.push(log_folder);
                 log_folder = log_folder_path.to_str().unwrap().to_string();
             }
-            if let Err(e) = app_debug_remote::start_debug_console(app_folder, cmd.device_address,
-                            log, log_folder,
-                            HISTORY_FILE_NAME.to_string()) {
+            // Construct server address with the specified port
+            let server_address = format!("{}:{}", cmd.device_address, cmd.port);
+
+            // Start the debug console
+            if let Err(e) = app_debug_remote::start_debug_console(
+                app_folder,
+                server_address,
+                log,
+                log_folder,
+                HISTORY_FILE_NAME.to_string(),
+            ) {
                 eprintln!("Error starting debug console: {}", e);
             }
         }        
