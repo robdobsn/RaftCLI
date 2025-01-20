@@ -1,5 +1,5 @@
 use crossterm::{
-    event::{self, Event, KeyEventKind},
+    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
     terminal,
 };
 use std::{
@@ -175,6 +175,24 @@ pub fn start_debug_console<A: ToSocketAddrs>(
                 }
             }
             Err(e) => {
+                // Handle keyboard input for exit
+                if event::poll(Duration::from_millis(50))? {
+                    if let Event::Key(key_event) = event::read()? {
+                        if key_event.kind == KeyEventKind::Press {
+                            match key_event.code {
+                                KeyCode::Char('c') | KeyCode::Char('x')
+                                    if key_event.modifiers == KeyModifiers::CONTROL =>
+                                {
+                                    running.store(false, Ordering::SeqCst);
+                                }
+                                KeyCode::Esc => {
+                                    running.store(false, Ordering::SeqCst);
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
                 terminal_out
                     .lock()
                     .unwrap()
