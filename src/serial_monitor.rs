@@ -23,7 +23,7 @@ struct CommandAndTime {
 
 pub fn start_native(
     app_folder: String,
-    port: Option<String>,
+    serial_port_name: Option<String>,
     baud_rate: u32,
     no_reconnect: bool,
     log: bool,
@@ -49,7 +49,7 @@ pub fn start_native(
     let (serial_write_tx, serial_write_rx) = mpsc::channel::<CommandAndTime>();
 
     // Extract port and baud rate arguments
-    let port = if let Some(port) = port {
+    let port = if let Some(port) = serial_port_name {
         port
     } else {
         // Use select_most_likely_port if no specific port is provided

@@ -52,12 +52,15 @@ pub fn setup_threads(
                 match stream.read(&mut buffer) {
                     Ok(bytes_read) if bytes_read > 0 => {
                         let received = String::from_utf8_lossy(&buffer[..bytes_read]).to_string();
-                        output_tx.send(received.clone()).expect("Failed to send data");
+                        output_tx
+                            .send(received.clone())
+                            .expect("Failed to send data");
                         write_to_log(&log_file, &received);
                     }
                     Ok(_) => {} // No data received
-                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock
-                        || e.kind() == std::io::ErrorKind::TimedOut =>
+                    Err(ref e)
+                        if e.kind() == std::io::ErrorKind::WouldBlock
+                            || e.kind() == std::io::ErrorKind::TimedOut =>
                     {
                         // Expected timeout, continue looping
                     }
@@ -92,7 +95,9 @@ pub fn setup_threads(
                         disconnected_clone.store(true, Ordering::SeqCst);
                         break;
                     }
-                    stream.flush().unwrap_or_else(|e| println!("Flush failed: {}", e));
+                    stream
+                        .flush()
+                        .unwrap_or_else(|e| println!("Flush failed: {}", e));
                 }
             }
         });
@@ -141,11 +146,8 @@ pub fn start_debug_console<A: ToSocketAddrs>(
                     Arc::clone(&log_file),
                 );
 
-                terminal_out
-                    .lock()
-                    .unwrap()
-                    .clear_info();
-                    
+                terminal_out.lock().unwrap().clear_info();
+
                 // Main event loop for the terminal UI
                 while running.load(Ordering::SeqCst) && !disconnected.load(Ordering::SeqCst) {
                     // Display incoming messages
@@ -158,14 +160,12 @@ pub fn start_debug_console<A: ToSocketAddrs>(
                         if let Event::Key(key_event) = event::read()? {
                             if key_event.kind == KeyEventKind::Press {
                                 let mut terminal_out = terminal_out.lock().unwrap();
-                                let continue_running = terminal_out.handle_key_event(
-                                    key_event,
-                                    |command| {
+                                let continue_running =
+                                    terminal_out.handle_key_event(key_event, |command| {
                                         input_tx
                                             .send(command.clone())
                                             .expect("Failed to send command");
-                                    },
-                                );
+                                    });
                                 if !continue_running {
                                     running.store(false, Ordering::SeqCst);
                                 }
@@ -175,29 +175,39 @@ pub fn start_debug_console<A: ToSocketAddrs>(
                 }
             }
             Err(e) => {
-                // Handle keyboard input for exit
-                if event::poll(Duration::from_millis(50))? {
-                    if let Event::Key(key_event) = event::read()? {
-                        if key_event.kind == KeyEventKind::Press {
-                            match key_event.code {
-                                KeyCode::Char('c') | KeyCode::Char('x')
-                                    if key_event.modifiers == KeyModifiers::CONTROL =>
-                                {
-                                    running.store(false, Ordering::SeqCst);
-                                }
-                                KeyCode::Esc => {
-                                    running.store(false, Ordering::SeqCst);
-                                }
-                                _ => {}
-                            }
-                        }
-                    }
-                }
                 terminal_out
                     .lock()
                     .unwrap()
                     .show_error(&format!("Error: {}. Retrying in 5 seconds...", e));
-                thread::sleep(Duration::from_secs(5));
+
+                let retry_interval = Duration::from_secs(5);
+                let poll_interval = Duration::from_millis(50);
+                let mut elapsed = Duration::ZERO;
+
+                while elapsed < retry_interval {
+                    // Check for keyboard input
+                    if event::poll(poll_interval)? {
+                        if let Event::Key(key_event) = event::read()? {
+                            if key_event.kind == KeyEventKind::Press {
+                                match key_event.code {
+                                    KeyCode::Char('c') | KeyCode::Char('x')
+                                        if key_event.modifiers == KeyModifiers::CONTROL =>
+                                    {
+                                        running.store(false, Ordering::SeqCst);
+                                        break;
+                                    }
+                                    KeyCode::Esc => {
+                                        running.store(false, Ordering::SeqCst);
+                                        break;
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                    // Increment elapsed time
+                    elapsed += poll_interval;
+                }
             }
         }
     }
