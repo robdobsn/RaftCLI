@@ -1,5 +1,6 @@
 # RaftCLI ToDo list
 
+- move RaftCoreApp raftCoreApp; outside main();
 - default hostname is Scader - maybe change to raftesp32 or something
 - if n is answered for user sysmod then empty file names (.h and .cpp) are created in the components folder
 - if n is answered in raft new for BLE then Error evaluating condition: use_raft_ble_central: Variable identifier is not bound to anything by context: "use_raft_ble_central".
