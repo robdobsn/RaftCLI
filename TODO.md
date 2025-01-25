@@ -1,5 +1,6 @@
 # RaftCLI ToDo list
 
+- if n is answered in raft new for BLE then Error evaluating condition: use_raft_ble_central: Variable identifier is not bound to anything by context: "use_raft_ble_central".
 - raft -f doesn't seem to work on wsl
 - config ini or similar in proj dir
   - define serial port or at least filter
