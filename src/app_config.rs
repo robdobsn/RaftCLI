@@ -352,7 +352,7 @@ fn get_schema() -> serde_json::Value {
         {
             "key": "inc_raft_core_dev_types",
             "condition": "use_raft_core_dev_types",
-            "generator": "\nset(DEV_TYPE_JSON_FILES \"${raftcore_SOURCE_DIR}/devtypes/DeviceTypeRecords.json\")\n"
+            "generator": "\nset(DEV_TYPE_JSON_FILES \"/devtypes/DeviceTypeRecords.json\")\n"
         },
         {
             "key": "depends_raft_i2c",

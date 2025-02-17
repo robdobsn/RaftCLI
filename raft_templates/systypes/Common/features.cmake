@@ -3,6 +3,7 @@ set(IDF_TARGET "{{target_chip}}")
 
 # Raft components
 set(RAFT_COMPONENTS
+    RaftCore@{{raft_core_git_tag}}
     {{inc_raft_sysmods}}
     {{inc_raft_webserver}}
     {{{inc_raft_i2c_sysmod}}}

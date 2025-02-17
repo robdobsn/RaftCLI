@@ -1,8 +1,5 @@
 # RaftCLI ToDo list
 
-- Change CMakeLists.txt to bootstrap version
-- move RaftCoreApp raftCoreApp; outside main();
-- default hostname is Scader - maybe change to raftesp32 or something
 - if n is answered for user sysmod then empty file names (.h and .cpp) are created in the components folder
 - if n is answered in raft new for BLE then Error evaluating condition: use_raft_ble_central: Variable identifier is not bound to anything by context: "use_raft_ble_central".
 - raft -f doesn't seem to work on wsl
@@ -13,11 +10,8 @@
   - define default systype
   - config file for default settings - maybe use platformio.ini when in that system?
 - need a way to build with docker and then switch to idf - currently build with docker then run idf export.sh then raft run results in a one line display and then exit the program without doing anything
-- try to find a way to start esp if no docker
 - add option to avoid programming file system flash if it hasn't changed since last programming
-- add option for BLE settings on new scaffold
 - consider whether to allow entry of ssid and password in CLI written to sdkconfig.defaults file or possibly to a config.ini type file that is .gitignored
-- possibly include size of flash as a user input - issues with this are different flash types such as OCTAL in addition to size
 - bug noticed on Mac with invalid chars immediately after boot
 - change so logging is the default and -l disables
 - test on mac and linux
@@ -31,6 +25,13 @@
   - another post-build script might be needed too though - although maybe not? this would perhaps do what RaftGenFSImage.cmake does - though in fact this probably isn't necessary as long as arduinoIDE can be configured to write the FS image?
   - on platformio the configurations could maybe be managed by the platformio.ini file so and there could be an option in the raftcli to generate a platformio.ini file?
   - maybe there should be a raftcli prebuild function which runs this script?
+
+## Fixed in 1.6.6
+- Change CMakeLists.txt to bootstrap version
+- move RaftCoreApp raftCoreApp; outside main();
+- add option for BLE settings on new scaffold
+- include size of flash as a user input
+
 
 ## Fixed in 1.4.3
 - add OTA update using curl or build-in rust TCP implementing HTTP Post

@@ -32,6 +32,11 @@ fn process_dir(handlebars: &mut Handlebars, in_dir: &Dir, target_folder: &str, c
                 path = found_path.to_string();
             }
 
+            // Check if the path contains // (path separator repeated) which indicates as blank path
+            if path.contains("//") {
+                continue;
+            }
+
             // Generate the destination path in the target folder
             let dest_path = format!("{}/{}", target_folder, path);
 
@@ -39,7 +44,7 @@ fn process_dir(handlebars: &mut Handlebars, in_dir: &Dir, target_folder: &str, c
             let dest_dir = std::path::Path::new(&dest_path).parent().unwrap();
             fs::create_dir_all(dest_dir)?;
 
-            // Read the template content as a string
+            // Read the file content as a string
             let content = std::str::from_utf8(file.contents())?;
 
             // Decide to render or copy file based on its content or extension
