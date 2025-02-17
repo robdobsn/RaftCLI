@@ -1,5 +1,6 @@
 # RaftCLI ToDo list
 
+- Change CMakeLists.txt to bootstrap version
 - move RaftCoreApp raftCoreApp; outside main();
 - default hostname is Scader - maybe change to raftesp32 or something
 - if n is answered for user sysmod then empty file names (.h and .cpp) are created in the components folder
