@@ -1,6 +1,7 @@
 # RaftCLI ToDo list
 
-- if n is answered for user sysmod then empty file names (.h and .cpp) are created in the components folder
+- pretty print JSON systype
+- add DEVJSON to publish and ws ? - DEVBIN? - see RaftI2CBox
 - if n is answered in raft new for BLE then Error evaluating condition: use_raft_ble_central: Variable identifier is not bound to anything by context: "use_raft_ble_central".
 - raft -f doesn't seem to work on wsl
 - config ini or similar in proj dir
