@@ -497,7 +497,7 @@ pub fn get_user_input() -> Result<String, Box<dyn std::error::Error>> {
                 if let Ok(num) = response.parse::<i64>() {
                     responses.insert(key.clone(), JsonValue::Number(serde_json::Number::from(num)));
                     eval_context
-                        .set_value(key.clone(), Value::from(num))
+                        .set_value(key.clone(), evalexpr::Value::Int(num))
                         .unwrap();
                 }
             }
