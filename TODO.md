@@ -2,6 +2,21 @@
 
 - pretty print JSON systype
 - add DEVJSON to publish and ws ? - DEVBIN? - see RaftI2CBox
+-         "enable": 1,
+        "pubList": [
+            {            
+                "topic": "devjson",
+                "trigger": "Change",          
+                "minStateChangeMs": 10,
+                "rates": []
+            },
+            {
+                "topic": "devbin",
+                "trigger": "Change",
+                "minStateChangeMs": 10,
+                "rates": []
+            }
+        ]
 - if n is answered in raft new for BLE then Error evaluating condition: use_raft_ble_central: Variable identifier is not bound to anything by context: "use_raft_ble_central".
 - raft -f doesn't seem to work on wsl
 - config ini or similar in proj dir
