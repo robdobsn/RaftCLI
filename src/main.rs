@@ -259,7 +259,7 @@ fn main() {
             }
             
             // Get configuration
-            let json_config_str = get_user_input();
+            let json_config_str = get_user_input(&base_folder);
             let json_config = serde_json::from_str(&json_config_str.unwrap()).unwrap();
 
             // Generate a new app

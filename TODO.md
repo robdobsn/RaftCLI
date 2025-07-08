@@ -30,6 +30,7 @@
 - pretty print JSON systype
 - add devjson & devbin to publish and ws?
 - if n is answered in raft new for BLE then Error evaluating condition: use_raft_ble_central: Variable identifier is not bound to anything by context: "use_raft_ble_central". Fixed.
+- changed to use 1.23.1 RaftCore script RaftBootstrap.cmake
 
 ## Fixed in 1.6.6
 - Change CMakeLists.txt to bootstrap version

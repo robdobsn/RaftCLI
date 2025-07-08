@@ -25,15 +25,46 @@ struct ConfigQuestion {
     generator: Option<String>,
 }
 
-// Get the populated schema for the user input
-fn get_schema() -> serde_json::Value {
+// Extract project name from folder path and sanitize it
+fn extract_project_name_from_folder(base_folder: &str) -> String {
+    let path = std::path::Path::new(base_folder);
+    
+    // If it's current directory, get the actual current directory name
+    let folder_name = if base_folder == "." {
+        std::env::current_dir()
+            .ok()
+            .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+            .unwrap_or_else(|| "NewRaftProject".to_string())
+    } else {
+        path.file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "NewRaftProject".to_string())
+    };
+    
+    // Sanitize the folder name to match the pattern ^[a-zA-Z0-9_]+$
+    let sanitized = folder_name
+        .chars()
+        .filter(|c| c.is_alphanumeric() || *c == '_')
+        .collect::<String>();
+    
+    // Ensure it starts with a letter and isn't empty
+    if sanitized.is_empty() || !sanitized.chars().next().unwrap().is_alphabetic() {
+        "NewRaftProject".to_string()
+    } else {
+        sanitized
+    }
+}
 
+// Get the populated schema for the user input
+fn get_schema(base_folder: &str) -> serde_json::Value {
+    let default_project_name = extract_project_name_from_folder(base_folder);
+    
     // Populate schema for the user input
     let schema = json!([
         {
             "key": "project_name",
             "prompt": "Project Name",
-            "default": "NewRaftProject",
+            "default": default_project_name,
             "datatype": "string",
             "description": "The name of the project to create",
             "pattern": "^[a-zA-Z0-9_]+$",
@@ -294,7 +325,7 @@ fn get_schema() -> serde_json::Value {
         {
             "key": "inc_bleman_in_sdkconfig",
             "condition": "use_raft_ble",
-            "generator": "\n# Bluetooth\nCONFIG_BT_ENABLED=y\nCONFIG_BTDM_CTRL_MODE_BLE_ONLY=y\nCONFIG_BTDM_CTRL_MODE_BR_EDR_ONLY=n\nCONFIG_BTDM_CTRL_MODE_BTDM=n\nCONFIG_BT_NIMBLE_ENABLED=y\n{{{use_raft_ble_central_yn}}}CONFIG_BT_NIMBLE_ROLE_OBSERVER=n\nCONFIG_BT_NIMBLE_CRYPTO_STACK_MBEDTLS=n\nCONFIG_BT_NIMBLE_LOG_LEVEL_WARNING=y\n#CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL=y\n"
+            "generator": "\n# Bluetooth\nCONFIG_BT_ENABLED=y\nCONFIG_BT_NIMBLE_ENABLED=y\n{{{use_raft_ble_central_yn}}}CONFIG_BT_NIMBLE_ROLE_OBSERVER=n\nCONFIG_BT_NIMBLE_CRYPTO_STACK_MBEDTLS=n\nCONFIG_BT_NIMBLE_LOG_LEVEL_WARNING=y\n#CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL=y\n"
         },
         {
             "key": "use_raft_i2c",
@@ -461,9 +492,9 @@ fn add_default_value_to_context(
     }
 }
 
-pub fn get_user_input() -> Result<String, Box<dyn std::error::Error>> {
+pub fn get_user_input(base_folder: &str) -> Result<String, Box<dyn std::error::Error>> {
     // Load and deserialize the schema
-    let schema = get_schema();
+    let schema = get_schema(base_folder);
     let questions = serde_json::from_value::<Vec<ConfigQuestion>>(schema)?;
 
     let mut responses = Map::new();
