@@ -421,6 +421,46 @@ fn evaluate_condition(condition: &str, context: &HashMapContext) -> bool {
     }
 }
 
+// Add a default value for a variable to both responses and eval_context
+fn add_default_value_to_context(
+    question: &ConfigQuestion, 
+    responses: &mut Map<String, JsonValue>, 
+    eval_context: &mut HashMapContext
+) {
+    let key = &question.key;
+    
+    // Use the question's default if available, otherwise use type-appropriate defaults
+    let default_value = question.default.as_deref().unwrap_or_else(|| {
+        match question.datatype.as_deref() {
+            Some("boolean") => "false",
+            Some("number") | Some("int") => "0",
+            _ => ""
+        }
+    });
+    
+    match question.datatype.as_deref() {
+        Some("boolean") => {
+            let bool_value = default_value.to_lowercase();
+            let is_true = bool_value == "true" || bool_value == "t" || bool_value == "yes" || bool_value == "y";
+            responses.insert(key.clone(), JsonValue::Bool(is_true));
+            eval_context.set_value(key.clone(), Value::from(is_true)).unwrap();
+        },
+        Some("number") | Some("int") => {
+            if let Ok(num) = default_value.parse::<i64>() {
+                responses.insert(key.clone(), JsonValue::Number(serde_json::Number::from(num)));
+                eval_context.set_value(key.clone(), evalexpr::Value::Int(num)).unwrap();
+            } else {
+                responses.insert(key.clone(), JsonValue::Number(serde_json::Number::from(0)));
+                eval_context.set_value(key.clone(), evalexpr::Value::Int(0)).unwrap();
+            }
+        },
+        _ => {
+            responses.insert(key.clone(), JsonValue::String(default_value.to_string()));
+            eval_context.set_value(key.clone(), Value::from(default_value)).unwrap();
+        }
+    }
+}
+
 pub fn get_user_input() -> Result<String, Box<dyn std::error::Error>> {
     // Load and deserialize the schema
     let schema = get_schema();
@@ -430,22 +470,28 @@ pub fn get_user_input() -> Result<String, Box<dyn std::error::Error>> {
     let handlebars = Handlebars::new();
     let mut eval_context = HashMapContext::new();
 
-    // Iterate over the questions
-    for question in questions {
-        // Process condition
-        if let Some(condition) = &question.condition {
-            // Render the condition using Handlebars
-            let rendered_condition = handlebars.render_template(condition, &responses)?;
-            // Evaluate the rendered condition using evalexpr
-            // println!("Condition: {}", rendered_condition);
-            if !evaluate_condition(&rendered_condition, &eval_context) {
-                continue; // Skip this question if the condition is false
-            }
+    // PRE-PASS: Initialize all variables with defaults
+    // This ensures every variable exists in the context before any condition evaluation
+    for question in &questions {
+        if question.prompt.is_some() {
+            add_default_value_to_context(&question, &mut responses, &mut eval_context);
         }
+    }
 
-        // Get user input or generate value
-        let response = if let Some(prompt) = &question.prompt {
-            // Process the default value
+    // PASS 1: Process all user prompts (overwriting defaults when conditions match)
+    for question in &questions {
+        if let Some(prompt) = &question.prompt {
+            // Process condition
+            if let Some(condition) = &question.condition {
+                // Render the condition using Handlebars
+                let rendered_condition = handlebars.render_template(condition, &responses)?;
+                // Evaluate the rendered condition using evalexpr
+                if !evaluate_condition(&rendered_condition, &eval_context) {
+                    continue; // Skip this question if the condition is false (keep default value)
+                }
+            }
+
+            // Process the default value with Handlebars
             let default_value = if let Some(default) = &question.default {
                 handlebars.render_template(default, &responses)?
             } else {
@@ -458,7 +504,7 @@ pub fn get_user_input() -> Result<String, Box<dyn std::error::Error>> {
             let message = question.message.clone().unwrap_or("Invalid input".to_string());
 
             // Prompt user for input
-            Input::new()
+            let response = Input::new()
                 .with_prompt(prompt)
                 .default(default_value)
                 .validate_with({
@@ -473,40 +519,50 @@ pub fn get_user_input() -> Result<String, Box<dyn std::error::Error>> {
                     }
                 })
                 .interact_text()
-                .unwrap_or_default()
-        } else if let Some(generator) = &question.generator {
-            handlebars.render_template(generator, &responses)?
-        } else {
-            question.default.clone().unwrap_or_default()
-        };
+                .unwrap_or_default();
 
-        // Save response
-        let key = question.key.clone();
-        match question.datatype.as_deref() {
-            Some("boolean") => {
-                let value = response.to_lowercase();
-                responses.insert(
-                    key.clone(),
-                    JsonValue::Bool(value == "true" || value == "t" || value == "yes" || value == "y"),
-                );
-                eval_context
-                    .set_value(key.clone(), Value::from(value == "true"))
-                    .unwrap();
-            }
-            Some("number") => {
-                if let Ok(num) = response.parse::<i64>() {
-                    responses.insert(key.clone(), JsonValue::Number(serde_json::Number::from(num)));
-                    eval_context
-                        .set_value(key.clone(), evalexpr::Value::Int(num))
-                        .unwrap();
+            // Save response (overwriting the default)
+            let key = question.key.clone();
+            match question.datatype.as_deref() {
+                Some("boolean") => {
+                    let value = response.to_lowercase();
+                    let is_true = value == "true" || value == "t" || value == "yes" || value == "y";
+                    responses.insert(key.clone(), JsonValue::Bool(is_true));
+                    eval_context.set_value(key.clone(), Value::from(is_true)).unwrap();
+                }
+                Some("number") | Some("int") => {
+                    if let Ok(num) = response.parse::<i64>() {
+                        responses.insert(key.clone(), JsonValue::Number(serde_json::Number::from(num)));
+                        eval_context.set_value(key.clone(), evalexpr::Value::Int(num)).unwrap();
+                    }
+                }
+                _ => {
+                    responses.insert(key.clone(), JsonValue::String(response.clone()));
+                    eval_context.set_value(key.clone(), Value::from(response)).unwrap();
                 }
             }
-            _ => {
-                responses.insert(key.clone(), JsonValue::String(response.clone()));
-                eval_context
-                    .set_value(key.clone(), Value::from(response))
-                    .unwrap();
+        }
+    }
+
+    // PASS 2: Process all generators (all variables now exist in context)
+    for question in &questions {
+        if let Some(generator) = &question.generator {
+            // Process condition
+            if let Some(condition) = &question.condition {
+                // Render the condition using Handlebars
+                let rendered_condition = handlebars.render_template(condition, &responses)?;
+                // Evaluate the rendered condition using evalexpr
+                if !evaluate_condition(&rendered_condition, &eval_context) {
+                    continue; // Skip this generator if the condition is false
+                }
             }
+
+            // Generate the value
+            let generated_value = handlebars.render_template(generator, &responses)?;
+            
+            // Save generated value
+            let key = question.key.clone();
+            responses.insert(key, JsonValue::String(generated_value));
         }
     }
 
