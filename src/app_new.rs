@@ -55,7 +55,23 @@ fn process_dir(handlebars: &mut Handlebars, in_dir: &Dir, target_folder: &str, c
                 // File likely contains Handlebars syntax; attempt to register it and then render it
                 handlebars.register_template_string(path.as_str(), content)?;
                 let rendered = handlebars.render_template(&content, context)?;
-                fs::write(&dest_path, rendered)?;
+                
+                // Check if this is a JSON file and pretty-print it
+                let final_content = if dest_path.ends_with(".json") {
+                    match serde_json::from_str::<serde_json::Value>(&rendered) {
+                        Ok(json_value) => {
+                            match serde_json::to_string_pretty(&json_value) {
+                                Ok(pretty_json) => pretty_json,
+                                Err(_) => rendered, // Fallback to original if pretty-printing fails
+                            }
+                        }
+                        Err(_) => rendered, // Fallback to original if JSON parsing fails
+                    }
+                } else {
+                    rendered
+                };
+                
+                fs::write(&dest_path, final_content)?;
 
             } else {
 

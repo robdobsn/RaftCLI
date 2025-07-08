@@ -1,6 +1,5 @@
 # RaftCLI ToDo list
 
-- pretty print JSON systype
 - add DEVJSON to publish and ws ? - DEVBIN? - see RaftI2CBox
 -         "enable": 1,
         "pubList": [
@@ -41,6 +40,10 @@
   - another post-build script might be needed too though - although maybe not? this would perhaps do what RaftGenFSImage.cmake does - though in fact this probably isn't necessary as long as arduinoIDE can be configured to write the FS image?
   - on platformio the configurations could maybe be managed by the platformio.ini file so and there could be an option in the raftcli to generate a platformio.ini file?
   - maybe there should be a raftcli prebuild function which runs this script?
+
+## Fixed in 1.7.2
+- ESP IDF 5.4.2
+- pretty print JSON systype
 
 ## Fixed in 1.6.6
 - Change CMakeLists.txt to bootstrap version
