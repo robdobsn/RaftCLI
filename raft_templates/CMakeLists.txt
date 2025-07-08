@@ -8,6 +8,3 @@ include("${CMAKE_BINARY_DIR}/RaftBootstrap.cmake")
 
 # Define the project dependencies
 project(${_build_config_name} DEPENDS ${ADDED_PROJECT_DEPENDENCIES})
-
-# Generate File System image
-include(${raftcore_SOURCE_DIR}/scripts/RaftGenFSImage.cmake)
