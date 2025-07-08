@@ -154,8 +154,8 @@ pub fn start_native(
             terminal_io.lock().unwrap().print(&received, true);
         }
     
-        // Handle keyboard input
-        if crossterm::event::poll(Duration::from_millis(0))? {
+        // Handle keyboard input with 10ms timeout to prevent busy-waiting
+        if crossterm::event::poll(Duration::from_millis(10))? {
             if let Event::Key(key_event) = event::read()? {
                 if key_event.kind == KeyEventKind::Press {
                     let mut terminal_io = terminal_io.lock().unwrap();
