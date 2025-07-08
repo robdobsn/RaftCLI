@@ -71,7 +71,7 @@ On completion you will have a folder structure like this:
 
 ```
 ├───components
-│   └───MySysMod
+│   └───MainSysMod
 ├───main
 └───systypes
     ├───Common

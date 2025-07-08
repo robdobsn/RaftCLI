@@ -148,7 +148,7 @@ fn get_schema() -> serde_json::Value {
         {
             "key": "user_sys_mod_class",
             "prompt": "User SysMod Class",
-            "default": "MySysMod",
+            "default": "MainSysMod",
             "datatype": "string",
             "description": "The name of the user SysMod class",
             "pattern": "^[a-zA-Z0-9_]+$",
