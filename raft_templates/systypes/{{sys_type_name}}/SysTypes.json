@@ -114,7 +114,20 @@
     },
     "Publish": {
         "enable": 1,
-        "pubList": []
+        "pubList": [
+            {            
+                "topic": "devjson",
+                "trigger": "Change",          
+                "minStateChangeMs": 10,
+                "rates": []
+            },
+            {
+                "topic": "devbin",
+                "trigger": "Change",
+                "minStateChangeMs": 10,
+                "rates": []
+            }            
+        ]
     },
     "DevMan": {
         "Buses": {

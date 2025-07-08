@@ -1,21 +1,6 @@
 # RaftCLI ToDo list
 
-- add DEVJSON to publish and ws ? - DEVBIN? - see RaftI2CBox
--         "enable": 1,
-        "pubList": [
-            {            
-                "topic": "devjson",
-                "trigger": "Change",          
-                "minStateChangeMs": 10,
-                "rates": []
-            },
-            {
-                "topic": "devbin",
-                "trigger": "Change",
-                "minStateChangeMs": 10,
-                "rates": []
-            }
-        ]
+- default name the project after the selected folder if it is empty
 - if n is answered in raft new for BLE then Error evaluating condition: use_raft_ble_central: Variable identifier is not bound to anything by context: "use_raft_ble_central".
 - raft -f doesn't seem to work on wsl
 - config ini or similar in proj dir
@@ -44,6 +29,7 @@
 ## Fixed in 1.7.2
 - ESP IDF 5.4.2
 - pretty print JSON systype
+- add devjson & devbin to publish and ws?
 
 ## Fixed in 1.6.6
 - Change CMakeLists.txt to bootstrap version
