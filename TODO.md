@@ -25,6 +25,11 @@
   - on platformio the configurations could maybe be managed by the platformio.ini file so and there could be an option in the raftcli to generate a platformio.ini file?
   - maybe there should be a raftcli prebuild function which runs this script?
 
+## Fixed in 1.7.4
+- ESP IDF 5.5.1
+- Use bootstrap RaftCore build from 1.24.1 which handles linux and full raft library repo paths
+- updated packages that had been yanked
+
 ## Fixed in 1.7.2
 - ESP IDF 5.4.2
 - pretty print JSON systype
