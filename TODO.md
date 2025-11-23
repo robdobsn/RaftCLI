@@ -1,5 +1,6 @@
 # RaftCLI ToDo list
 
+- project name is DEPENDS when building for ESP32 C6
 - default name the project after the selected folder if it is empty
 - raft -f doesn't seem to work on wsl
 - config ini or similar in proj dir
