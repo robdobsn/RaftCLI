@@ -254,12 +254,14 @@ pub fn get_flash_tool_cmd(flash_tool_opt: Option<String>, native_serial_port: bo
         Some(tool) => tool,
         None => {
             let possible_executables = if cfg!(target_os = "windows") {
-                vec!["esptool.py.exe", "esptool.exe"]
+                // On Windows, esptool installed via pip is typically just "esptool" (handled by Python Scripts)
+                vec!["esptool", "esptool.py", "esptool.exe"]
             } else if is_wsl() {
                 if native_serial_port {
                     vec!["esptool.py", "esptool"]
                 } else {
-                    vec!["esptool.py.exe", "esptool.exe"]
+                    // When delegating to Windows from WSL, try esptool first (Python-installed version)
+                    vec!["esptool", "esptool.py.exe", "esptool.exe"]
                 }
             } else {
                 vec!["esptool.py", "esptool"]
@@ -270,7 +272,7 @@ pub fn get_flash_tool_cmd(flash_tool_opt: Option<String>, native_serial_port: bo
             } else {
                 // Fallback to default if not found
                 if cfg!(target_os = "windows") {
-                    "esptool.exe".to_string()
+                    "esptool".to_string()
                 } else {
                     "esptool.py".to_string()
                 }
