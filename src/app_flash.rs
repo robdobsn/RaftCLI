@@ -78,7 +78,15 @@ pub fn flash_raft_app(
     // println!("Flash command build folder: {}", build_folder);
 
     // Execute the flash command and check for errors
-    let (output, success_flag) = execute_and_capture_output(flash_cmd.clone(), &flash_cmd_args, app_folder.clone(), HashMap::new())?;
+    // Handle "python -m esptool" specially
+    let (output, success_flag) = if flash_cmd.starts_with("python -m ") {
+        let module = flash_cmd.strip_prefix("python -m ").unwrap();
+        let mut args = vec!["-m".to_string(), module.to_string()];
+        args.extend(flash_cmd_args.clone());
+        execute_and_capture_output("python".to_string(), &args, app_folder.clone(), HashMap::new())?
+    } else {
+        execute_and_capture_output(flash_cmd.clone(), &flash_cmd_args, app_folder.clone(), HashMap::new())?
+    };
     if !success_flag {
         // Check if the error is related to esptool module not found
         if output.contains("ModuleNotFoundError: No module named 'esptool'") {

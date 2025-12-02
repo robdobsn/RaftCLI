@@ -21,6 +21,7 @@ mod raft_cli_utils;
 mod console_log;
 use raft_cli_utils::is_wsl;
 use raft_cli_utils::check_target_folder_valid;
+use raft_cli_utils::get_flash_tool_cmd;
 mod app_ports;
 use app_ports::{PortsCmd, manage_ports};
 mod cmd_history;
@@ -44,7 +45,9 @@ enum Action {
     #[clap(name = "ports", about = "Manage serial ports", alias = "p")]
     Ports(PortsCmd),
     #[clap(name = "debug", about = "Start remote debug console", alias = "d")]
-    DebugRemote(DebugRemoteCmd),    
+    DebugRemote(DebugRemoteCmd),
+    #[clap(name = "esptool", about = "Run esptool directly with arguments", alias = "e")]
+    Esptool(EsptoolCmd),
 }
 
 // Define arguments specific to the `new` subcommand
@@ -230,6 +233,17 @@ struct DebugRemoteCmd {
     log: bool,
     #[clap(short = 'g', long, default_value = "./logs", help = "Folder for log files")]
     log_folder: Option<String>,
+}
+
+// Define arguments for the `esptool` subcommand
+#[derive(Clone, Parser, Debug)]
+struct EsptoolCmd {
+    // All arguments to pass through to esptool
+    #[clap(trailing_var_arg = true, allow_hyphen_values = true)]
+    args: Vec<String>,
+    // Option to specify native serial port when in WSL
+    #[clap(short = 'n', long, help = "Native serial port when in WSL")]
+    native_serial_port: bool,
 }
 
 // Main CLI struct that includes the subcommands
@@ -443,7 +457,67 @@ fn main() {
             ) {
                 eprintln!("Error starting debug console: {}", e);
             }
-        }        
+        }
+        
+        Action::Esptool(cmd) => {
+            // Get the esptool command
+            let esptool_cmd = get_flash_tool_cmd(None, cmd.native_serial_port);
+            
+            // In WSL without native serial port, delegate to Windows raft.exe
+            if is_wsl() && !cmd.native_serial_port {
+                println!("WSL detected: Delegating esptool to Windows raft.exe");
+                let mut args = vec!["esptool".to_string()];
+                args.extend(cmd.args);
+                args.push("-n".to_string());
+                
+                let output = std::process::Command::new("raft.exe")
+                    .args(&args)
+                    .status();
+                
+                match output {
+                    Ok(status) => {
+                        if !status.success() {
+                            std::process::exit(status.code().unwrap_or(1));
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Error executing raft.exe: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+            } else {
+                // Execute esptool directly
+                println!("Executing: {} {:?}", esptool_cmd, cmd.args);
+                
+                // Handle "python -m esptool" specially
+                let output = if esptool_cmd.starts_with("python -m ") {
+                    let module = esptool_cmd.strip_prefix("python -m ").unwrap();
+                    let mut args = vec!["-m".to_string(), module.to_string()];
+                    args.extend(cmd.args.clone());
+                    std::process::Command::new("python")
+                        .args(&args)
+                        .status()
+                } else {
+                    std::process::Command::new(&esptool_cmd)
+                        .args(&cmd.args)
+                        .status()
+                };
+                
+                match output {
+                    Ok(status) => {
+                        if !status.success() {
+                            std::process::exit(status.code().unwrap_or(1));
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Error executing {}: {}", esptool_cmd, e);
+                        eprintln!("\nMake sure esptool is installed. You can install it with:");
+                        eprintln!("  pip install esptool");
+                        std::process::exit(1);
+                    }
+                }
+            }
+        }
     }
     std::process::exit(0);
 }

@@ -31,6 +31,9 @@
 - Added improved error messages when esptool module is not found, with clear resolution steps
 - Flash and ports operations in WSL now automatically use Windows raft.exe unless -n flag is specified
 - Added -n (native-serial-port) flag to ports command for consistency with other commands
+- Added new `raft esptool` command to run esptool directly with argument passthrough
+- Improved esptool detection to support Python module installation (python -m esptool)
+- Better handling of esptool installed via pip on Windows
 
 ## Fixed in 1.7.4
 - ESP IDF 5.5.1

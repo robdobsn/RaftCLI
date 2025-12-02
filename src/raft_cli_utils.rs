@@ -249,6 +249,17 @@ pub fn find_executable(executables: &[&str]) -> Option<String> {
     None
 }
 
+// Check if esptool can be run via Python module
+fn check_python_esptool() -> bool {
+    Command::new("python")
+        .args(&["-m", "esptool", "version"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
 pub fn get_flash_tool_cmd(flash_tool_opt: Option<String>, native_serial_port: bool) -> String {
     match flash_tool_opt {
         Some(tool) => tool,
@@ -269,6 +280,9 @@ pub fn get_flash_tool_cmd(flash_tool_opt: Option<String>, native_serial_port: bo
 
             if let Some(exe) = find_executable(&possible_executables) {
                 exe
+            } else if check_python_esptool() {
+                // If esptool is available as a Python module, use that
+                "python -m esptool".to_string()
             } else {
                 // Fallback to default if not found
                 if cfg!(target_os = "windows") {

@@ -272,6 +272,38 @@ Options:
   -h, --help                     Print help
 ```
 
+## Run esptool directly
+
+You can run esptool directly through raftcli, which is useful for diagnostics and accessing esptool features directly:
+
+```
+raft esptool <esptool-arguments>
+OR
+raft e <esptool-arguments>
+```
+
+For example:
+```
+raft esptool version
+raft esptool --port COM8 chip_id
+raft esptool --port COM8 flash_id
+```
+
+This command automatically detects and uses esptool whether it's installed as a standalone executable or as a Python module (via `pip install esptool`). In WSL, it delegates to the Windows version unless the -n flag is specified.
+
+```
+Run esptool directly with arguments
+
+Usage: raft.exe esptool [OPTIONS] [ARGS]...
+
+Arguments:
+  [ARGS]...
+
+Options:
+  -n, --native-serial-port  Native serial port when in WSL
+  -h, --help                Print help
+```
+
 ## OTA (Over-the-air) Update Firmware (using WiFi/Ethernet connection)
 
 To use OTA updates the device must be connected to a WiFi or Ethernet network and the IP address (or hostname) of the device must be known.
