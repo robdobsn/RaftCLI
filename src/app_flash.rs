@@ -151,30 +151,34 @@ fn flash_via_windows_raft(
     
     println!("Executing Windows raft.exe with args: {:?}", args);
     
-    // Execute raft.exe and stream output
-    let output = std::process::Command::new("raft.exe")
+    // Execute raft.exe with real-time output streaming
+    let mut child = std::process::Command::new("raft.exe")
         .args(&args)
         .current_dir(&app_folder)
-        .output();
+        .stdin(std::process::Stdio::inherit())
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
+        .spawn();
     
-    match output {
-        Ok(result) => {
-            // Print stdout
-            print!("{}", String::from_utf8_lossy(&result.stdout));
-            
-            // Print stderr if any
-            let stderr = String::from_utf8_lossy(&result.stderr);
-            if !stderr.is_empty() {
-                eprint!("{}", stderr);
-            }
-            
-            if result.status.success() {
-                Ok(())
-            } else {
-                Err(Box::new(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Windows raft.exe flash command failed with exit code: {:?}", result.status.code()),
-                )))
+    match child {
+        Ok(mut child) => {
+            match child.wait() {
+                Ok(status) => {
+                    if status.success() {
+                        Ok(())
+                    } else {
+                        Err(Box::new(std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            format!("Windows raft.exe flash command failed with exit code: {:?}", status.code()),
+                        )))
+                    }
+                }
+                Err(e) => {
+                    Err(Box::new(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("Error waiting for raft.exe process: {}", e),
+                    )))
+                }
             }
         }
         Err(e) => {

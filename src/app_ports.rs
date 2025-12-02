@@ -313,26 +313,30 @@ fn list_ports_via_windows_raft(cmd: &PortsCmd) -> Result<(), Box<dyn Error>> {
     // Add native serial port flag to tell Windows raft.exe to use Windows serial ports
     args.push("-n".to_string());
     
-    // Execute raft.exe and stream output
-    let output = std::process::Command::new("raft.exe")
+    // Execute raft.exe with real-time output streaming
+    let mut child = std::process::Command::new("raft.exe")
         .args(&args)
-        .output();
+        .stdin(std::process::Stdio::inherit())
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
+        .spawn();
     
-    match output {
-        Ok(result) => {
-            // Print stdout
-            print!("{}", String::from_utf8_lossy(&result.stdout));
-            
-            // Print stderr if any
-            let stderr = String::from_utf8_lossy(&result.stderr);
-            if !stderr.is_empty() {
-                eprint!("{}", stderr);
-            }
-            
-            if result.status.success() {
-                Ok(())
-            } else {
-                Err("Windows raft.exe ports command failed".into())
+    match child {
+        Ok(mut child) => {
+            match child.wait() {
+                Ok(status) => {
+                    if status.success() {
+                        Ok(())
+                    } else {
+                        Err("Windows raft.exe ports command failed".into())
+                    }
+                }
+                Err(e) => {
+                    Err(Box::new(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("Error waiting for raft.exe process: {}", e),
+                    )))
+                }
             }
         }
         Err(e) => {

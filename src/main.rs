@@ -486,27 +486,41 @@ fn main() {
                     }
                 }
             } else {
-                // Execute esptool directly
+                // Execute esptool directly with real-time output
                 println!("Executing: {} {:?}", esptool_cmd, cmd.args);
                 
                 // Handle "python -m esptool" specially
-                let output = if esptool_cmd.starts_with("python -m ") {
+                let mut child = if esptool_cmd.starts_with("python -m ") {
                     let module = esptool_cmd.strip_prefix("python -m ").unwrap();
                     let mut args = vec!["-m".to_string(), module.to_string()];
                     args.extend(cmd.args.clone());
                     std::process::Command::new("python")
                         .args(&args)
-                        .status()
+                        .stdin(std::process::Stdio::inherit())
+                        .stdout(std::process::Stdio::inherit())
+                        .stderr(std::process::Stdio::inherit())
+                        .spawn()
                 } else {
                     std::process::Command::new(&esptool_cmd)
                         .args(&cmd.args)
-                        .status()
+                        .stdin(std::process::Stdio::inherit())
+                        .stdout(std::process::Stdio::inherit())
+                        .stderr(std::process::Stdio::inherit())
+                        .spawn()
                 };
                 
-                match output {
-                    Ok(status) => {
-                        if !status.success() {
-                            std::process::exit(status.code().unwrap_or(1));
+                match child {
+                    Ok(mut child) => {
+                        match child.wait() {
+                            Ok(status) => {
+                                if !status.success() {
+                                    std::process::exit(status.code().unwrap_or(1));
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("Error waiting for process: {}", e);
+                                std::process::exit(1);
+                            }
                         }
                     }
                     Err(e) => {
