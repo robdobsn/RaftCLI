@@ -2,7 +2,6 @@
 
 - project name is DEPENDS when building for ESP32 C6
 - default name the project after the selected folder if it is empty
-- raft -f doesn't seem to work on wsl
 - config ini or similar in proj dir
   - define serial port or at least filter
   - define other flags
@@ -25,6 +24,13 @@
   - another post-build script might be needed too though - although maybe not? this would perhaps do what RaftGenFSImage.cmake does - though in fact this probably isn't necessary as long as arduinoIDE can be configured to write the FS image?
   - on platformio the configurations could maybe be managed by the platformio.ini file so and there could be an option in the raftcli to generate a platformio.ini file?
   - maybe there should be a raftcli prebuild function which runs this script?
+
+## Fixed in 1.7.5 (pending)
+- Fixed WSL flash operation to properly delegate to Windows raft.exe for USB serial port access
+- Fixed WSL ports command to properly delegate to Windows raft.exe for USB serial port access
+- Added improved error messages when esptool module is not found, with clear resolution steps
+- Flash and ports operations in WSL now automatically use Windows raft.exe unless -n flag is specified
+- Added -n (native-serial-port) flag to ports command for consistency with other commands
 
 ## Fixed in 1.7.4
 - ESP IDF 5.5.1

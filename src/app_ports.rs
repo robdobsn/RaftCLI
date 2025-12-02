@@ -25,6 +25,8 @@ pub struct PortsCmd {
     pub debug: bool,
     #[clap(long, help = "Preferred VIDs (comma separated list)")]
     pub preferred_vids: Option<String>,
+    #[clap(short = 'n', long, help = "Native serial port when in WSL")]
+    pub native_serial_port: bool,
 }
 
 impl PortsCmd {
@@ -39,6 +41,7 @@ impl PortsCmd {
             index: None,
             debug: false,
             preferred_vids: None,
+            native_serial_port: false,
         }
     }
 }
@@ -53,6 +56,15 @@ const DEFAULT_PREFERRED_VIDS: &[&str] = &[
 ];
 
 pub fn manage_ports(cmd: &PortsCmd) {
+    // In WSL without native serial port flag, delegate to Windows raft.exe
+    if is_wsl() && !cmd.native_serial_port {
+        if let Err(e) = list_ports_via_windows_raft(cmd) {
+            println!("Error listing ports: {}", e);
+            std::process::exit(1);
+        }
+        return;
+    }
+    
     if let Err(e) = list_ports(cmd) {
         println!("Error listing ports: {}", e);
         std::process::exit(1);
@@ -239,4 +251,102 @@ pub fn select_most_likely_port(cmd: &PortsCmd, native_serial_port: bool) -> Opti
     }
     // println!("No ports found");
     None
+}
+
+// Delegate port listing to Windows raft.exe when in WSL
+fn list_ports_via_windows_raft(cmd: &PortsCmd) -> Result<(), Box<dyn Error>> {
+    let mut args = vec!["ports".to_string()];
+    
+    // Add port pattern if specified
+    if let Some(port) = &cmd.port {
+        args.push("-p".to_string());
+        args.push(port.clone());
+    }
+    
+    // Add vendor ID if specified
+    if let Some(vid) = &cmd.vid {
+        args.push("-v".to_string());
+        args.push(vid.clone());
+    }
+    
+    // Add product ID if specified
+    if let Some(pid) = &cmd.pid {
+        args.push("-d".to_string());
+        args.push(pid.clone());
+    }
+    
+    // Add manufacturer if specified
+    if let Some(manufacturer) = &cmd.manufacturer {
+        args.push("--manufacturer".to_string());
+        args.push(manufacturer.clone());
+    }
+    
+    // Add serial number if specified
+    if let Some(serial) = &cmd.serial {
+        args.push("--serial".to_string());
+        args.push(serial.clone());
+    }
+    
+    // Add product if specified
+    if let Some(product) = &cmd.product {
+        args.push("--product".to_string());
+        args.push(product.clone());
+    }
+    
+    // Add index if specified
+    if let Some(index) = cmd.index {
+        args.push("-i".to_string());
+        args.push(index.to_string());
+    }
+    
+    // Add debug flag if specified
+    if cmd.debug {
+        args.push("-D".to_string());
+    }
+    
+    // Add preferred VIDs if specified
+    if let Some(preferred_vids) = &cmd.preferred_vids {
+        args.push("--preferred-vids".to_string());
+        args.push(preferred_vids.clone());
+    }
+    
+    // Add native serial port flag to tell Windows raft.exe to use Windows serial ports
+    args.push("-n".to_string());
+    
+    // Execute raft.exe and stream output
+    let output = std::process::Command::new("raft.exe")
+        .args(&args)
+        .output();
+    
+    match output {
+        Ok(result) => {
+            // Print stdout
+            print!("{}", String::from_utf8_lossy(&result.stdout));
+            
+            // Print stderr if any
+            let stderr = String::from_utf8_lossy(&result.stderr);
+            if !stderr.is_empty() {
+                eprint!("{}", stderr);
+            }
+            
+            if result.status.success() {
+                Ok(())
+            } else {
+                Err("Windows raft.exe ports command failed".into())
+            }
+        }
+        Err(e) => {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                Err("Could not find raft.exe (Windows version of raftcli).\n\n\
+                    When using WSL, raftcli needs the Windows version (raft.exe) to access USB serial ports.\n\n\
+                    Please ensure:\n\
+                    1. raftcli is installed on Windows: cargo install raftcli\n\
+                    2. raft.exe is in your Windows PATH\n\
+                    3. You can access Windows executables from WSL (try: raft.exe --version)\n\n\
+                    Alternative: Use the -n flag to attempt listing ports with native Linux tools (requires USBIPD or similar)".into())
+            } else {
+                Err(Box::new(e))
+            }
+        }
+    }
 }

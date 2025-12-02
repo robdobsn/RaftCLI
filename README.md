@@ -235,7 +235,10 @@ Options:
   -i, --index <INDEX>                    Index
   -D, --debug                            Debug mode
       --preferred-vids <PREFERRED_VIDS>  Preferred VIDs (comma separated list)
+  -n, --native-serial-port               Native serial port when in WSL
   -h, --help                             Print help
+
+When using WSL, the ports command automatically delegates to the Windows version (raft.exe) to access USB serial ports unless the -n flag is specified.
 
 ## Flash firmware to a development board (without rebuilding)
 
