@@ -314,7 +314,7 @@ fn list_ports_via_windows_raft(cmd: &PortsCmd) -> Result<(), Box<dyn Error>> {
     args.push("-n".to_string());
     
     // Execute raft.exe with real-time output streaming
-    let mut child = std::process::Command::new("raft.exe")
+    let child = std::process::Command::new("raft.exe")
         .args(&args)
         .stdin(std::process::Stdio::inherit())
         .stdout(std::process::Stdio::inherit())

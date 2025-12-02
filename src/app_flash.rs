@@ -152,7 +152,7 @@ fn flash_via_windows_raft(
     println!("Executing Windows raft.exe with args: {:?}", args);
     
     // Execute raft.exe with real-time output streaming
-    let mut child = std::process::Command::new("raft.exe")
+    let child = std::process::Command::new("raft.exe")
         .args(&args)
         .current_dir(&app_folder)
         .stdin(std::process::Stdio::inherit())

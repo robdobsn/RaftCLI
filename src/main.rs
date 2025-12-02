@@ -490,7 +490,7 @@ fn main() {
                 println!("Executing: {} {:?}", esptool_cmd, cmd.args);
                 
                 // Handle "python -m esptool" specially
-                let mut child = if esptool_cmd.starts_with("python -m ") {
+                let child = if esptool_cmd.starts_with("python -m ") {
                     let module = esptool_cmd.strip_prefix("python -m ").unwrap();
                     let mut args = vec!["-m".to_string(), module.to_string()];
                     args.extend(cmd.args.clone());
