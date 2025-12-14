@@ -1,6 +1,6 @@
 [package]
 name = "raftcli"
-version = "1.7.6"
+version = "1.7.7"
 authors = ["Rob Dobson <rob@dobson.com>"]
 license = "MIT"
 keywords = ["cli", "esp32", "espressif", "raft", "framework"]
@@ -28,14 +28,14 @@ include_dir = "0.7.3"
 handlebars = "6.3.1"
 serde = { version = "1.0.196", features = ["derive"] }
 serde_json = "1.0.113"
-dialoguer = "0.11"
+dialoguer = "0.12"
 regex = "1.10.3"
-crossterm = "0.28.1"
+crossterm = "0.29.0"
 bytes = "1.5.0"
 remove_dir_all = "1.0.0"
 chrono = "0.4.33"
 crossbeam = "0.8.4"
 wildmatch = "2.3.4"
-which = "7.0.2"
-evalexpr = "12.0.2"
+which = "8.0.0"
+evalexpr = "13.1.0"
 dirs = "6.0.0"
