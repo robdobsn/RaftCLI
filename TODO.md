@@ -1,5 +1,15 @@
 # RaftCLI ToDo list
 
+- Add to systype webserver ,
+      {
+        "pfix": "devjson",
+        "pcol": "RICJSON",
+        "maxConn": 4,
+        "txQueueMax": 20,
+        "pingMs": 30000,
+        "content": "text"
+      }
+- Add to wifi ... CONFIG_ESP_WIFI_PS_ENABLED=n
 - config ini or similar in proj dir
   - define serial port or at least filter
   - define other flags
