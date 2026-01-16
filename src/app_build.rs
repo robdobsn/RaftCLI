@@ -4,9 +4,8 @@ use std::process::{Command, Stdio};
 use std::fs;
 use std::io;
 use std::path::Path;
-use crate::raft_cli_utils::{default_esp_idf_version, find_matching_esp_idf, is_docker_available, is_esp_idf_env, prepare_esp_idf, utils_get_sys_type};
+use crate::raft_cli_utils::{default_esp_idf_version, find_matching_esp_idf, is_docker_available, is_esp_idf_env, prepare_esp_idf, utils_get_sys_type, write_build_info, read_build_info};
 use crate::raft_cli_utils::check_app_folder_valid;
-use crate::raft_cli_utils::check_for_raft_artifacts_deletion;
 use crate::raft_cli_utils::execute_and_capture_output;
 use crate::raft_cli_utils::convert_path_for_docker;
 use crate::raft_cli_utils::CommandError;
@@ -33,21 +32,11 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: 
     }
     let sys_type = sys_type.unwrap();
 
-    // Flags indicating the build folder and "build_raft_artifacts" folder should be deleted
-    let mut delete_build_folder = false;
-    let mut delete_build_raft_artifacts_folder = false;
+    // Flags indicating the build folder should be deleted
+    let delete_build_folder = clean || clean_only;
 
-    // If clean or clean_only is true, delete the build folder for the SysType to built and
-    // the "build_raft_artifacts" folder
-    if clean || clean_only {
-        delete_build_folder = true;
-        delete_build_raft_artifacts_folder = true;
-    } else {
-        // Check if the "build_raft_artifacts" folder needs to be deleted
-        if check_for_raft_artifacts_deletion(app_folder.clone(), sys_type.clone()) {
-            delete_build_raft_artifacts_folder = true;
-        }
-    }
+    // Read previous build information
+    let build_info = read_build_info(&app_folder);
 
     // Determine if docker is to be used for build
     let mut no_docker = std::env::var("RAFT_NO_DOCKER").unwrap_or("false".to_string()) == "true";
@@ -61,30 +50,68 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: 
         force_docker = true;
     }
 
+    // Apply saved build method preference if no explicit flags set
+    if !no_docker_arg && !force_docker_arg && !use_local_idf_matching_dockerfile_idf && idf_path_full.is_none() {
+        if let Some(ref last_method) = build_info.last_build_method {
+            if last_method == "docker" {
+                if is_docker_available() {
+                    force_docker = true;
+                } else {
+                    println!("Warning: Previous build used Docker but Docker is not available, falling back to local IDF");
+                }
+            } else if last_method == "local_idf" {
+                no_docker = true;
+            }
+        }
+    }
+
     // Handle building with or without docker
-    let build_result = if use_local_idf_matching_dockerfile_idf || no_docker || !is_docker_available() && !force_docker {
-        // Get idf path which should be the path specified in the idf_path_full if it exists or, if not then it should be
-        // the path specified in an environment variable IDF_PATH
-        let idf_path = if idf_path_full.is_none() {
-            std::env::var("IDF_PATH").ok()
-        } else {
-            idf_path_full.clone()
-        };
+    let (build_result, actual_build_method, actual_idf_path, idf_path_was_explicit) = 
+        if use_local_idf_matching_dockerfile_idf || no_docker || !is_docker_available() && !force_docker {
+        // Get idf path - priority order:
+        // 1. Explicit path from -e flag
+        // 2. Saved explicit path from previous build
+        // 3. IDF_PATH environment variable
+        let mut idf_path = idf_path_full.clone();
+        let mut path_was_explicit = idf_path_full.is_some();
+        
+        // If no explicit path and we have a saved explicit path, try to use it
+        if idf_path.is_none() && build_info.last_idf_path_explicit {
+            if let Some(ref saved_path) = build_info.last_idf_path {
+                if Path::new(saved_path).exists() {
+                    println!("Using saved ESP-IDF path: {}", saved_path);
+                    idf_path = Some(saved_path.clone());
+                    path_was_explicit = true;
+                } else {
+                    println!("Warning: Saved ESP-IDF path no longer exists: {}", saved_path);
+                }
+            }
+        }
+        
+        // Fall back to environment variable if still none
+        if idf_path.is_none() {
+            idf_path = std::env::var("IDF_PATH").ok();
+        }
+        
+        let actual_path = idf_path.clone();
 
         // Build without docker
-        build_without_docker(app_folder.clone(), sys_type.clone(), clean, clean_only,
-                    delete_build_folder, delete_build_raft_artifacts_folder, idf_path)
+        let result = build_without_docker(app_folder.clone(), sys_type.clone(), clean, clean_only,
+                    delete_build_folder, idf_path);
+        (result, "local_idf", actual_path, path_was_explicit)
     } else if is_docker_available() {
         // Build with docker
-        build_with_docker(app_folder.clone(), sys_type.clone(), clean, clean_only,
-                    delete_build_folder, delete_build_raft_artifacts_folder)
+        let result = build_with_docker(app_folder.clone(), sys_type.clone(), clean, clean_only,
+                    delete_build_folder);
+        (result, "docker", None, false)
     } else 
     {
         // Either ESP IDF or docker must be available to build
-        Err(std::io::Error::new(
+        let result = Err(std::io::Error::new(
             std::io::ErrorKind::Other,
             "Either ESP IDF or Docker must be available to build",
-        ))
+        ));
+        (result, "unknown", None, false)
     };
 
     // If the build failed, return the error
@@ -92,12 +119,23 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: 
         return Err(Box::new(build_result.unwrap_err()));
     }
 
+    // Save complete build info to raft.info file after successful build
+    if let Err(e) = write_build_info(
+        &app_folder,
+        &sys_type,
+        actual_build_method,
+        idf_path_was_explicit,
+        actual_idf_path,
+    ) {
+        println!("Warning: Failed to write raft.info file: {}", e);
+    }
+
     Ok(build_result.unwrap().to_string())
 }
 
 // Build with docker and return output as a string
 fn build_with_docker(project_dir: String, systype_name: String, clean: bool, clean_only: bool,
-            delete_build_folder: bool, delete_raft_artifacts_folder: bool) -> Result<String, std::io::Error> {
+            delete_build_folder: bool) -> Result<String, std::io::Error> {
 
     // Build with docker
     println!("Raft build SysType {} in {}{}",  systype_name, project_dir.clone(),
@@ -130,9 +168,6 @@ fn build_with_docker(project_dir: String, systype_name: String, clean: bool, cle
 
     if delete_build_folder {
         command_sequence += format!("rm -rf ./{}; ", build_dir).as_str();
-    }
-    if delete_raft_artifacts_folder {
-        command_sequence += "rm -rf ./build_raft_artifacts; ";
     }
 
     command_sequence += "idf.py -B ";
@@ -186,8 +221,7 @@ fn build_with_docker(project_dir: String, systype_name: String, clean: bool, cle
 
 // Build without docker
 fn build_without_docker(project_dir: String, systype_name: String, clean: bool, clean_only: bool,
-    delete_build_folder: bool, delete_raft_artifacts_folder: bool,
-    idf_path: Option<String>) -> Result<String, std::io::Error> {
+    delete_build_folder: bool, idf_path: Option<String>) -> Result<String, std::io::Error> {
     
     // Debug
     println!(
@@ -199,20 +233,12 @@ fn build_without_docker(project_dir: String, systype_name: String, clean: bool, 
     
     // Folders
     let build_dir = format!("build/{}", systype_name);
-    let build_raft_artifacts_folder = format!("{}/build_raft_artifacts", project_dir.clone());
 
-    // Delete build folders if required
+    // Delete build folder if required
     if delete_build_folder {
         let build_dir_full = format!("{}/{}", project_dir.clone(), build_dir);
         if Path::new(&build_dir_full).exists() {
             fs::remove_dir_all(&build_dir_full)?;
-        }
-    }
-
-    // Delete the "build_raft_artifacts" folder if required
-    if delete_raft_artifacts_folder {
-        if Path::new(&build_raft_artifacts_folder).exists() {
-            fs::remove_dir_all(&build_raft_artifacts_folder)?;
         }
     }
 

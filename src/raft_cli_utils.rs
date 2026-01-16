@@ -17,33 +17,116 @@ pub fn default_esp_idf_version() -> String {
     "5.5.1".to_string()
 }
 
+// Build information structure
+#[derive(Debug, Clone)]
+pub struct BuildInfo {
+    pub last_built_systype: Option<String>,
+    pub last_build_method: Option<String>,  // "docker" or "local_idf"
+    pub last_idf_path_explicit: bool,
+    pub last_idf_path: Option<String>,
+}
+
+impl Default for BuildInfo {
+    fn default() -> Self {
+        BuildInfo {
+            last_built_systype: None,
+            last_build_method: None,
+            last_idf_path_explicit: false,
+            last_idf_path: None,
+        }
+    }
+}
+
+// Read build information from raft.info file
+pub fn read_build_info(app_folder: &str) -> BuildInfo {
+    let raft_info_path = format!("{}/build/raft.info", app_folder);
+    if let Ok(contents) = fs::read_to_string(&raft_info_path) {
+        // Parse JSON to extract build info
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&contents) {
+            return BuildInfo {
+                last_built_systype: json["last_built_systype"].as_str().map(|s| s.to_string()),
+                last_build_method: json["last_build_method"].as_str().map(|s| s.to_string()),
+                last_idf_path_explicit: json["last_idf_path_explicit"].as_bool().unwrap_or(false),
+                last_idf_path: json["last_idf_path"].as_str().map(|s| s.to_string()),
+            };
+        }
+    }
+    BuildInfo::default()
+}
+
+// Write build information to raft.info file
+pub fn write_build_info(
+    app_folder: &str,
+    sys_type: &str,
+    build_method: &str,
+    idf_path_explicit: bool,
+    idf_path: Option<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let build_folder = format!("{}/build", app_folder);
+    
+    // Create build folder if it doesn't exist
+    if !Path::new(&build_folder).exists() {
+        fs::create_dir_all(&build_folder)?;
+    }
+    
+    let raft_info_path = format!("{}/raft.info", build_folder);
+    let mut raft_info = serde_json::json!({
+        "last_built_systype": sys_type,
+        "last_build_method": build_method,
+        "last_idf_path_explicit": idf_path_explicit
+    });
+    
+    // Add idf_path if present
+    if let Some(path) = idf_path {
+        raft_info["last_idf_path"] = serde_json::json!(path);
+    }
+    
+    fs::write(&raft_info_path, serde_json::to_string_pretty(&raft_info)?)?;
+    Ok(())
+}
+
 pub fn utils_get_sys_type(
     build_sys_type: &Option<String>, 
     app_folder: String
 ) -> Result<String, Box<dyn std::error::Error>> {
-    // Determine the Systype to build - this is either the SysType passed in or
-    // the first SysType found in the systypes folder (excluding Common)
+    // Determine the Systype to build - priority order:
+    // 1. SysType passed in via -s flag
+    // 2. Last built systype from raft.info file
+    // 3. First SysType found in the systypes folder (excluding Common)
     let mut sys_type: String = String::new();
     if let Some(build_sys_type) = build_sys_type {
         sys_type = build_sys_type.to_string();
     } else {
-        let sys_types = fs::read_dir(
-            format!("{}/{}", app_folder, get_systypes_folder_name())
-        );
-        if sys_types.is_err() {
-            println!("Error reading the systypes folder: {}", sys_types.err().unwrap());
-            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "Error reading the systypes folder")));
+        // Try to read from raft.info file
+        let build_info = read_build_info(&app_folder);
+        if let Some(last_systype) = build_info.last_built_systype {
+            // Verify the systype still exists in the systypes folder
+            let systype_path = format!("{}/{}/{}", app_folder, get_systypes_folder_name(), last_systype);
+            if Path::new(&systype_path).exists() {
+                sys_type = last_systype;
+            }
         }
-        for sys_type_dir_entry in sys_types.unwrap() {
-            let sys_type_dir = sys_type_dir_entry;
-            if sys_type_dir.is_err() {
-                println!("Error reading the systypes folder: {}", sys_type_dir.err().unwrap());
+        
+        // If still no systype, fall back to first non-Common folder
+        if sys_type.is_empty() {
+            let sys_types = fs::read_dir(
+                format!("{}/{}", app_folder, get_systypes_folder_name())
+            );
+            if sys_types.is_err() {
+                println!("Error reading the systypes folder: {}", sys_types.err().unwrap());
                 return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "Error reading the systypes folder")));
             }
-            let sys_type_name = sys_type_dir.unwrap().file_name().into_string().unwrap();
-            if sys_type_name != "Common" {
-                sys_type = sys_type_name;
-                break;
+            for sys_type_dir_entry in sys_types.unwrap() {
+                let sys_type_dir = sys_type_dir_entry;
+                if sys_type_dir.is_err() {
+                    println!("Error reading the systypes folder: {}", sys_type_dir.err().unwrap());
+                    return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "Error reading the systypes folder")));
+                }
+                let sys_type_name = sys_type_dir.unwrap().file_name().into_string().unwrap();
+                if sys_type_name != "Common" {
+                    sys_type = sys_type_name;
+                    break;
+                }
             }
         }
     }
@@ -70,31 +153,7 @@ pub fn check_app_folder_valid(app_folder: String) -> bool {
     }
 }
 
-pub fn check_for_raft_artifacts_deletion(app_folder: String, sys_type: String) -> bool {
-    // Check if the "build_raft_artifacts" folder exists inside the app folder
-    // and if so extract the contents of the "cursystype.txt" file to determine
-    // the SysType of the last build - then check if this is the same as the
-    // sys_type to build and if not, delete the "build_raft_artifacts" folder
-    let build_raft_artifacts_folder = format!("{}/build_raft_artifacts", app_folder);
-    if Path::new(&build_raft_artifacts_folder).exists() {
-        let cursystype_file = format!("{}/cursystype.txt", build_raft_artifacts_folder);
-        if Path::new(&cursystype_file).exists() {
-            let cursystype = fs::read_to_string(&cursystype_file);
-            if cursystype.is_err() {
-                println!("Error reading the cursystype.txt file: {}", cursystype.err().unwrap());
-                return true;
-            }
-            if cursystype.unwrap().trim() != sys_type {
-                println!("Delete the build_raft_artifacts folder as the SysType to build has changed");
-                return true;
-            }
-        } else {
-            println!("Delete the build_raft_artifacts folder as the cursystype.txt file is missing");
-            return true;
-        }
-    }
-    false
-}
+
 
 pub fn convert_path_for_docker(path: PathBuf) -> Result<String, std::io::Error> {
     let path_str = path.into_os_string().into_string().unwrap();

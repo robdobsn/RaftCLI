@@ -1,7 +1,5 @@
 # RaftCLI ToDo list
 
-- project name is DEPENDS when building for ESP32 C6
-- default name the project after the selected folder if it is empty
 - config ini or similar in proj dir
   - define serial port or at least filter
   - define other flags
@@ -25,7 +23,12 @@
   - on platformio the configurations could maybe be managed by the platformio.ini file so and there could be an option in the raftcli to generate a platformio.ini file?
   - maybe there should be a raftcli prebuild function which runs this script?
 
-## Fixed in 1.7.5 (pending)
+## Fixed in 1.8.1
+- project name is DEPENDS when building for ESP32 C6
+- write a build configuration to raft.info file in build folder so that repeat builds are simpler to start
+- move partitions.csv to build/raft/partitions.csv as part of the build so that CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="build/raft/partitions.csv" can be used to define a fixed location for the partitions.csv file
+
+## Fixed in 1.7.5
 - Fixed WSL flash operation to properly delegate to Windows raft.exe for USB serial port access
 - Fixed WSL ports command to properly delegate to Windows raft.exe for USB serial port access
 - Added improved error messages when esptool module is not found, with clear resolution steps

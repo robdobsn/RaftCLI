@@ -8,8 +8,7 @@ Current build process:
 3. Set PROJECT_BASENAME which will be <systype>
 4. Make sure the folder <build>/<systype> exists and use this as the build folder
 5. Create a BUILD_ARTIFACTS folder inside <build>/<systype>
-6. Write a "cursystype.text" file containing <systype> into the BUILD_ARTIFACTS folder - not necessary as BUILD_ARTIFACTS now inside <build>/<systype> - it wasn't before solely (I think) to allow a fixed location to be specified in sdkconfig.defaults for partitions.csv file???
-7. Not currenyly done but sdkconfig.defaults could be altered to account for different partitions.csv paths? But altering it would probably trigger a full build? Maybe that's ok though since it would only get altered if the <systype> actually changed? Or make a copy of sdkconfig.default into the build folder and modify that version and then set SDKCONFIG_DEFAULTS below to use that? 
+7. Not currently done but sdkconfig.defaults could be altered to account for different partitions.csv paths? But altering it would probably trigger a full build? Maybe that's ok though since it would only get altered if the <systype> actually changed? Or make a copy of sdkconfig.default into the build folder and modify that version and then set SDKCONFIG_DEFAULTS below to use that? 
 8. Specify the SDKCONFIG_DEFAULTS and SDKCONFIG file names
 9. Ensure changing sdkconfig.defaults results in a rebuild of sdkconfig - MAYBE could simply delete sdkconfig if sdkconfig.defaults has changed since the last build?
 10. Process the systypes header file using the GenerateSysTypes script
