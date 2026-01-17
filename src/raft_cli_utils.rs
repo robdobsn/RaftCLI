@@ -14,7 +14,7 @@ use crossbeam::thread;
 
 pub fn default_esp_idf_version() -> String {
     // Default ESP-IDF version
-    "5.5.1".to_string()
+    "5.5.2".to_string()
 }
 
 // Build information structure

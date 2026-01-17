@@ -34,6 +34,9 @@
   - maybe there should be a raftcli prebuild function which runs this script?
 
 ## Fixed in 1.8.1
+- ESP IDF 5.5.2
+
+## Fixed in 1.8.0
 - project name is DEPENDS when building for ESP32 C6
 - write a build configuration to raft.info file in build folder so that repeat builds are simpler to start
 - move partitions.csv to build/raft/partitions.csv as part of the build so that CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="build/raft/partitions.csv" can be used to define a fixed location for the partitions.csv file
