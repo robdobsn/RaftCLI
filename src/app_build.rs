@@ -4,6 +4,7 @@ use std::process::{Command, Stdio};
 use std::fs;
 use std::io;
 use std::path::Path;
+#[cfg(unix)]
 use nix::unistd::{getuid, getgid};
 use crate::raft_cli_utils::{default_esp_idf_version, find_matching_esp_idf, is_docker_available, is_esp_idf_env, prepare_esp_idf, utils_get_sys_type, write_build_info, read_build_info};
 use crate::raft_cli_utils::check_app_folder_valid;
@@ -180,12 +181,24 @@ fn build_with_docker(project_dir: String, systype_name: String, clean: bool, cle
         command_sequence += " build";
     }
 
-    // Get current user and group IDs to run Docker with same permissions as host
+    // Get current user and group IDs to run Docker with same permissions as host (Unix only)
+    #[cfg(unix)]
     let user_group = format!("{}:{}", getuid(), getgid());
 
+    #[cfg(unix)]
     let docker_run_args = vec![
         "run", "--rm",
         "--user", &user_group,
+        "-v", &project_dir_full,
+        "-w", "/project",
+        "raftbuilder",
+        "/bin/bash", "-c", &command_sequence,
+    ];
+
+    // On Windows, Docker handles permissions differently, so we don't need --user flag
+    #[cfg(not(unix))]
+    let docker_run_args = vec![
+        "run", "--rm",
         "-v", &project_dir_full,
         "-w", "/project",
         "raftbuilder",
