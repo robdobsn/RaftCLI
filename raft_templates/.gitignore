@@ -1,5 +1,6 @@
 build
 logs
+raftdevlibs
 sdkconfig
 managed_components
 compile_commands.json
