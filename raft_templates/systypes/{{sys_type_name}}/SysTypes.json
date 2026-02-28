@@ -113,21 +113,7 @@
         "SDCS": 13
     },
     "Publish": {
-        "enable": 1,
-        "pubList": [
-            {            
-                "topic": "devjson",
-                "trigger": "Change",          
-                "minStateChangeMs": 10,
-                "rates": []
-            },
-            {
-                "topic": "devbin",
-                "trigger": "Change",
-                "minStateChangeMs": 10,
-                "rates": []
-            }            
-        ]
+        "enable": 1
     },
     "DevMan": {
         "Buses": {
