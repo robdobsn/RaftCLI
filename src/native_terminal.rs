@@ -86,9 +86,11 @@ fn ansi_reset_color(out: &mut impl Write) {
 
 #[cfg(unix)]
 mod platform {
+    use nix::libc;
     use nix::sys::termios::{self, SetArg, Termios};
-    use std::os::unix::io::AsRawFd;
     use std::io;
+    use std::os::fd::BorrowedFd;
+    use std::os::unix::io::AsRawFd;
     use std::time::Duration;
 
     pub struct RawModeState {
@@ -98,17 +100,19 @@ mod platform {
 
     pub fn enable_raw_mode() -> Result<RawModeState, io::Error> {
         let fd = io::stdin().as_raw_fd();
-        let original = termios::tcgetattr(fd)
+        let borrowed = unsafe { BorrowedFd::borrow_raw(fd) };
+        let original = termios::tcgetattr(&borrowed)
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
         let mut raw = original.clone();
         termios::cfmakeraw(&mut raw);
-        termios::tcsetattr(fd, SetArg::TCSAFLUSH, &raw)
+        termios::tcsetattr(&borrowed, SetArg::TCSAFLUSH, &raw)
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
         Ok(RawModeState { original, fd })
     }
 
     pub fn disable_raw_mode(state: &RawModeState) {
-        let _ = termios::tcsetattr(state.fd, SetArg::TCSAFLUSH, &state.original);
+        let borrowed = unsafe { BorrowedFd::borrow_raw(state.fd) };
+        let _ = termios::tcsetattr(&borrowed, SetArg::TCSAFLUSH, &state.original);
     }
 
     pub fn terminal_size() -> (u16, u16) {
@@ -128,11 +132,13 @@ mod platform {
     /// Poll stdin for readability with the given timeout.
     /// Returns true if data is available.
     pub fn poll_stdin(timeout: Duration) -> bool {
-        use nix::poll::{poll, PollFd, PollFlags};
+        use nix::poll::{poll, PollFd, PollFlags, PollTimeout};
         let fd = io::stdin().as_raw_fd();
-        let mut fds = [PollFd::new(fd, PollFlags::POLLIN)];
-        let timeout_ms = timeout.as_millis() as i32;
-        match poll(&mut fds, timeout_ms) {
+        let borrowed = unsafe { BorrowedFd::borrow_raw(fd) };
+        let mut fds = [PollFd::new(borrowed, PollFlags::POLLIN)];
+        let timeout_ms = timeout.as_millis() as u16;
+        let poll_timeout = PollTimeout::from(timeout_ms);
+        match poll(&mut fds, poll_timeout) {
             Ok(n) => n > 0,
             Err(_) => false,
         }
