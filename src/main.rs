@@ -9,7 +9,7 @@ use app_new::generate_new_app;
 mod app_config;
 use app_config::get_user_input;
 mod serial_monitor;
-mod serial_monitor_v2;
+mod native_terminal;
 mod app_build;
 use app_build::build_raft_app;
 mod app_flash;
@@ -116,9 +116,6 @@ struct MonitorCmd {
     // Option to specify vendor ID
     #[clap(short = 'v', long, help = "Vendor ID")]
     vid: Option<String>,
-    // Option to use V2 serial monitor
-    #[clap(long = "v2", help = "Use V2 serial monitor")]
-    monitor_v2: bool,
 }
 
 // Define arguments for the 'run' subcommand
@@ -173,9 +170,6 @@ struct RunCmd {
     // Option to specify vendor ID
     #[clap(short = 'v', long, help = "Vendor ID")]
     vid: Option<String>,
-    // Option to use V2 serial monitor
-    #[clap(long = "v2", help = "Use V2 serial monitor")]
-    monitor_v2: bool,
 }
 
 // Define arguments for the 'flash' subcommand
@@ -317,13 +311,9 @@ fn main() {
                 log_folder = log_folder_path.to_str().unwrap().to_string();
             }
 
-            // Select monitor implementation
-            let monitor = if cmd.monitor_v2 { &serial_monitor_v2::start_native as &dyn Fn(_, _, _, _, _, _, _, _) -> _ } else { &serial_monitor::start_native };
-            let monitor_non_native = if cmd.monitor_v2 { &serial_monitor_v2::start_non_native as &dyn Fn(_, _, _, _, _, _, _) -> _ } else { &serial_monitor::start_non_native };
-
             // Start the serial monitor
             if !cmd.native_serial_port && is_wsl() {
-                let result = monitor_non_native(app_folder, 
+                let result = serial_monitor::start_non_native(app_folder, 
                             cmd.port, monitor_baud, cmd.no_reconnect, log, log_folder, cmd.vid);
                 match result {
                     Ok(()) => std::process::exit(0),
@@ -334,7 +324,7 @@ fn main() {
                 }
             }
 
-            let result = monitor(app_folder, 
+            let result = serial_monitor::start_native(app_folder, 
                         cmd.port, monitor_baud, cmd.no_reconnect, log, log_folder, cmd.vid,
                         HISTORY_FILE_NAME.to_string());
             match result {
@@ -383,13 +373,9 @@ fn main() {
             // Extract monitor baud rate
             let monitor_baud = cmd.monitor_baud.unwrap_or(115200);
 
-            // Select monitor implementation
-            let monitor = if cmd.monitor_v2 { &serial_monitor_v2::start_native as &dyn Fn(_, _, _, _, _, _, _, _) -> _ } else { &serial_monitor::start_native };
-            let monitor_non_native = if cmd.monitor_v2 { &serial_monitor_v2::start_non_native as &dyn Fn(_, _, _, _, _, _, _) -> _ } else { &serial_monitor::start_non_native };
-
             // Start the serial monitor
             if !cmd.native_serial_port && is_wsl() {
-                let result = monitor_non_native(app_folder, 
+                let result = serial_monitor::start_non_native(app_folder, 
                             cmd.port.clone(), monitor_baud, cmd.no_reconnect, log, log_folder, cmd.vid.clone());
                 match result {
                     Ok(()) => std::process::exit(0),
@@ -400,7 +386,7 @@ fn main() {
                 }
             }
 
-            let result = monitor(app_folder, 
+            let result = serial_monitor::start_native(app_folder, 
                             cmd.port, monitor_baud, cmd.no_reconnect, log, log_folder,cmd.vid,
                             HISTORY_FILE_NAME.to_string());
             match result {

@@ -1,7 +1,3 @@
-use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
-    terminal,
-};
 use std::{
     io::{Read, Write},
     net::{TcpStream, ToSocketAddrs},
@@ -15,6 +11,7 @@ use std::{
 
 use crate::{
     console_log::{open_log_file, write_to_log, SharedLogFile},
+    native_terminal::{KeyCode, TermEvent},
     terminal_io::TerminalIO,
 };
 
@@ -156,18 +153,23 @@ pub fn start_debug_console<A: ToSocketAddrs>(
                     }
 
                     // Handle keyboard input
-                    if event::poll(Duration::from_millis(50))? {
-                        if let Event::Key(key_event) = event::read()? {
-                            if key_event.kind == KeyEventKind::Press {
-                                let mut terminal_out = terminal_out.lock().unwrap();
-                                let continue_running =
-                                    terminal_out.handle_key_event(key_event, |command| {
-                                        input_tx
-                                            .send(command.clone())
-                                            .expect("Failed to send command");
-                                    });
-                                if !continue_running {
-                                    running.store(false, Ordering::SeqCst);
+                    let mut terminal_out = terminal_out.lock().unwrap();
+                    if terminal_out.poll_event(Duration::from_millis(50)) {
+                        if let Some(event) = terminal_out.read_event() {
+                            match event {
+                                TermEvent::Key(key_event) => {
+                                    let continue_running =
+                                        terminal_out.handle_key_event(key_event, |command| {
+                                            input_tx
+                                                .send(command.clone())
+                                                .expect("Failed to send command");
+                                        });
+                                    if !continue_running {
+                                        running.store(false, Ordering::SeqCst);
+                                    }
+                                }
+                                TermEvent::Resize(cols, rows) => {
+                                    terminal_out.handle_resize(cols, rows);
                                 }
                             }
                         }
@@ -186,22 +188,21 @@ pub fn start_debug_console<A: ToSocketAddrs>(
 
                 while elapsed < retry_interval {
                     // Check for keyboard input
-                    if event::poll(poll_interval)? {
-                        if let Event::Key(key_event) = event::read()? {
-                            if key_event.kind == KeyEventKind::Press {
-                                match key_event.code {
-                                    KeyCode::Char('c') | KeyCode::Char('x')
-                                        if key_event.modifiers == KeyModifiers::CONTROL =>
-                                    {
-                                        running.store(false, Ordering::SeqCst);
-                                        break;
-                                    }
-                                    KeyCode::Esc => {
-                                        running.store(false, Ordering::SeqCst);
-                                        break;
-                                    }
-                                    _ => {}
+                    let mut terminal_out = terminal_out.lock().unwrap();
+                    if terminal_out.poll_event(poll_interval) {
+                        if let Some(TermEvent::Key(key_event)) = terminal_out.read_event() {
+                            match &key_event.code {
+                                KeyCode::Char('c') | KeyCode::Char('x')
+                                    if key_event.modifiers.ctrl =>
+                                {
+                                    running.store(false, Ordering::SeqCst);
+                                    break;
                                 }
+                                KeyCode::Escape => {
+                                    running.store(false, Ordering::SeqCst);
+                                    break;
+                                }
+                                _ => {}
                             }
                         }
                     }
@@ -212,7 +213,7 @@ pub fn start_debug_console<A: ToSocketAddrs>(
         }
     }
 
-    terminal::disable_raw_mode()?; // Restore the terminal to normal mode
+    terminal_out.lock().unwrap().cleanup();
     println!("Exiting debug console...");
     Ok(())
 }
