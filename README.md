@@ -11,6 +11,7 @@ This command-line application is used to scaffold, build, flash and monitor raft
 - [Building a raft app](#building-a-raft-app)
 - [Flashing firmware to a development board](#flashing-the-firmware-to-a-development-board)
 - [Monitoring a serial port](#monitoring-a-serial-port)
+- [Remote Debug Console](#remote-debug-console)
 - [Scaffolding Questions](#scaffolding-questions)
 
 ## Installation
@@ -332,6 +333,40 @@ Options:
   -s, --sys-type <SYS_TYPE>  System type to ota update
   -c, --use-curl             Use curl for OTA
   -h, --help                 Print help
+```
+
+## Remote Debug Console
+
+To connect to a device over WiFi (or Ethernet) for interactive debugging and log monitoring:
+
+```
+raft debug <IP_ADDRESS_OR_HOSTNAME>
+OR
+raft d <IP_ADDRESS_OR_HOSTNAME>
+```
+
+This opens a bidirectional TCP connection to the device's debug server. Log output from the device is displayed in real-time and commands can be typed and sent to the device. The connection auto-reconnects if it drops, retrying every 5 seconds.
+
+The device must be running a TCP debug server (e.g. the Raft SerialConsole module) on the specified port.
+
+As with the serial monitor, up-arrow and down-arrow cycle through command history, and logging to file can be enabled with the -l option.
+
+To exit the remote debug console press ESC or Ctrl+C.
+
+```
+Start remote debug console
+
+Usage: raft debug [OPTIONS] <IP_ADDRESS_OR_HOSTNAME> [APPLICATION_FOLDER]
+
+Arguments:
+  <IP_ADDRESS_OR_HOSTNAME>
+  [APPLICATION_FOLDER]
+
+Options:
+  -p, --port <PORT>              Port for debugging [default: 8080]
+  -l, --log                      Log debug console data to file
+  -g, --log-folder <LOG_FOLDER>  Folder for log files [default: ./logs]
+  -h, --help                     Print help
 ```
 
 ### Build from source

@@ -315,7 +315,7 @@ fn get_schema(base_folder: &str) -> serde_json::Value {
         {
             "key": "inc_bleman_in_systypes",
             "condition": "use_raft_ble",
-            "generator": "\"BLEMan\": { \"enable\": 1, \"peripheral\": {{{use_raft_ble_peripheral}}}, \"advIntervalMs\": 100, \"connIntvPrefMs\": 15, \"uuidCmdRespService\": \"bb76677e-9cfd-4626-a510-0d305be57c8d\", \"uuidCmdRespCommand\": \"bb76677e-9cfd-4626-a510-0d305be57c8e\", \"uuidCmdRespResponse\": \"bb76677e-9cfd-4626-a510-0d305be57c8f\", \"central\": {{{use_raft_ble_central}}}, \"scanBTHome\": 1, \"busConnName\": \"BusBLE\", \"nimLogLev\": \"E\" },"
+            "generator": "\"BLEMan\": { \"enable\": 1, \"peripheral\": {{{use_raft_ble_peripheral}}}, \"advIntervalMs\": 100, \"connIntvPrefMs\": 15, \"uuidCmdRespService\": \"bb76677e-9cfd-4626-a510-0d305be57c8d\", \"uuidCmdRespCommand\": \"bb76677e-9cfd-4626-a510-0d305be57c8e\", \"uuidCmdRespResponse\": \"bb76677e-9cfd-4626-a510-0d305be57c8f\", \"central\": {{{use_raft_ble_central}}}, \"scanBTHome\": 0, \"busConnName\": \"BusBLE\", \"nimLogLev\": \"E\" },"
         },
         {
             "key": "use_raft_ble_central_yn",
