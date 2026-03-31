@@ -7,7 +7,7 @@
 //
 // Uses DECSTBM scroll regions for correct scrollback buffer behavior.
 
-use serialport_fix_stop_bits::{new as serial_new, SerialPort};
+use serialport::{new as serial_new, SerialPort};
 use std::collections::VecDeque;
 use std::io::{self, Write};
 use std::process::{Command, Stdio};
@@ -360,6 +360,7 @@ fn spawn_reader_thread(
     no_reconnect: bool,
     port_name: String,
     baud_rate: u32,
+    write_rx: mpsc::Receiver<Vec<u8>>,
 ) -> mpsc::Receiver<ReaderEvent> {
     let (tx, rx) = mpsc::channel();
 
@@ -367,8 +368,51 @@ fn spawn_reader_thread(
         let mut port = read_port;
         let mut buf = [0u8; SERIAL_READ_BUF_SIZE];
         let mut backoff_ms: u64 = 100;
+        let current_port_name = port_name;
 
         while running.load(Ordering::SeqCst) {
+            let mut write_error = false;
+            loop {
+                match write_rx.try_recv() {
+                    Ok(data) => {
+                        if port.write_all(&data).is_err() || port.flush().is_err() {
+                            write_error = true;
+                            break;
+                        }
+                    }
+                    Err(mpsc::TryRecvError::Empty) => break,
+                    Err(mpsc::TryRecvError::Disconnected) => {
+                        write_error = true;
+                        break;
+                    }
+                }
+            }
+
+            if write_error {
+                let _ = tx.send(ReaderEvent::Error("Serial port write error".into()));
+                if no_reconnect {
+                    break;
+                }
+                loop {
+                    if !running.load(Ordering::SeqCst) {
+                        return;
+                    }
+                    thread::sleep(Duration::from_millis(backoff_ms));
+                    match open_serial_port(&current_port_name, baud_rate) {
+                        Ok(new_port) => {
+                            port = new_port;
+                            let _ = tx.send(ReaderEvent::Reconnected);
+                            backoff_ms = 100;
+                            break;
+                        }
+                        Err(_) => {
+                            backoff_ms = (backoff_ms * 2).min(2000);
+                        }
+                    }
+                }
+                continue;
+            }
+
             match port.read(&mut buf) {
                 Ok(n) if n > 0 => {
                     backoff_ms = 100;
@@ -388,7 +432,7 @@ fn spawn_reader_thread(
                             return;
                         }
                         thread::sleep(Duration::from_millis(backoff_ms));
-                        match open_serial_port(&port_name, baud_rate) {
+                        match open_serial_port(&current_port_name, baud_rate) {
                             Ok(new_port) => {
                                 port = new_port;
                                 let _ = tx.send(ReaderEvent::Reconnected);
@@ -438,25 +482,20 @@ pub fn start_native(
     // Open the serial port
     let port = open_serial_port(&port_name, baud_rate)?;
 
-    // Clone the port for writing
-    let write_port: Option<Box<dyn SerialPort>> = match port.try_clone() {
-        Ok(cloned) => Some(cloned),
-        Err(_) => None,
-    };
-
     // Running flag shared with reader thread
     let running = Arc::new(AtomicBool::new(true));
 
     // Spawn reader thread
+    let (write_tx, write_rx) = mpsc::channel();
+
     let serial_rx = spawn_reader_thread(
         port,
         running.clone(),
         no_reconnect,
         port_name.clone(),
         baud_rate,
+        write_rx,
     );
-
-    let mut write_port = write_port;
 
     // Set up display
     let history_file_path = format!("{}/{}", app_folder, history_file_name);
@@ -466,10 +505,9 @@ pub fn start_native(
 
     // Closure to send a command to the serial port
     let mut send_command = |command: String| {
-        if let Some(ref mut wp) = write_port {
-            let _ = wp.write(command.as_bytes());
-            let _ = wp.write(b"\n");
-        }
+        let mut data = command.into_bytes();
+        data.push(b'\n');
+        let _ = write_tx.send(data);
     };
 
     // Main loop
