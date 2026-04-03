@@ -3,34 +3,20 @@
     "CmdsAtStart": "",
     "WebUI": "",
     "SysManager": {
-        "monitorPeriodMs":10000,
-        "reportList":[
+        "monitorPeriodMs": 10000,
+        "reportList": [
             "NetMan",
             "SysMan"
         ],
-        "slowSysModMs": 50
+        "slowSysModMs": 50,
+        "pauseWiFiforBLE": 1
     },
-    "ProtExchg": {
-        "RICSerial":{
-            "FrameBound":"0xE7",
-            "CtrlEscape":"0xD7"
-        }
-    },{{{inc_bleman_in_systypes}}}
+    {{{inc_bleman_in_systypes}}}
     "NetMan": {
         "wifiSTAEn": 1,
         "wifiAPEn": 1,
-        "ethEn": 0,
-        "wifiSSID": "",
-        "wifiPW": "",
-        "wifiSTAScanThreshold": "OPEN",
         "wifiAPSSID": "RaftAP",
-        "wifiAPPW": "raftpassword",
-        "wifiAPChannel": 1,
-        "wifiAPMaxConn": 4,
-        "wifiAPAuthMode": "WPA2_PSK",
-        "NTPServer": "pool.ntp.org",
-        "timezone": "UTC",
-        "logLevel": "D"
+        "wifiAPPW": "raftpassword"
     },
     "ESPOTAUpdate": {
         "enable": 1,
@@ -61,56 +47,25 @@
         "logDests": [
             {
                 "enable": false,
-                "type": "Papertrail",
-                "host": "xxxxx.papertrailapp.com",
-                "port": 12345
+                "type": "RaftRemote",
+                "port": 8080
             }
         ]
     },    
     "SerialConsole": {
-        "enable": 1,
-        "uartNum": 0,
-        "rxBuf": 5000,
-        "txBuf": 1500,
-        "crlfOnTx": 1,
-        "protocol": "RICSerial",
-        "logLevel": "D"
+        "enable": 1
     },
     "WebServer": {
         "enable": 1,
-        "webServerPort": 80,
-        "stdRespHeaders": [
-            "Access-Control-Allow-Origin: *"
-        ],
-        "apiPrefix": "api/",
-        "fileServer": 1,
-        "staticFilePaths": "",
-        "numConnSlots": 12,
         "websockets": [
             {
                 "pfix": "ws",
-                "pcol": "RICSerial",
-                "maxConn": 4,
-                "txQueueMax": 20,
-                "pingMs": 30000
+                "pcol": "RICSerial"
             }
-        ],
-        "logLevel": "D",
-        "sendMax": 5000,
-        "taskCore": 0,
-        "taskStack": 5000,
-        "taskPriority": 9
+        ]
     },
     "FileManager": {
-        "LocalFsDefault": "littlefs",
-        "LocalFSFormatIfCorrupt": 1,
-        "CacheFileSysInfo": 0,
-        "SDEnabled": 0,
-        "DefaultSD": 1,
-        "SDMOSI": 15,
-        "SDMISO": 4,
-        "SDCLK": 14,
-        "SDCS": 13
+        "enable": 1
     },
     "Publish": {
         "enable": 1
