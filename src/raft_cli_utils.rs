@@ -480,7 +480,9 @@ pub fn build_flash_command_args(
             // Skip filesystem entries if requested
             if skip_fs && !known_offsets.contains(offset) {
                 let lower = file_path_str.to_lowercase();
-                if lower.contains("spiffs") || lower.contains("littlefs") 
+                let basename = lower.rsplit(|c| c == '/' || c == '\\').next().unwrap_or(&lower);
+                if basename == "fs.bin"
+                    || lower.contains("spiffs") || lower.contains("littlefs") 
                     || lower.contains("fatfs") || lower.contains("storage")
                     || lower.contains("fs_image") {
                     println!("Skipping filesystem image: {}", file_path_str);
