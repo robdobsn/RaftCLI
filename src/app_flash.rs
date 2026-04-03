@@ -16,6 +16,7 @@ pub fn flash_raft_app(
     vid: Option<String>,
     flash_baud: u32,
     flash_tool_opt: Option<String>,
+    skip_fs: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
 
     let sys_type = utils_get_sys_type(build_sys_type, app_folder.clone());
@@ -35,6 +36,7 @@ pub fn flash_raft_app(
             vid,
             flash_baud,
             flash_tool_opt,
+            skip_fs,
         );
     }
 
@@ -60,7 +62,7 @@ pub fn flash_raft_app(
     };
 
     // Extract the arguments for the flash command
-    let flash_cmd_args = build_flash_command_args(build_folder.clone(), &port, flash_baud);
+    let flash_cmd_args = build_flash_command_args(build_folder.clone(), &port, flash_baud, skip_fs);
 
     // Check for errors in the flash command and arguments
     if flash_cmd_args.is_err() {
@@ -117,6 +119,7 @@ fn flash_via_windows_raft(
     vid: Option<String>,
     flash_baud: u32,
     flash_tool_opt: Option<String>,
+    skip_fs: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut args = vec!["flash".to_string()];
     
@@ -146,6 +149,13 @@ fn flash_via_windows_raft(
         args.push(tool);
     }
     
+    // Add filesystem flash control
+    if skip_fs {
+        args.push("--no-fs".to_string());
+    } else {
+        args.push("--fs".to_string());
+    }
+
     // Add native serial port flag to tell Windows raft.exe to use Windows serial ports
     args.push("-n".to_string());
     

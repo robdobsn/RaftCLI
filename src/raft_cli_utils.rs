@@ -24,6 +24,11 @@ pub struct BuildInfo {
     pub last_build_method: Option<String>,  // "docker" or "local_idf"
     pub last_idf_path_explicit: bool,
     pub last_idf_path: Option<String>,
+    pub last_port: Option<String>,
+    pub last_monitor_baud: Option<u32>,
+    pub last_flash_baud: Option<u32>,
+    pub last_vid: Option<String>,
+    pub last_no_fs: Option<bool>,
 }
 
 impl Default for BuildInfo {
@@ -33,6 +38,11 @@ impl Default for BuildInfo {
             last_build_method: None,
             last_idf_path_explicit: false,
             last_idf_path: None,
+            last_port: None,
+            last_monitor_baud: None,
+            last_flash_baud: None,
+            last_vid: None,
+            last_no_fs: None,
         }
     }
 }
@@ -48,19 +58,22 @@ pub fn read_build_info(app_folder: &str) -> BuildInfo {
                 last_build_method: json["last_build_method"].as_str().map(|s| s.to_string()),
                 last_idf_path_explicit: json["last_idf_path_explicit"].as_bool().unwrap_or(false),
                 last_idf_path: json["last_idf_path"].as_str().map(|s| s.to_string()),
+                last_port: json["last_port"].as_str().map(|s| s.to_string()),
+                last_monitor_baud: json["last_monitor_baud"].as_u64().map(|v| v as u32),
+                last_flash_baud: json["last_flash_baud"].as_u64().map(|v| v as u32),
+                last_vid: json["last_vid"].as_str().map(|s| s.to_string()),
+                last_no_fs: json["last_no_fs"].as_bool(),
             };
         }
     }
     BuildInfo::default()
 }
 
-// Write build information to raft.info file
+// Write build information to raft.info file using merge semantics
+// Only fields that are Some will be updated; existing values are preserved
 pub fn write_build_info(
     app_folder: &str,
-    sys_type: &str,
-    build_method: &str,
-    idf_path_explicit: bool,
-    idf_path: Option<String>,
+    updates: &BuildInfo,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let build_folder = format!("{}/build", app_folder);
     
@@ -70,16 +83,35 @@ pub fn write_build_info(
     }
     
     let raft_info_path = format!("{}/raft.info", build_folder);
+
+    // Read existing info to merge with
+    let existing = read_build_info(app_folder);
+
+    // Merge: updates take priority over existing values
+    let merged = BuildInfo {
+        last_built_systype: updates.last_built_systype.clone().or(existing.last_built_systype),
+        last_build_method: updates.last_build_method.clone().or(existing.last_build_method),
+        last_idf_path_explicit: if updates.last_idf_path.is_some() { updates.last_idf_path_explicit } else { existing.last_idf_path_explicit },
+        last_idf_path: updates.last_idf_path.clone().or(existing.last_idf_path),
+        last_port: updates.last_port.clone().or(existing.last_port),
+        last_monitor_baud: updates.last_monitor_baud.or(existing.last_monitor_baud),
+        last_flash_baud: updates.last_flash_baud.or(existing.last_flash_baud),
+        last_vid: updates.last_vid.clone().or(existing.last_vid),
+        last_no_fs: updates.last_no_fs.or(existing.last_no_fs),
+    };
+
     let mut raft_info = serde_json::json!({
-        "last_built_systype": sys_type,
-        "last_build_method": build_method,
-        "last_idf_path_explicit": idf_path_explicit
+        "last_idf_path_explicit": merged.last_idf_path_explicit
     });
-    
-    // Add idf_path if present
-    if let Some(path) = idf_path {
-        raft_info["last_idf_path"] = serde_json::json!(path);
-    }
+
+    if let Some(ref v) = merged.last_built_systype { raft_info["last_built_systype"] = serde_json::json!(v); }
+    if let Some(ref v) = merged.last_build_method { raft_info["last_build_method"] = serde_json::json!(v); }
+    if let Some(ref v) = merged.last_idf_path { raft_info["last_idf_path"] = serde_json::json!(v); }
+    if let Some(ref v) = merged.last_port { raft_info["last_port"] = serde_json::json!(v); }
+    if let Some(v) = merged.last_monitor_baud { raft_info["last_monitor_baud"] = serde_json::json!(v); }
+    if let Some(v) = merged.last_flash_baud { raft_info["last_flash_baud"] = serde_json::json!(v); }
+    if let Some(ref v) = merged.last_vid { raft_info["last_vid"] = serde_json::json!(v); }
+    if let Some(v) = merged.last_no_fs { raft_info["last_no_fs"] = serde_json::json!(v); }
     
     fs::write(&raft_info_path, serde_json::to_string_pretty(&raft_info)?)?;
     Ok(())
@@ -391,6 +423,7 @@ pub fn build_flash_command_args(
     build_folder: String,
     port: &str,
     flash_baud: u32,
+    skip_fs: bool,
 ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     // Flash arguments file
     let flash_args_file = format!("{}/flasher_args.json", build_folder);
@@ -431,10 +464,31 @@ pub fn build_flash_command_args(
         flash_freq.to_string(),
     ];
 
+    // Collect known non-FS offsets (bootloader, app, partition-table) from flasher_args.json
+    let mut known_offsets: Vec<String> = Vec::new();
+    for key in &["bootloader", "app", "partition-table", "partition_table"] {
+        if let Some(offset) = flash_args[key]["offset"].as_str() {
+            known_offsets.push(offset.to_string());
+        }
+    }
+
     // Extract and append flash files and their offsets
     if let Some(flash_files) = flash_args["flash_files"].as_object() {
         for (offset, file_path) in flash_files {
-            let full_path = format!("{}/{}", build_folder, file_path.as_str().unwrap());
+            let file_path_str = file_path.as_str().unwrap();
+
+            // Skip filesystem entries if requested
+            if skip_fs && !known_offsets.contains(offset) {
+                let lower = file_path_str.to_lowercase();
+                if lower.contains("spiffs") || lower.contains("littlefs") 
+                    || lower.contains("fatfs") || lower.contains("storage")
+                    || lower.contains("fs_image") {
+                    println!("Skipping filesystem image: {}", file_path_str);
+                    continue;
+                }
+            }
+
+            let full_path = format!("{}/{}", build_folder, file_path_str);
             esptool_args.push(offset.clone());
             esptool_args.push(full_path);
         }

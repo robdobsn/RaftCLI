@@ -12,6 +12,7 @@ This command-line application is used to scaffold, build, flash and monitor raft
 - [Flashing firmware to a development board](#flashing-the-firmware-to-a-development-board)
 - [Monitoring a serial port](#monitoring-a-serial-port)
 - [Remote Debug Console](#remote-debug-console)
+- [Persistent Settings](#persistent-settings)
 - [Scaffolding Questions](#scaffolding-questions)
 
 ## Installation
@@ -170,6 +171,8 @@ Options:
   -l, --log                          Log serial data to file
   -g, --log-folder <LOG_FOLDER>      Folder for log files [default: ./logs]
   -v, --vid <VID>                    Vendor ID
+      --no-fs                        Skip flashing the file system image
+      --fs                           Flash the file system image (overrides saved --no-fs)
   -h, --help                         Print help
 ```
 
@@ -255,6 +258,8 @@ This will flash the firmare to the Espressif processor.
 
 If the serial port is not specified (with the -p option) then the most likely suitable serial port will be tried. You can also specify baud rate for flashing using -f option. This program generally uses the espressif esptool to do the actual work of flashing. If you need to specify the full path to this tool then use the -t option.
 
+By default, all partitions are flashed including the file system image. Use the --no-fs option to skip flashing the file system image - this is useful during iterative firmware development when the file system contents haven't changed. Use --fs to explicitly re-enable file system flashing if --no-fs was previously saved (see [Persistent Settings](#persistent-settings) below).
+
 ```
 Flash firmware to the device
 
@@ -270,6 +275,8 @@ Options:
   -f, --flash-baud <FLASH_BAUD>  Flash baud rate
   -t, --flash-tool <FLASH_TOOL>  Flash tool (e.g. esptool)
   -v, --vid <VID>                Vendor ID
+      --no-fs                    Skip flashing the file system image
+      --fs                       Flash the file system image (overrides saved --no-fs)
   -h, --help                     Print help
 ```
 
@@ -368,6 +375,22 @@ Options:
   -g, --log-folder <LOG_FOLDER>  Folder for log files [default: ./logs]
   -h, --help                     Print help
 ```
+
+## Persistent Settings
+
+Several command-line settings are automatically saved to `build/raft.info` when explicitly specified and reused on subsequent runs. This means you only need to specify options like the serial port or flash baud rate once - they will be remembered for future invocations.
+
+| Setting | Saved by | Example |
+| -- | -- | -- |
+| `-p` serial port | `flash`, `run`, `monitor` | `raft flash -p COM8` |
+| `-b` monitor baud rate | `run`, `monitor` | `raft monitor -b 921600` |
+| `-f` flash baud rate | `flash`, `run` | `raft flash -f 2000000` |
+| `-v` vendor ID | `flash`, `run`, `monitor` | `raft flash -v 0x10c4` |
+| `--no-fs` / `--fs` | `flash`, `run` | `raft flash --no-fs` |
+
+To override a saved setting, simply specify the option again on the command line. The new value will replace the previously saved one. For example, if `--no-fs` was previously used and saved, use `--fs` to re-enable file system flashing.
+
+Build-related settings (system type, build method, ESP IDF path) are also saved automatically after a successful build.
 
 ### Build from source
 

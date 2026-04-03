@@ -23,6 +23,7 @@ mod console_log;
 use raft_cli_utils::is_wsl;
 use raft_cli_utils::check_target_folder_valid;
 use raft_cli_utils::get_flash_tool_cmd;
+use raft_cli_utils::{read_build_info, write_build_info, BuildInfo};
 mod app_ports;
 use app_ports::{PortsCmd, manage_ports};
 mod cmd_history;
@@ -170,6 +171,12 @@ struct RunCmd {
     // Option to specify vendor ID
     #[clap(short = 'v', long, help = "Vendor ID")]
     vid: Option<String>,
+    // Option to skip flashing file system
+    #[clap(long, help = "Skip flashing the file system image", conflicts_with = "fs")]
+    no_fs: bool,
+    // Option to force flashing file system (overrides saved --no-fs)
+    #[clap(long, help = "Flash the file system image (overrides saved --no-fs)", conflicts_with = "no_fs")]
+    fs: bool,
 }
 
 // Define arguments for the 'flash' subcommand
@@ -196,6 +203,12 @@ struct FlashCmd {
     // Option to specify vendor ID
     #[clap(short = 'v', long, help = "Vendor ID")]
     vid: Option<String>,
+    // Option to skip flashing file system
+    #[clap(long, help = "Skip flashing the file system image", conflicts_with = "fs")]
+    no_fs: bool,
+    // Option to force flashing file system (overrides saved --no-fs)
+    #[clap(long, help = "Flash the file system image (overrides saved --no-fs)", conflicts_with = "no_fs")]
+    fs: bool,
 }
 
 // Define arguments for the 'ota' subcommand
@@ -301,7 +314,24 @@ fn main() {
         Action::Monitor(cmd) => {
 
             let app_folder = cmd.app_folder.unwrap_or(".".to_string());
-            let monitor_baud = cmd.monitor_baud.unwrap_or(115200);
+
+            // Read saved settings and resolve with CLI args
+            let saved = read_build_info(&app_folder);
+            let port = cmd.port.clone().or(saved.last_port.clone());
+            let vid = cmd.vid.clone().or(saved.last_vid.clone());
+            let monitor_baud = cmd.monitor_baud.or(saved.last_monitor_baud).unwrap_or(115200);
+
+            // Save explicitly-provided settings
+            let mut updates = BuildInfo::default();
+            if cmd.port.is_some() { updates.last_port = cmd.port.clone(); }
+            if cmd.vid.is_some() { updates.last_vid = cmd.vid.clone(); }
+            if cmd.monitor_baud.is_some() { updates.last_monitor_baud = cmd.monitor_baud; }
+            if updates.last_port.is_some() || updates.last_vid.is_some() || updates.last_monitor_baud.is_some() {
+                if let Err(e) = write_build_info(&app_folder, &updates) {
+                    println!("Warning: Failed to save settings to raft.info: {}", e);
+                }
+            }
+
             let log = cmd.log;
             let mut log_folder = cmd.log_folder.unwrap_or("./logs".to_string());
             // If the log_folder is relative then apply the app_folder as a prefix to it using path::join
@@ -314,7 +344,7 @@ fn main() {
             // Start the serial monitor
             if !cmd.native_serial_port && is_wsl() {
                 let result = serial_monitor::start_non_native(app_folder, 
-                            cmd.port, monitor_baud, cmd.no_reconnect, log, log_folder, cmd.vid);
+                            port.clone(), monitor_baud, cmd.no_reconnect, log, log_folder, vid.clone());
                 match result {
                     Ok(()) => std::process::exit(0),
                     Err(e) => {
@@ -325,7 +355,7 @@ fn main() {
             }
 
             let result = serial_monitor::start_native(app_folder, 
-                        cmd.port, monitor_baud, cmd.no_reconnect, log, log_folder, cmd.vid,
+                        port, monitor_baud, cmd.no_reconnect, log, log_folder, vid,
                         HISTORY_FILE_NAME.to_string());
             match result {
                 Ok(()) => std::process::exit(0),
@@ -340,6 +370,28 @@ fn main() {
 
             // Get the app folder (or default to current folder)
             let app_folder = cmd.app_folder.unwrap_or(".".to_string());
+
+            // Read saved settings and resolve with CLI args
+            let saved = read_build_info(&app_folder);
+            let port = cmd.port.clone().or(saved.last_port.clone());
+            let vid = cmd.vid.clone().or(saved.last_vid.clone());
+            let flash_baud = cmd.flash_baud.or(saved.last_flash_baud).unwrap_or(1000000);
+            let monitor_baud = cmd.monitor_baud.or(saved.last_monitor_baud).unwrap_or(115200);
+            let no_fs = if cmd.no_fs { true } else if cmd.fs { false } else { saved.last_no_fs.unwrap_or(false) };
+
+            // Save explicitly-provided settings
+            let mut updates = BuildInfo::default();
+            if cmd.port.is_some() { updates.last_port = cmd.port.clone(); }
+            if cmd.vid.is_some() { updates.last_vid = cmd.vid.clone(); }
+            if cmd.flash_baud.is_some() { updates.last_flash_baud = cmd.flash_baud; }
+            if cmd.monitor_baud.is_some() { updates.last_monitor_baud = cmd.monitor_baud; }
+            if cmd.no_fs || cmd.fs { updates.last_no_fs = Some(no_fs); }
+            if updates.last_port.is_some() || updates.last_vid.is_some() || updates.last_flash_baud.is_some()
+                || updates.last_monitor_baud.is_some() || updates.last_no_fs.is_some() {
+                if let Err(e) = write_build_info(&app_folder, &updates) {
+                    println!("Warning: Failed to save settings to raft.info: {}", e);
+                }
+            }
 
             // Build the app
             let result = build_raft_app(&cmd.sys_type, cmd.clean, false,
@@ -356,11 +408,12 @@ fn main() {
             // Flash the app
             let result = flash_raft_app(&cmd.sys_type,
                         app_folder.clone(), 
-                        cmd.port.clone(),
+                        port.clone(),
                         cmd.native_serial_port,
-                        cmd.vid.clone(),
-                        cmd.flash_baud.unwrap_or(1000000),
-                        cmd.flash_tool);
+                        vid.clone(),
+                        flash_baud,
+                        cmd.flash_tool,
+                        no_fs);
             if result.is_err() {
                 println!("Flash operation failed {:?}", result);
                 std::process::exit(1);
@@ -370,13 +423,10 @@ fn main() {
             let log = cmd.log;
             let log_folder = cmd.log_folder.unwrap_or("./logs".to_string());
 
-            // Extract monitor baud rate
-            let monitor_baud = cmd.monitor_baud.unwrap_or(115200);
-
             // Start the serial monitor
             if !cmd.native_serial_port && is_wsl() {
                 let result = serial_monitor::start_non_native(app_folder, 
-                            cmd.port.clone(), monitor_baud, cmd.no_reconnect, log, log_folder, cmd.vid.clone());
+                            port.clone(), monitor_baud, cmd.no_reconnect, log, log_folder, vid.clone());
                 match result {
                     Ok(()) => std::process::exit(0),
                     Err(e) => {
@@ -387,7 +437,7 @@ fn main() {
             }
 
             let result = serial_monitor::start_native(app_folder, 
-                            cmd.port, monitor_baud, cmd.no_reconnect, log, log_folder,cmd.vid,
+                            port, monitor_baud, cmd.no_reconnect, log, log_folder, vid,
                             HISTORY_FILE_NAME.to_string());
             match result {
                 Ok(()) => std::process::exit(0),
@@ -402,14 +452,35 @@ fn main() {
             // Get the app folder (or default to current folder)
             let app_folder = cmd.app_folder.unwrap_or(".".to_string());
 
+            // Read saved settings and resolve with CLI args
+            let saved = read_build_info(&app_folder);
+            let port = cmd.port.clone().or(saved.last_port.clone());
+            let vid = cmd.vid.clone().or(saved.last_vid.clone());
+            let flash_baud = cmd.flash_baud.or(saved.last_flash_baud).unwrap_or(1000000);
+            let no_fs = if cmd.no_fs { true } else if cmd.fs { false } else { saved.last_no_fs.unwrap_or(false) };
+
+            // Save explicitly-provided settings
+            let mut updates = BuildInfo::default();
+            if cmd.port.is_some() { updates.last_port = cmd.port.clone(); }
+            if cmd.vid.is_some() { updates.last_vid = cmd.vid.clone(); }
+            if cmd.flash_baud.is_some() { updates.last_flash_baud = cmd.flash_baud; }
+            if cmd.no_fs || cmd.fs { updates.last_no_fs = Some(no_fs); }
+            if updates.last_port.is_some() || updates.last_vid.is_some() || updates.last_flash_baud.is_some()
+                || updates.last_no_fs.is_some() {
+                if let Err(e) = write_build_info(&app_folder, &updates) {
+                    println!("Warning: Failed to save settings to raft.info: {}", e);
+                }
+            }
+
             // Flash the app
             let result = flash_raft_app(&cmd.sys_type,
                 app_folder.clone(), 
-                cmd.port.clone(),
+                port,
                 cmd.native_serial_port,
-                cmd.vid.clone(),
-                cmd.flash_baud.unwrap_or(1000000),
-                cmd.flash_tool);
+                vid,
+                flash_baud,
+                cmd.flash_tool,
+                no_fs);
             if result.is_err() {
                 println!("Flash operation failed {:?}", result);
                 std::process::exit(1);

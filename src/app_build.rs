@@ -6,7 +6,7 @@ use std::io;
 use std::path::Path;
 #[cfg(unix)]
 use nix::unistd::{getuid, getgid};
-use crate::raft_cli_utils::{default_esp_idf_version, find_matching_esp_idf, is_docker_available, is_esp_idf_env, prepare_esp_idf, utils_get_sys_type, write_build_info, read_build_info};
+use crate::raft_cli_utils::{default_esp_idf_version, find_matching_esp_idf, is_docker_available, is_esp_idf_env, prepare_esp_idf, utils_get_sys_type, write_build_info, read_build_info, BuildInfo};
 use crate::raft_cli_utils::check_app_folder_valid;
 use crate::raft_cli_utils::execute_and_capture_output;
 use crate::raft_cli_utils::convert_path_for_docker;
@@ -122,12 +122,16 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: 
     }
 
     // Save complete build info to raft.info file after successful build
+    let build_updates = BuildInfo {
+        last_built_systype: Some(sys_type.clone()),
+        last_build_method: Some(actual_build_method.to_string()),
+        last_idf_path_explicit: idf_path_was_explicit,
+        last_idf_path: actual_idf_path,
+        ..BuildInfo::default()
+    };
     if let Err(e) = write_build_info(
         &app_folder,
-        &sys_type,
-        actual_build_method,
-        idf_path_was_explicit,
-        actual_idf_path,
+        &build_updates,
     ) {
         println!("Warning: Failed to write raft.info file: {}", e);
     }
