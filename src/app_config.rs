@@ -325,7 +325,7 @@ fn get_schema(base_folder: &str) -> serde_json::Value {
         {
             "key": "inc_bleman_in_sdkconfig",
             "condition": "use_raft_ble",
-            "generator": "\n# Bluetooth\nCONFIG_BT_ENABLED=y\nCONFIG_BT_NIMBLE_ENABLED=y\n{{{use_raft_ble_central_yn}}}CONFIG_BT_NIMBLE_ROLE_OBSERVER=n\nCONFIG_BT_NIMBLE_CRYPTO_STACK_MBEDTLS=n\nCONFIG_BT_NIMBLE_LOG_LEVEL_WARNING=y\n#CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL=y\n"
+            "generator": "\n# Bluetooth\nCONFIG_BT_ENABLED=y\nCONFIG_BT_NIMBLE_ENABLED=y\n{{{use_raft_ble_central_yn}}}CONFIG_BT_NIMBLE_ROLE_OBSERVER=n\nCONFIG_BT_NIMBLE_CRYPTO_STACK_MBEDTLS=n\nCONFIG_BT_NIMBLE_LOG_LEVEL_WARNING=y\nCONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE=6144\nCONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL=y\n"
         },
         {
             "key": "use_raft_i2c",
