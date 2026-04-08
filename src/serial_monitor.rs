@@ -532,8 +532,9 @@ pub fn start_native(
             break;
         }
 
-        // 2. Drain all pending serial data (non-blocking)
-        loop {
+        // 2. Drain pending serial data (non-blocking, bounded so we re-check keys)
+        const MAX_SERIAL_DRAIN: usize = 64;
+        for _ in 0..MAX_SERIAL_DRAIN {
             match serial_rx.try_recv() {
                 Ok(ReaderEvent::Data(bytes)) => {
                     let text = String::from_utf8_lossy(&bytes);
