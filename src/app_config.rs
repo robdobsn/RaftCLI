@@ -74,7 +74,7 @@ fn get_schema(base_folder: &str) -> serde_json::Value {
         {
             "key": "sys_type_name",
             "prompt": "System Type Name",
-            "default": "SysTypeMain",
+            "default": "RaftSys",
             "datatype": "string",
             "description": "The name of the system type to create",
             "pattern": "^[a-zA-Z0-9_]+$",

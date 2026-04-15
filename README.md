@@ -6,14 +6,23 @@ Raft is an opinionated framework for developing embedded apps for the Espressif 
 
 This command-line application is used to scaffold, build, flash and monitor raft apps.
 
-- [Installation](#installation)
-- [Creating a new raft app](#creating-a-new-raft-app)
-- [Building a raft app](#building-a-raft-app)
-- [Flashing firmware to a development board](#flashing-the-firmware-to-a-development-board)
-- [Monitoring a serial port](#monitoring-a-serial-port)
-- [Remote Debug Console](#remote-debug-console)
-- [Persistent Settings](#persistent-settings)
-- [Scaffolding Questions](#scaffolding-questions)
+- [Raft CLI (command-line interface)](#raft-cli-command-line-interface)
+  - [Installation](#installation)
+    - [Build using Docker](#build-using-docker)
+    - [Build using ESP IDF](#build-using-esp-idf)
+  - [Creating a new raft app](#creating-a-new-raft-app)
+  - [Building a raft app](#building-a-raft-app)
+  - [Build and flash firmware to a development board](#build-and-flash-firmware-to-a-development-board)
+  - [Monitoring a serial port](#monitoring-a-serial-port)
+  - [Listing serial ports](#listing-serial-ports)
+  - [Flash firmware to a development board (without rebuilding)](#flash-firmware-to-a-development-board-without-rebuilding)
+  - [Run esptool directly](#run-esptool-directly)
+  - [OTA (Over-the-air) Update Firmware (using WiFi/Ethernet connection)](#ota-over-the-air-update-firmware-using-wifiethernet-connection)
+  - [Remote Debug Console](#remote-debug-console)
+  - [Persistent Settings](#persistent-settings)
+    - [Build from source](#build-from-source)
+  - [Scaffolding Questions](#scaffolding-questions)
+  - [Template App Details](#template-app-details)
 
 ## Installation
 
@@ -79,7 +88,7 @@ On completion you will have a folder structure like this:
     ├───Common
     │   ├───FSImage
     │   └───WebUI
-    └───SysTypeMain
+    └───RaftSys
 ```
 
 Additional options are available ...

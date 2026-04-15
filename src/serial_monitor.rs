@@ -19,9 +19,9 @@ use std::thread;
 use std::time::Duration;
 
 use crate::app_ports::{select_most_likely_port, PortsCmd};
-use crate::cmd_history::CommandHistory;
 use crate::console_log::{open_log_file, write_to_log};
-use crate::native_terminal::{KeyCode, NativeTerminal, TermEvent};
+use crate::line_editor::{LineEditAction, LineEditor};
+use crate::native_terminal::{NativeTerminal, TermEvent};
 
 // Size of the serial read buffer
 const SERIAL_READ_BUF_SIZE: usize = 4096;
@@ -43,9 +43,11 @@ struct Display {
     rows: u16,
     output_col: u16,
     output_row: u16,
-    command_buffer: String,
     is_error: bool,
-    command_history: CommandHistory,
+    editor: LineEditor,
+    /// True when the last character written filled the final column, leaving
+    /// the terminal in deferred-wrap state. Resolved on the next character.
+    pending_wrap: bool,
     /// Ring buffer of completed output lines for redrawing after resize.
     /// The last entry may be a partial (unterminated) line.
     line_buffer: VecDeque<String>,
@@ -63,9 +65,9 @@ impl Display {
             rows,
             output_col: 0,
             output_row: 0,
-            command_buffer: String::new(),
             is_error: false,
-            command_history: CommandHistory::new(history_file_path),
+            editor: LineEditor::new(history_file_path),
+            pending_wrap: false,
             line_buffer: VecDeque::new(),
             current_line: String::new(),
         }
@@ -83,6 +85,7 @@ impl Display {
             self.term.set_scroll_region(0, self.rows - 2);
         }
         self.term.move_to(0, 0);
+        self.pending_wrap = false;
         Ok(())
     }
 
@@ -102,6 +105,7 @@ impl Display {
         self.term.clear_screen();
         self.output_row = 0;
         self.output_col = 0;
+        self.pending_wrap = false;
         if self.rows > 1 {
             self.term.set_scroll_region(0, self.rows - 2);
         }
@@ -115,6 +119,10 @@ impl Display {
     /// scrollback buffer.
     fn print_output(&mut self, data: &str) {
         self.is_error = false;
+
+        // Hide cursor while updating the scroll region so it doesn't
+        // flicker in the output area
+        self.term.hide_cursor();
 
         // Buffer the data for redraw-on-resize.
         // Ignore \r for buffering — serial devices typically send \r\n and
@@ -148,6 +156,7 @@ impl Display {
         for ch in data.chars() {
             match ch {
                 '\n' => {
+                    self.pending_wrap = false;
                     self.output_col = 0;
                     if self.output_row >= max_output_row {
                         // At bottom of scroll region — write \n which makes terminal scroll
@@ -159,19 +168,30 @@ impl Display {
                     }
                 }
                 '\r' => {
+                    self.pending_wrap = false;
                     self.output_col = 0;
                     write!(out, "\r").unwrap();
                 }
                 c if !c.is_control() => {
-                    write!(out, "{}", c).unwrap();
-                    self.output_col += 1;
-                    if self.output_col >= self.cols {
-                        // Line wrapped — terminal auto-wraps within scroll region
+                    if self.pending_wrap {
+                        // Resolve deferred line wrap: advance to the next row.
+                        // \r cancels the terminal's deferred-wrap state (moving
+                        // cursor to column 0), then \n advances one row
+                        // (scrolling if at the bottom of the scroll region).
+                        write!(out, "\r\n").unwrap();
                         self.output_col = 0;
                         if self.output_row < max_output_row {
                             self.output_row += 1;
                         }
-                        // If at max_output_row, terminal scroll region handles it
+                        self.pending_wrap = false;
+                    }
+                    write!(out, "{}", c).unwrap();
+                    self.output_col += 1;
+                    if self.output_col >= self.cols {
+                        // Cursor is at the last column in deferred-wrap state.
+                        // Don't advance yet — the next character will resolve it.
+                        self.output_col = self.cols - 1;
+                        self.pending_wrap = true;
                     }
                 }
                 _ => {
@@ -265,12 +285,17 @@ impl Display {
         self.term.move_to(0, self.rows - 1);
         self.term.clear_line();
         self.term.set_color_yellow();
-        self.term.write_str(&format!("> {}", self.command_buffer));
+        let buf = self.editor.buffer_str();
+        self.term.write_str(&format!("> {}", buf));
         self.term.reset_color();
-        // Restore scroll region
+        // Restore scroll region first (DECSTBM can reset cursor position)
         if self.rows > 1 {
             self.term.set_scroll_region(0, self.rows - 2);
         }
+        // Position cursor on the prompt line *after* restoring scroll region
+        let cursor_col = 2 + self.editor.cursor_pos() as u16;
+        self.term.move_to(cursor_col, self.rows - 1);
+        self.term.show_cursor();
         self.term.flush();
     }
 
@@ -303,40 +328,17 @@ impl Display {
 
     /// Handle a key event. Returns false if the monitor should exit.
     fn handle_key_event(&mut self, key_event: crate::native_terminal::KeyEvent, send_command: &mut dyn FnMut(String)) -> bool {
-        match &key_event.code {
-            KeyCode::Char('c') | KeyCode::Char('x') if key_event.modifiers.ctrl => {
-                return false;
-            }
-            KeyCode::Escape => return false,
-            KeyCode::Enter => {
-                let command = self.command_buffer.clone();
+        match self.editor.handle_key(&key_event) {
+            LineEditAction::Exit => return false,
+            LineEditAction::Submit(command) => {
                 send_command(command.clone());
-                self.command_history.add_command(&command);
-                self.command_buffer.clear();
                 // Echo the sent command in the output area
                 self.print_output(&format!("> {}\r\n", command));
             }
-            KeyCode::Backspace => {
-                if !self.command_buffer.is_empty() {
-                    self.command_buffer.pop();
-                    self.draw_prompt();
-                }
-            }
-            KeyCode::Char(c) => {
-                self.command_buffer.push(*c);
+            LineEditAction::Updated => {
                 self.draw_prompt();
             }
-            KeyCode::Up => {
-                self.command_history.move_up();
-                self.command_buffer = self.command_history.get_current();
-                self.draw_prompt();
-            }
-            KeyCode::Down => {
-                self.command_history.move_down();
-                self.command_buffer = self.command_history.get_current();
-                self.draw_prompt();
-            }
-            _ => {}
+            LineEditAction::None => {}
         }
         true
     }

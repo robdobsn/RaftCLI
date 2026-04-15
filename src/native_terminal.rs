@@ -16,11 +16,15 @@ pub enum KeyCode {
     Char(char),
     Enter,
     Backspace,
+    Delete,
     Escape,
     Up,
     Down,
     Left,
     Right,
+    Home,
+    End,
+    Insert,
 }
 
 /// Modifier flags
@@ -64,6 +68,26 @@ fn ansi_set_scroll_region(out: &mut impl Write, top: u16, bottom: u16) {
 
 fn ansi_reset_scroll_region(out: &mut impl Write) {
     write!(out, "\x1b[r").unwrap();
+}
+
+/// DECSCUSR — set cursor shape. 1=block blink, 2=block steady, 5=bar blink, 6=bar steady
+fn ansi_set_cursor_shape(out: &mut impl Write, shape: u8) {
+    write!(out, "\x1b[{} q", shape).unwrap();
+}
+
+/// Reset cursor shape to terminal default (DECSCUSR 0)
+fn ansi_reset_cursor_shape(out: &mut impl Write) {
+    write!(out, "\x1b[0 q").unwrap();
+}
+
+/// DECTCEM — hide cursor
+fn ansi_hide_cursor(out: &mut impl Write) {
+    write!(out, "\x1b[?25l").unwrap();
+}
+
+/// DECTCEM — show cursor
+fn ansi_show_cursor(out: &mut impl Write) {
+    write!(out, "\x1b[?25h").unwrap();
 }
 
 fn ansi_fg_yellow(out: &mut impl Write) {
@@ -352,35 +376,70 @@ impl InputParser {
             // Escape or escape sequence
             0x1B => {
                 if self.buf.len() >= 3 && self.buf[1] == b'[' {
-                    // CSI sequence
-                    let code = match self.buf[2] {
+                    // CSI sequence — find the terminating byte (alphabetic or ~)
+                    let mut end = 2;
+                    while end < self.buf.len()
+                        && !self.buf[end].is_ascii_alphabetic()
+                        && self.buf[end] != b'~'
+                    {
+                        end += 1;
+                    }
+                    if end >= self.buf.len() {
+                        // Incomplete sequence — wait for more data
+                        return None;
+                    }
+
+                    let terminator = self.buf[end];
+                    // Collect the parameter bytes between '[' and the terminator
+                    let params: Vec<u8> = self.buf[2..end].to_vec();
+                    // Consume the entire sequence
+                    self.buf.drain(..=end);
+
+                    // Parse semicolon-separated numeric parameters (e.g. "1;5")
+                    let parts: Vec<u16> = params
+                        .split(|&b| b == b';')
+                        .map(|p| {
+                            p.iter().fold(0u16, |acc, &b| {
+                                acc.wrapping_mul(10).wrapping_add((b.wrapping_sub(b'0')) as u16)
+                            })
+                        })
+                        .collect();
+
+                    // Detect modifier from second parameter (xterm: 2=Shift, 3=Alt, 5=Ctrl, etc.)
+                    let modifiers = if parts.len() >= 2 {
+                        Modifiers {
+                            ctrl: parts[1] == 5 || parts[1] == 6, // 5=Ctrl, 6=Ctrl+Shift
+                        }
+                    } else {
+                        Modifiers::default()
+                    };
+
+                    let code = match terminator {
+                        // Arrow keys and Home/End letter-terminated
                         b'A' => Some(KeyCode::Up),
                         b'B' => Some(KeyCode::Down),
                         b'C' => Some(KeyCode::Right),
                         b'D' => Some(KeyCode::Left),
+                        b'H' => Some(KeyCode::Home),
+                        b'F' => Some(KeyCode::End),
+                        // Tilde-terminated sequences
+                        b'~' => match parts.first().copied().unwrap_or(0) {
+                            1 | 7 => Some(KeyCode::Home),
+                            2 => Some(KeyCode::Insert),
+                            3 => Some(KeyCode::Delete),
+                            4 | 8 => Some(KeyCode::End),
+                            _ => None,
+                        },
                         _ => None,
                     };
+
                     if let Some(kc) = code {
-                        self.buf.drain(..3);
                         return Some(KeyEvent {
                             code: kc,
-                            modifiers: Modifiers::default(),
+                            modifiers,
                         });
                     }
-                    // Unknown CSI — skip the 3 bytes
-                    // Check for longer sequences like \x1b[1;5A (Ctrl+Up), etc.
-                    // Find the terminating byte (alphabetic)
-                    let mut end = 2;
-                    while end < self.buf.len() && !self.buf[end].is_ascii_alphabetic() {
-                        end += 1;
-                    }
-                    if end < self.buf.len() {
-                        self.buf.drain(..=end);
-                    } else {
-                        // Incomplete sequence — wait for more data
-                        return None;
-                    }
-                    // Consumed unknown sequence, try again
+                    // Unknown CSI sequence — already consumed, try next
                     return self.next_event();
                 } else if self.buf.len() >= 2 && self.buf[1] == b'[' {
                     // We have \x1b[ but nothing after — incomplete, wait
@@ -473,6 +532,10 @@ impl NativeTerminal {
     pub fn new() -> Result<Self, io::Error> {
         let raw_state = platform::enable_raw_mode()?;
         let (cols, rows) = platform::terminal_size();
+        // Set cursor to steady bar (beam) for a modern editing feel
+        let mut out = io::stdout();
+        ansi_set_cursor_shape(&mut out, 6);
+        out.flush().unwrap();
         Ok(Self {
             raw_state: Some(raw_state),
             parser: InputParser::new(),
@@ -484,6 +547,9 @@ impl NativeTerminal {
     /// Restore the terminal to its original state.
     pub fn cleanup(&mut self) {
         let mut out = io::stdout();
+        // Ensure cursor is visible and shape is restored
+        ansi_show_cursor(&mut out);
+        ansi_reset_cursor_shape(&mut out);
         // Move cursor to the bottom of the screen before resetting,
         // so the shell prompt appears at the bottom after exit.
         let (_, rows) = platform::terminal_size();
@@ -583,6 +649,20 @@ impl NativeTerminal {
 
     pub fn flush(&mut self) {
         io::stdout().flush().unwrap();
+    }
+
+    /// Hide the terminal cursor (DECTCEM).
+    pub fn hide_cursor(&mut self) {
+        let mut out = io::stdout();
+        ansi_hide_cursor(&mut out);
+        out.flush().unwrap();
+    }
+
+    /// Show the terminal cursor (DECTCEM).
+    pub fn show_cursor(&mut self) {
+        let mut out = io::stdout();
+        ansi_show_cursor(&mut out);
+        out.flush().unwrap();
     }
 
     // ── Input ──

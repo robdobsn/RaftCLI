@@ -1,15 +1,14 @@
-use crate::cmd_history::CommandHistory;
-use crate::native_terminal::{self, KeyCode, KeyEvent, NativeTerminal};
+use crate::line_editor::{LineEditAction, LineEditor};
+use crate::native_terminal::{self, KeyEvent, NativeTerminal};
 
 
 pub struct TerminalIO {
-    command_buffer: String,
     cursor_col: u16,
     cursor_row: u16,
     cols: u16,
     rows: u16,
     is_error: bool,
-    command_history: CommandHistory,
+    editor: LineEditor,
     terminal: NativeTerminal,
 }
 
@@ -17,13 +16,12 @@ impl TerminalIO {
     pub fn new(history_file_path: &str) -> TerminalIO {
         let terminal = NativeTerminal::new().expect("Failed to initialize terminal");
         TerminalIO {
-            command_buffer: String::new(),
             cursor_col: 0,
             cursor_row: 0,
             cols: 0,
             rows: 0,
             is_error: false,
-            command_history: CommandHistory::new(history_file_path),
+            editor: LineEditor::new(history_file_path),
             terminal,
         }
     }
@@ -52,34 +50,16 @@ impl TerminalIO {
         key_event: KeyEvent,
         send_command: impl FnOnce(String),
     ) -> bool {
-        match &key_event.code {
-            KeyCode::Char('c') | KeyCode::Char('x') if key_event.modifiers.ctrl => {
-                return false;
+        match self.editor.handle_key(&key_event) {
+            LineEditAction::Exit => return false,
+            LineEditAction::Submit(command) => {
+                send_command(command);
+                self.print("", false);
             }
-            KeyCode::Escape => return false,
-            KeyCode::Enter => {
-                let command = self.get_command_buffer();
-                send_command(command.clone());
-                self.command_history.add_command(&command);
-                self.clear_command_buffer();
+            LineEditAction::Updated => {
+                self.print("", false);
             }
-            KeyCode::Backspace => {
-                self.backspace_command_buffer();
-            }
-            KeyCode::Char(c) => {
-                self.add_char_to_command_buffer(*c);
-            }
-            KeyCode::Up => {
-                self.command_history.move_up();
-                let current_command = self.command_history.get_current().clone();
-                self.set_command_buffer(current_command);
-            }
-            KeyCode::Down => {
-                self.command_history.move_down();
-                let current_command = self.command_history.get_current().clone();
-                self.set_command_buffer(current_command);
-            }
-            _ => {}
+            LineEditAction::None => {}
         }
         true
     }
@@ -115,6 +95,9 @@ impl TerminalIO {
 
         // Clear error flag
         self.is_error = false;
+
+        // Hide cursor while updating the scroll region
+        self.terminal.hide_cursor();
 
         // Clear the prompt line
         self.terminal.move_to(0, self.rows - 1);
@@ -177,12 +160,17 @@ impl TerminalIO {
         self.terminal.move_to(0, self.rows - 1);
         self.terminal.clear_line();
         self.terminal.set_color_yellow();
-        self.terminal.write_str(&format!("> {}", self.command_buffer));
+        let buf = self.editor.buffer_str();
+        self.terminal.write_str(&format!("> {}", buf));
         self.terminal.reset_color();
-        // Restore scroll region
+        // Restore scroll region first (DECSTBM can reset cursor position)
         if self.rows > 1 {
             self.terminal.set_scroll_region(0, self.rows - 2);
         }
+        // Position cursor on the prompt line *after* restoring scroll region
+        let cursor_col = 2 + self.editor.cursor_pos() as u16;
+        self.terminal.move_to(cursor_col, self.rows - 1);
+        self.terminal.show_cursor();
         self.terminal.flush();
     }
 
@@ -214,36 +202,10 @@ impl TerminalIO {
     }
 
     pub fn clear_info(&mut self) {
-        self.set_command_buffer("".to_string());
+        self.print("", true);
     }
 
     pub fn display_received_data(&mut self, data: &str) {
         self.terminal.write_str(data);
-    }
-
-    pub fn get_command_buffer(&self) -> String {
-        self.command_buffer.clone()
-    }
-
-    pub fn clear_command_buffer(&mut self) {
-        self.command_buffer.clear();
-        self.print("", false);
-    }
-
-    pub fn add_char_to_command_buffer(&mut self, c: char) {
-        self.command_buffer.push(c);
-        self.print("", false);
-    }
-
-    pub fn set_command_buffer(&mut self, s: String) {
-        self.command_buffer = s;
-        self.print("", true);
-    }
-
-    pub fn backspace_command_buffer(&mut self) {
-        if !self.command_buffer.is_empty() {
-            self.command_buffer.pop();
-            self.print("", false);
-        }
     }
 }

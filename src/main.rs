@@ -10,6 +10,7 @@ mod app_config;
 use app_config::get_user_input;
 mod serial_monitor;
 mod native_terminal;
+mod line_editor;
 mod app_build;
 use app_build::build_raft_app;
 mod app_flash;
