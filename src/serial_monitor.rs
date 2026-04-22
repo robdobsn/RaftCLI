@@ -18,6 +18,8 @@ use std::sync::{
 use std::thread;
 use std::time::Duration;
 
+use chrono::Local;
+
 use crate::app_ports::{select_most_likely_port, PortsCmd};
 use crate::console_log::{open_log_file, write_to_log};
 use crate::line_editor::{LineEditAction, LineEditor};
@@ -28,6 +30,15 @@ const SERIAL_READ_BUF_SIZE: usize = 4096;
 
 // Maximum number of output lines to retain for redrawing after resize
 const MAX_OUTPUT_LINES: usize = 2000;
+
+// Mode for injecting wall-clock receive timestamps into the output stream
+#[derive(Clone, Debug)]
+pub enum RxTimestampMode {
+    /// Inject timestamp before the first byte of each new line
+    First,
+    /// Inject timestamp at the end of each line (before the newline)
+    Eol,
+}
 
 // Events sent from the reader thread to the main thread
 enum ReaderEvent {
@@ -53,10 +64,14 @@ struct Display {
     line_buffer: VecDeque<String>,
     /// Accumulates the current (possibly incomplete) line.
     current_line: String,
+    /// Wall-clock timestamp injection mode.
+    rx_timestamps: Option<RxTimestampMode>,
+    /// True when the next visible character begins a new line (used by First mode).
+    at_line_start: bool,
 }
 
 impl Display {
-    fn new(history_file_path: &str) -> Display {
+    fn new(history_file_path: &str, rx_timestamps: Option<RxTimestampMode>) -> Display {
         let term = NativeTerminal::new().expect("Failed to initialize terminal");
         let (cols, rows) = term.size();
         Display {
@@ -70,7 +85,41 @@ impl Display {
             pending_wrap: false,
             line_buffer: VecDeque::new(),
             current_line: String::new(),
+            rx_timestamps,
+            at_line_start: true,
         }
+    }
+
+    /// Pre-process `data` by injecting wall-clock timestamps according to `rx_timestamps`.
+    /// Mutates `at_line_start` to track position across successive calls.
+    fn inject_timestamps(&mut self, data: &str) -> String {
+        let mut out = String::with_capacity(data.len() + 20);
+        match &self.rx_timestamps {
+            Some(RxTimestampMode::First) => {
+                for ch in data.chars() {
+                    if self.at_line_start && ch != '\r' && ch != '\n' {
+                        out.push_str(&Local::now().format("[%H:%M:%S%.3f] ").to_string());
+                        self.at_line_start = false;
+                    }
+                    if ch == '\n' {
+                        self.at_line_start = true;
+                    }
+                    out.push(ch);
+                }
+            }
+            Some(RxTimestampMode::Eol) => {
+                for ch in data.chars() {
+                    if ch == '\n' {
+                        out.push_str(&Local::now().format(" [%H:%M:%S%.3f]").to_string());
+                    }
+                    out.push(ch);
+                }
+            }
+            None => {
+                return data.to_string();
+            }
+        }
+        out
     }
 
     fn init(&mut self) -> Result<(), Box<dyn std::error::Error>> {
@@ -117,8 +166,20 @@ impl Display {
     /// Write serial output data using the scroll region.
     /// The terminal handles scrolling naturally, which correctly fills the
     /// scrollback buffer.
+    /// Does NOT redraw the prompt — call `draw_prompt` once after draining
+    /// a batch of serial events to avoid redundant escape sequences.
     fn print_output(&mut self, data: &str) {
         self.is_error = false;
+
+        // Inject wall-clock receive timestamps if enabled.
+        // We bind to a local to extend lifetime before borrowing as &str.
+        let owned;
+        let data: &str = if self.rx_timestamps.is_some() {
+            owned = self.inject_timestamps(data);
+            &owned
+        } else {
+            data
+        };
 
         // Hide cursor while updating the scroll region so it doesn't
         // flicker in the output area
@@ -138,7 +199,7 @@ impl Display {
             }
         }
 
-        // Clear the prompt line  
+        // Clear the prompt line
         self.term.reset_scroll_region();
         self.term.move_to(0, self.rows - 1);
         self.term.clear_line();
@@ -151,8 +212,8 @@ impl Display {
 
         let max_output_row = self.rows.saturating_sub(2);
 
-        // Write the data directly — the terminal scrolls within the scroll region
-        let mut out = io::stdout();
+        // Build a single output buffer to minimise syscalls
+        let mut out_buf = String::with_capacity(data.len() + 32);
         for ch in data.chars() {
             match ch {
                 '\n' => {
@@ -160,17 +221,17 @@ impl Display {
                     self.output_col = 0;
                     if self.output_row >= max_output_row {
                         // At bottom of scroll region — write \n which makes terminal scroll
-                        write!(out, "\n").unwrap();
+                        out_buf.push('\n');
                         // Row stays at max (terminal scrolled the region up)
                     } else {
                         self.output_row += 1;
-                        write!(out, "\n").unwrap();
+                        out_buf.push('\n');
                     }
                 }
                 '\r' => {
                     self.pending_wrap = false;
                     self.output_col = 0;
-                    write!(out, "\r").unwrap();
+                    out_buf.push('\r');
                 }
                 c if !c.is_control() => {
                     if self.pending_wrap {
@@ -178,14 +239,14 @@ impl Display {
                         // \r cancels the terminal's deferred-wrap state (moving
                         // cursor to column 0), then \n advances one row
                         // (scrolling if at the bottom of the scroll region).
-                        write!(out, "\r\n").unwrap();
+                        out_buf.push_str("\r\n");
                         self.output_col = 0;
                         if self.output_row < max_output_row {
                             self.output_row += 1;
                         }
                         self.pending_wrap = false;
                     }
-                    write!(out, "{}", c).unwrap();
+                    out_buf.push(c);
                     self.output_col += 1;
                     if self.output_col >= self.cols {
                         // Cursor is at the last column in deferred-wrap state.
@@ -199,9 +260,10 @@ impl Display {
                 }
             }
         }
+        let mut out = io::stdout();
+        out.write_all(out_buf.as_bytes()).unwrap();
         out.flush().unwrap();
-
-        self.draw_prompt();
+        // Prompt is redrawn by the caller after the full serial drain batch.
     }
 
     /// Redraw the output area from the line buffer after a resize.
@@ -462,8 +524,18 @@ pub fn start_native(
     log: bool,
     log_folder: String,
     vid: Option<String>,
+    rx_timestamps: Option<String>,
     history_file_name: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let rx_ts_mode = match rx_timestamps.as_deref() {
+        Some("first") => Some(RxTimestampMode::First),
+        Some("eol")   => Some(RxTimestampMode::Eol),
+        Some(other) => {
+            eprintln!("Warning: unknown --rx-timestamps value '{}', valid values are 'first' or 'eol'", other);
+            None
+        }
+        None => None,
+    };
     // Open log file if required
     let log_file = open_log_file(log, &log_folder)?;
 
@@ -501,7 +573,7 @@ pub fn start_native(
 
     // Set up display
     let history_file_path = format!("{}/{}", app_folder, history_file_name);
-    let mut display = Display::new(&history_file_path);
+    let mut display = Display::new(&history_file_path, rx_ts_mode);
     display.init()?;
     display.draw_prompt();
 
@@ -534,34 +606,49 @@ pub fn start_native(
             break;
         }
 
-        // 2. Drain pending serial data (non-blocking, bounded so we re-check keys)
+        // 2. Drain pending serial data (non-blocking, bounded so we re-check keys).
+        // draw_prompt is called once after the full drain rather than per-message
+        // to avoid redundant ANSI escape sequences at high data rates.
         const MAX_SERIAL_DRAIN: usize = 64;
+        let mut had_serial_data = false;
+        let mut drain_error = false;
         for _ in 0..MAX_SERIAL_DRAIN {
             match serial_rx.try_recv() {
                 Ok(ReaderEvent::Data(bytes)) => {
                     let text = String::from_utf8_lossy(&bytes);
                     display.print_output(&text);
                     write_to_log(&log_file, &text);
+                    had_serial_data = true;
                 }
                 Ok(ReaderEvent::Error(msg)) => {
                     display.show_error(&msg);
+                    drain_error = true;
+                    break;
                 }
                 Ok(ReaderEvent::Reconnected) => {
                     display.show_info("Reconnected");
                     thread::sleep(Duration::from_millis(500));
                     display.draw_prompt();
+                    had_serial_data = false; // prompt already drawn
+                    break;
                 }
                 Err(mpsc::TryRecvError::Empty) => break,
                 Err(mpsc::TryRecvError::Disconnected) => {
                     display.show_error("Serial reader thread disconnected");
                     running.store(false, Ordering::SeqCst);
+                    drain_error = true;
                     break;
                 }
             }
         }
+        // Redraw the prompt exactly once after the drain batch
+        if had_serial_data && !drain_error {
+            display.draw_prompt();
+        }
 
-        // 3. Wait briefly for next event (avoids busy-spin)
-        let _ = display.term.poll_event(Duration::from_millis(15));
+        // 3. Wait briefly for next event (avoids busy-spin).
+        // 5ms keeps latency low while still yielding the CPU.
+        let _ = display.term.poll_event(Duration::from_millis(5));
     }
 
     // Clean up — Display's Drop will restore terminal
@@ -578,6 +665,7 @@ pub fn start_non_native(
     log: bool,
     log_folder: String,
     vid: Option<String>,
+    rx_timestamps: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut args = vec![
         "monitor".to_string(),
@@ -600,6 +688,10 @@ pub fn start_non_native(
         args.push("-l".to_string());
         args.push("-g".to_string());
         args.push(log_folder);
+    }
+    if let Some(mode) = rx_timestamps {
+        args.push("--rx-timestamps".to_string());
+        args.push(mode);
     }
 
     let process = Command::new("raft.exe")

@@ -118,6 +118,9 @@ struct MonitorCmd {
     // Option to specify vendor ID
     #[clap(short = 'v', long, help = "Vendor ID")]
     vid: Option<String>,
+    // Option to inject wall-clock timestamps into received lines
+    #[clap(long, value_name = "MODE", help = "Prefix received lines with wall-clock time: 'first' (on first byte) or 'eol' (on newline)")]
+    rx_timestamps: Option<String>,
 }
 
 // Define arguments for the 'run' subcommand
@@ -178,6 +181,9 @@ struct RunCmd {
     // Option to force flashing file system (overrides saved --no-fs)
     #[clap(long, help = "Flash the file system image (overrides saved --no-fs)", conflicts_with = "no_fs")]
     fs: bool,
+    // Option to inject wall-clock timestamps into received lines
+    #[clap(long, value_name = "MODE", help = "Prefix received lines with wall-clock time: 'first' (on first byte) or 'eol' (on newline)")]
+    rx_timestamps: Option<String>,
 }
 
 // Define arguments for the 'flash' subcommand
@@ -345,7 +351,8 @@ fn main() {
             // Start the serial monitor
             if !cmd.native_serial_port && is_wsl() {
                 let result = serial_monitor::start_non_native(app_folder, 
-                            port.clone(), monitor_baud, cmd.no_reconnect, log, log_folder, vid.clone());
+                            port.clone(), monitor_baud, cmd.no_reconnect, log, log_folder, vid.clone(),
+                            cmd.rx_timestamps.clone());
                 match result {
                     Ok(()) => std::process::exit(0),
                     Err(e) => {
@@ -357,6 +364,7 @@ fn main() {
 
             let result = serial_monitor::start_native(app_folder, 
                         port, monitor_baud, cmd.no_reconnect, log, log_folder, vid,
+                        cmd.rx_timestamps,
                         HISTORY_FILE_NAME.to_string());
             match result {
                 Ok(()) => std::process::exit(0),
@@ -427,7 +435,8 @@ fn main() {
             // Start the serial monitor
             if !cmd.native_serial_port && is_wsl() {
                 let result = serial_monitor::start_non_native(app_folder, 
-                            port.clone(), monitor_baud, cmd.no_reconnect, log, log_folder, vid.clone());
+                            port.clone(), monitor_baud, cmd.no_reconnect, log, log_folder, vid.clone(),
+                            cmd.rx_timestamps.clone());
                 match result {
                     Ok(()) => std::process::exit(0),
                     Err(e) => {
@@ -439,6 +448,7 @@ fn main() {
 
             let result = serial_monitor::start_native(app_folder, 
                             port, monitor_baud, cmd.no_reconnect, log, log_folder, vid,
+                            cmd.rx_timestamps,
                             HISTORY_FILE_NAME.to_string());
             match result {
                 Ok(()) => std::process::exit(0),
