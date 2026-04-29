@@ -83,12 +83,12 @@ fn get_schema(base_folder: &str) -> serde_json::Value {
         },
         {
             "key": "target_chip",
-            "prompt": "Target Chip (e.g. esp32, esp32s3, esp32c3,esp32c6)",
+            "prompt": "Target Chip (e.g. esp32, esp32s3, esp32c3, esp32c5, esp32c6)",
             "default": "esp32s3",
             "datatype": "string",
             "description": "The target chip for the project",
-            "pattern": "^(esp32|esp32s3|esp32c3|esp32c6)$",
-            "message": "Target chip must be one of esp32, esp32s3, esp32c3, esp32c6",
+            "pattern": "^(esp32|esp32s3|esp32c3|esp32c5|esp32c6)$",
+            "message": "Target chip must be one of esp32, esp32s3, esp32c3, esp32c5, esp32c6",
             "error": "Invalid target chip"
         },
         // {
