@@ -27,6 +27,8 @@ use raft_cli_utils::get_flash_tool_cmd;
 use raft_cli_utils::{read_build_info, write_build_info, BuildInfo};
 mod app_ports;
 use app_ports::{PortsCmd, manage_ports};
+mod app_libs;
+use app_libs::{fetch_raft_libs, LibsCmd};
 mod cmd_history;
 
 const HISTORY_FILE_NAME: &str = ".raftcli_history"; // Default name, configurable if needed
@@ -47,6 +49,8 @@ enum Action {
     Ota(OtaCmd),
     #[clap(name = "ports", about = "Manage serial ports", alias = "p")]
     Ports(PortsCmd),
+    #[clap(name = "libs", about = "Fetch local Raft development libraries", alias = "l")]
+    Libs(LibsCmd),
     #[clap(name = "debug", about = "Start remote debug console", alias = "d")]
     DebugRemote(DebugRemoteCmd),
     #[clap(name = "esptool", about = "Run esptool directly with arguments", alias = "e")]
@@ -515,6 +519,13 @@ fn main() {
         }
         Action::Ports(cmd) => {
             manage_ports(&cmd);
+        }
+
+        Action::Libs(cmd) => {
+            if let Err(e) = fetch_raft_libs(&cmd) {
+                eprintln!("Libs operation failed: {}", e);
+                std::process::exit(1);
+            }
         }
 
         Action::DebugRemote(cmd) => {

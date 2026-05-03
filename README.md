@@ -15,6 +15,7 @@ This command-line application is used to scaffold, build, flash and monitor raft
   - [Build and flash firmware to a development board](#build-and-flash-firmware-to-a-development-board)
   - [Monitoring a serial port](#monitoring-a-serial-port)
   - [Listing serial ports](#listing-serial-ports)
+  - [Fetching local development libraries](#fetching-local-development-libraries)
   - [Flash firmware to a development board (without rebuilding)](#flash-firmware-to-a-development-board-without-rebuilding)
   - [Run esptool directly](#run-esptool-directly)
   - [OTA (Over-the-air) Update Firmware (using WiFi/Ethernet connection)](#ota-over-the-air-update-firmware-using-wifiethernet-connection)
@@ -61,9 +62,9 @@ python3 -m pip install esptool
 
 Alternatively you can [install the Espressif ESP IDF](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/get-started/index.html). Make sure all of the requirements are installed correctly as I find the Espressif installation docs to be a bit unclear. Also, if installing an ESP IDF from the [releases page on github](https://github.com/espressif/esp-idf/releases), ensure that you install the tools by changing to the ESP IDF folder and running ./install.sh or similar commands on different OSs - see [install-scripts](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-guides/tools/idf-tools.html#install-scripts).
 
-You will also need to make sure you run the raft command line interface program in a shell with the IDF environment installed. You can do this on linux/mac using a command like `. ~/esp/esp-idf-v5.3/export.sh` or similar based on where the esp idf got installed and what version it is. Another option, and one that works on Windows, is use the [Espressif VS Code extension](https://github.com/espressif/vscode-esp-idf-extension) which handles the shell environment for you. Otherwise, on Windows and depending on how you installed the ESP IDF, you may need to use a shortcut that runs the ESP IDF shell. 
+You will also need to make sure you run the raft command line interface program in a shell with the IDF environment installed. You can do this on linux/mac using a command like `. ~/esp/esp-idf-v6.0/export.sh` or similar based on where the esp idf got installed and what version it is. Another option, and one that works on Windows, is use the [Espressif VS Code extension](https://github.com/espressif/vscode-esp-idf-extension) which handles the shell environment for you. Otherwise, on Windows and depending on how you installed the ESP IDF, you may need to use a shortcut that runs the ESP IDF shell. 
 
-In this case use the -d option, i.e. `raft run -d` or `raft build -d` to disable the use of Docker.
+In this case use the `--no-docker` option, i.e. `raft run --no-docker` or `raft build --no-docker` to disable the use of Docker.
 
 ## Creating a new raft app
 
@@ -96,10 +97,10 @@ Additional options are available ...
 ```
 Create a new raft app
 
-Usage: raft new [OPTIONS] [BASE_FOLDER]
+Usage: raft new [OPTIONS] [APPLICATION_FOLDER]
 
 Arguments:
-  [BASE_FOLDER]
+  [APPLICATION_FOLDER]  Path to the application folder
 
 Options:
   -c, --clean  Clean the target folder
@@ -117,26 +118,27 @@ raft b
 
 This will build the raft app in the current folder using Docker (unless you are in a prompt with the ESP IDF already sourced in which case ESP IDF will be used natively). If your raft app has multiple SysTypes then you can define which SysType to build using the -s option.
 
-If you don't want to use Docker for the build then you can use the no-docker option (see below) and, in this case, you will need to ensure that a correctly installed ESP IDF (Espressif's development environment) is present on the system. You can override the location of this ESP IDF using the -i option.
+If you don't want to use Docker for the build then you can use the no-docker option (see below) and, in this case, you will need to ensure that a correctly installed ESP IDF (Espressif's development environment) is present on the system. You can ask RaftCLI to find a local ESP IDF matching the Dockerfile version using the -i option, or override the ESP IDF folder using the -e option.
 
 To perform a clean build use the -c option.
 
 ```
 Build a raft app
 
-Usage: raft build [OPTIONS] [APP_FOLDER]
+Usage: raft build [OPTIONS] [APPLICATION_FOLDER]
 
 Arguments:
-  [APP_FOLDER]
+  [APPLICATION_FOLDER]  Path to the application folder
 
 Options:
-  -s, --sys-type <SYS_TYPE>  System type to build
-  -c, --clean                Clean the target folder
-  -n, --clean-only           Clean only
-      --docker               Use docker for build
-      --no-docker            Do not use docker for build
-  -i, --idf-path <IDF_PATH>  Full path to idf.py (when not using docker)
-  -h, --help                 Print help
+  -s, --sys-type <SYS_TYPE>          System type to build
+  -c, --clean                        Clean the target folder
+  -n, --clean-only                   Clean only
+      --docker                       Use docker for build
+      --no-docker                    Do not use docker for build
+  -i, --idf-local-build              Find and use local ESP IDF matching Dockerfile version
+  -e, --esp-idf-path <ESP_IDF_PATH>  Full path to ESP IDF folder for local build (when not using docker)
+  -h, --help                         Print help
 ```
 
 ## Build and flash firmware to a development board
@@ -170,8 +172,10 @@ Options:
   -c, --clean                        Clean the target folder
       --docker                       Use docker for build
       --no-docker                    Do not use docker for build
-  -i, --idf-path <IDF_PATH>          Full path to idf.py (when not using docker)
+  -i, --idf-local-build              Find and use local ESP IDF matching Dockerfile version
+  -e, --esp-idf-path <ESP_IDF_PATH>  Full path to ESP IDF folder for local build (when not using docker)
   -p, --port <PORT>                  Serial port
+  -o, --ip-addr <IP_ADDR>            IP address or hostname for OTA flashing
   -b, --monitor-baud <MONITOR_BAUD>  Monitor baud rate
   -r, --no-reconnect                 Disable serial port reconnection when monitoring
   -n, --native-serial-port           Native serial port when in WSL
@@ -182,6 +186,7 @@ Options:
   -v, --vid <VID>                    Vendor ID
       --no-fs                        Skip flashing the file system image
       --fs                           Flash the file system image (overrides saved --no-fs)
+      --rx-timestamps <MODE>         Prefix received lines with wall-clock time: 'first' (on first byte) or 'eol' (on newline)
   -h, --help                         Print help
 ```
 
@@ -201,15 +206,15 @@ Logging of received serial data can be enabled using the -l option. This is very
 
 The -r option is used to suppress automatic reconnection of serial ports during serial monitoring. Normally the serial monitor remains running even if a development board is disconnected. This makes development easier as it is often necessary to reset or disconnect a development board and having to restart the serial monitor each time is a nuissance. But if required the -r option can be specified which will disable reconnection.
 
-The -n option is only relevant when using Windows Subsystem for Linux (WSL). The normal behaviour when using WSL is that flashing and serial monitoring are done with Windows versions of the raftcli software. This is because WSL (specifically WSL2) doesn't have support for USB serial ports to be shared with the host operating system. Specifying -n causes the raftcli to use a linux to access the serial port. This will only work if you are using something like (USBIPD)[https://github.com/dorssel/usbipd-win].
+The -n option is only relevant when using Windows Subsystem for Linux (WSL). The normal behaviour when using WSL is that flashing and serial monitoring are done with Windows versions of the raftcli software. This is because WSL (specifically WSL2) doesn't have support for USB serial ports to be shared with the host operating system. Specifying -n causes raftcli to use Linux to access the serial port. This will only work if you are using something like [USBIPD](https://github.com/dorssel/usbipd-win).
 
 ```
 Monitor a serial port
 
-Usage: raft.exe monitor [OPTIONS] [APP_FOLDER]
+Usage: raft monitor [OPTIONS] [APPLICATION_FOLDER]
 
 Arguments:
-  [APP_FOLDER]
+  [APPLICATION_FOLDER]  Path to the application folder
 
 Options:
   -p, --port <PORT>                  Serial port
@@ -219,8 +224,9 @@ Options:
   -l, --log                          Log serial data to file
   -g, --log-folder <LOG_FOLDER>      Folder for log files [default: ./logs]
   -v, --vid <VID>                    Vendor ID
+      --rx-timestamps <MODE>         Prefix received lines with wall-clock time: 'first' (on first byte) or 'eol' (on newline)
   -h, --help                         Print help
-  ```
+```
 
 To exit the serial monitor press ESC
 
@@ -236,6 +242,7 @@ raft p
 
 Manage serial ports
 
+```
 Usage: raft ports [OPTIONS]
 
 Options:
@@ -250,8 +257,42 @@ Options:
       --preferred-vids <PREFERRED_VIDS>  Preferred VIDs (comma separated list)
   -n, --native-serial-port               Native serial port when in WSL
   -h, --help                             Print help
+```
 
 When using WSL, the ports command automatically delegates to the Windows version (raft.exe) to access USB serial ports unless the -n flag is specified.
+
+## Fetching local development libraries
+
+Raft projects can use local library checkouts from a `raftdevlibs` folder in the project root. This is useful when developing or debugging Raft libraries locally, because the Raft build system will use `raftdevlibs/<LibraryName>` instead of fetching that library during the build.
+
+To fetch the standard Raft libraries into the current project, use:
+
+```
+raft libs
+OR
+raft l
+```
+
+By default this fetches `RaftCore`, `RaftSysMods`, `RaftI2C` and `RaftWebServer` from the `robdobsn` GitHub account, checks out `main`, and stores them in `./raftdevlibs`.
+
+```
+Fetch local Raft development libraries
+
+Usage: raft libs [OPTIONS] [APPLICATION_FOLDER]
+
+Arguments:
+  [APPLICATION_FOLDER]  Path to the application folder
+
+Options:
+      --account <ACCOUNT>  GitHub account or organisation [default: robdobsn]
+      --libs <LIB>...      Libraries to fetch
+      --branch <BRANCH>    Git branch, tag or commit to checkout [default: main]
+      --dest <DEST_DIR>    Destination directory (default: <app-folder>/raftdevlibs)
+      --force              Update existing repositories even when they have uncommitted changes
+  -h, --help               Print help
+```
+
+Existing repositories are updated with `git fetch --all --tags`, checkout of the requested branch/tag/commit, and a fast-forward pull for branch refs. If an existing checkout has uncommitted changes, the command stops before updating it unless `--force` is specified.
 
 ## Flash firmware to a development board (without rebuilding)
 
@@ -272,10 +313,10 @@ By default, all partitions are flashed including the file system image. Use the 
 ```
 Flash firmware to the device
 
-Usage: raft.exe flash [OPTIONS] [APP_FOLDER]
+Usage: raft flash [OPTIONS] [APPLICATION_FOLDER]
 
 Arguments:
-  [APP_FOLDER]
+  [APPLICATION_FOLDER]  Path to the application folder
 
 Options:
   -s, --sys-type <SYS_TYPE>      System type to flash
@@ -311,7 +352,7 @@ This command automatically detects and uses esptool whether it's installed as a 
 ```
 Run esptool directly with arguments
 
-Usage: raft.exe esptool [OPTIONS] [ARGS]...
+Usage: raft esptool [OPTIONS] [ARGS]...
 
 Arguments:
   [ARGS]...
@@ -326,9 +367,9 @@ Options:
 To use OTA updates the device must be connected to a WiFi or Ethernet network and the IP address (or hostname) of the device must be known.
 
 ```
-raft ota
+raft ota <IP_ADDRESS_OR_HOSTNAME>
 OR
-raft o
+raft o <IP_ADDRESS_OR_HOSTNAME>
 ```
 
 A connection (TCP) is made to the device and the standard HTTP POST protocol with form data is used to send the new firmware to the device. If required the -c option can be used which forces the use of the curl application to send the data - otherwise sending is done using the rust TcpStream mechanism which also permits rate and progress information to be shown.
@@ -338,11 +379,11 @@ Only the main binary of the application is written. The file-system and other pa
 ```
 Over-the-air update
 
-Usage: raft.exe ota [OPTIONS] <IP_ADDR> [APP_FOLDER]
+Usage: raft ota [OPTIONS] <IP_ADDRESS_OR_HOSTNAME> [APPLICATION_FOLDER]
 
 Arguments:
-  <IP_ADDR>
-  [APP_FOLDER]
+  <IP_ADDRESS_OR_HOSTNAME>  IP address or hostname for OTA
+  [APPLICATION_FOLDER]      Path to the application folder
 
 Options:
   -p, --ip-port <IP_PORT>    IP Port
@@ -375,8 +416,8 @@ Start remote debug console
 Usage: raft debug [OPTIONS] <IP_ADDRESS_OR_HOSTNAME> [APPLICATION_FOLDER]
 
 Arguments:
-  <IP_ADDRESS_OR_HOSTNAME>
-  [APPLICATION_FOLDER]
+  <IP_ADDRESS_OR_HOSTNAME>  Device address for debugging (hostname or IP)
+  [APPLICATION_FOLDER]      Path to the application folder
 
 Options:
   -p, --port <PORT>              Port for debugging [default: 8080]
@@ -424,7 +465,7 @@ The following questions are asked to complete the scaffolding from template file
 | Project Name | name for your project |
 | Target Chip | e.g. esp32, esp32s3 or esp32c3 |
 | SysType | the name of the main SysType (or system type) - SysTypes, for instance, allow a project to target different hardware - set the name for the main SysType that you want to create here - additional SysTypes are added manually |
-| ESP IDF Version | the version of the ESP IDF to use to build the app |
+| ESP IDF Version | the version of the ESP IDF to use to build the app - defaults to 6.0 |
 | Create User SysMod | Select true to create a SysMod for the main part of your application's code - SysMods are a key concept in raft apps as they allow user code to be managed like an Arduino app with setup() and loop() functions |
 | User SysMod Class | If you answered true above then you will be asked for the name you want to give to your app's main SysMod |
 | User SysMod Name | A SysMod can be given a different name from its class - so either enter the same name used for the Class here or give it a different name |
