@@ -8,8 +8,11 @@ This command-line application is used to scaffold, build, flash and monitor raft
 
 - [Raft CLI (command-line interface)](#raft-cli-command-line-interface)
   - [Installation](#installation)
+    - [Linux/WSL prerequisites](#linuxwsl-prerequisites)
     - [Build using Docker](#build-using-docker)
     - [Build using ESP IDF](#build-using-esp-idf)
+  - [Troubleshooting](#troubleshooting)
+    - [cargo install fails on Linux/WSL (libudev-sys / pkg-config)](#cargo-install-fails-on-linuxwsl-libudev-sys--pkg-config)
   - [Creating a new raft app](#creating-a-new-raft-app)
   - [Building a raft app](#building-a-raft-app)
   - [Build and flash firmware to a development board](#build-and-flash-firmware-to-a-development-board)
@@ -31,18 +34,29 @@ Installation using the online service crates.io (raftcli is an application writt
 
 Firstly install Rust (since you are here I assume you are interested in embedded development and Rust may be in your future in any case :) follow these steps to [install rust](https://www.rust-lang.org/tools/install)
 
+### Linux/WSL prerequisites
+
+On Linux (including WSL), install these system packages **before** running `cargo install raftcli`:
+
+```sh
+sudo apt-get update
+sudo apt-get install -y pkg-config libudev-dev
+```
+
+Why this is needed: `raftcli` depends on `serialport`, which on Linux uses `libudev` via `pkg-config` at build time.
+
 Then install the app with:
 
 ```
 cargo install raftcli
 ```
 
-If you are using a linux OS and encountering issues then please make sure the following system dependencies are installed:
+If you are using a Linux OS and see an install failure like:
 
-```sh
-sudo apt-get update
-sudo apt-get install pkg-config libudev-dev
-```
+- `failed to run custom build command for libudev-sys`
+- `The pkg-config command could not be found`
+
+see the [Troubleshooting](#troubleshooting) section below for exact recovery steps.
 
 There are some addition things you'll need to have on your system to support building and flashing raft apps:
 
@@ -65,6 +79,29 @@ Alternatively you can [install the Espressif ESP IDF](https://docs.espressif.com
 You will also need to make sure you run the raft command line interface program in a shell with the IDF environment installed. You can do this on linux/mac using a command like `. ~/esp/esp-idf-v6.0/export.sh` or similar based on where the esp idf got installed and what version it is. Another option, and one that works on Windows, is use the [Espressif VS Code extension](https://github.com/espressif/vscode-esp-idf-extension) which handles the shell environment for you. Otherwise, on Windows and depending on how you installed the ESP IDF, you may need to use a shortcut that runs the ESP IDF shell. 
 
 In this case use the `--no-docker` option, i.e. `raft run --no-docker` or `raft build --no-docker` to disable the use of Docker.
+
+## Troubleshooting
+
+### cargo install fails on Linux/WSL (libudev-sys / pkg-config)
+
+If `cargo install raftcli` fails with errors such as:
+
+- `failed to run custom build command for libudev-sys`
+- `The pkg-config command could not be found`
+
+install the required system packages and retry:
+
+```sh
+sudo apt-get update
+sudo apt-get install -y pkg-config libudev-dev
+cargo install raftcli
+```
+
+Equivalent packages on other distributions:
+
+- Fedora/RHEL: `sudo dnf install pkgconf-pkg-config systemd-devel`
+- Arch: `sudo pacman -S pkgconf systemd`
+- Alpine: `sudo apk add pkgconfig eudev-dev`
 
 ## Creating a new raft app
 
