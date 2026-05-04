@@ -125,6 +125,9 @@ struct MonitorCmd {
     // Option to inject wall-clock timestamps into received lines
     #[clap(long, value_name = "MODE", help = "Prefix received lines with wall-clock time: 'first' (on first byte) or 'eol' (on newline)")]
     rx_timestamps: Option<String>,
+    // Option to stream raw serial data without terminal UI for automation
+    #[clap(long, help = "Stream serial data to stdout without terminal UI for automation")]
+    agent_stream: bool,
 }
 
 // Define arguments for the 'run' subcommand
@@ -188,6 +191,9 @@ struct RunCmd {
     // Option to inject wall-clock timestamps into received lines
     #[clap(long, value_name = "MODE", help = "Prefix received lines with wall-clock time: 'first' (on first byte) or 'eol' (on newline)")]
     rx_timestamps: Option<String>,
+    // Option to stream raw serial data without terminal UI for automation
+    #[clap(long, help = "Stream serial data to stdout without terminal UI for automation")]
+    agent_stream: bool,
 }
 
 // Define arguments for the 'flash' subcommand
@@ -356,7 +362,7 @@ fn main() {
             if !cmd.native_serial_port && is_wsl() {
                 let result = serial_monitor::start_non_native(app_folder, 
                             port.clone(), monitor_baud, cmd.no_reconnect, log, log_folder, vid.clone(),
-                            cmd.rx_timestamps.clone());
+                            cmd.rx_timestamps.clone(), cmd.agent_stream);
                 match result {
                     Ok(()) => std::process::exit(0),
                     Err(e) => {
@@ -369,7 +375,7 @@ fn main() {
             let result = serial_monitor::start_native(app_folder, 
                         port, monitor_baud, cmd.no_reconnect, log, log_folder, vid,
                         cmd.rx_timestamps,
-                        HISTORY_FILE_NAME.to_string());
+                        HISTORY_FILE_NAME.to_string(), cmd.agent_stream);
             match result {
                 Ok(()) => std::process::exit(0),
                 Err(e) => {
@@ -440,7 +446,7 @@ fn main() {
             if !cmd.native_serial_port && is_wsl() {
                 let result = serial_monitor::start_non_native(app_folder, 
                             port.clone(), monitor_baud, cmd.no_reconnect, log, log_folder, vid.clone(),
-                            cmd.rx_timestamps.clone());
+                            cmd.rx_timestamps.clone(), cmd.agent_stream);
                 match result {
                     Ok(()) => std::process::exit(0),
                     Err(e) => {
@@ -453,7 +459,7 @@ fn main() {
             let result = serial_monitor::start_native(app_folder, 
                             port, monitor_baud, cmd.no_reconnect, log, log_folder, vid,
                             cmd.rx_timestamps,
-                            HISTORY_FILE_NAME.to_string());
+                            HISTORY_FILE_NAME.to_string(), cmd.agent_stream);
             match result {
                 Ok(()) => std::process::exit(0),
                 Err(e) => {

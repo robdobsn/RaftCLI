@@ -2,3 +2,4 @@
 /test_target
 logs/
 .raftcli_history
+__pycache__/

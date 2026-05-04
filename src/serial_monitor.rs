@@ -9,7 +9,7 @@
 
 use serialport::{new as serial_new, SerialPort};
 use std::collections::VecDeque;
-use std::io::{self, Write};
+use std::io::{self, BufRead, Write};
 use std::process::{Command, Stdio};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -38,6 +38,53 @@ pub enum RxTimestampMode {
     First,
     /// Inject timestamp at the end of each line (before the newline)
     Eol,
+}
+
+fn parse_rx_timestamp_mode(rx_timestamps: Option<&str>) -> Option<RxTimestampMode> {
+    match rx_timestamps {
+        Some("first") => Some(RxTimestampMode::First),
+        Some("eol") => Some(RxTimestampMode::Eol),
+        Some(other) => {
+            eprintln!(
+                "Warning: unknown --rx-timestamps value '{}', valid values are 'first' or 'eol'",
+                other
+            );
+            None
+        }
+        None => None,
+    }
+}
+
+fn inject_timestamps_for_stream(
+    data: &str,
+    rx_timestamps: &Option<RxTimestampMode>,
+    at_line_start: &mut bool,
+) -> String {
+    let mut out = String::with_capacity(data.len() + 20);
+    match rx_timestamps {
+        Some(RxTimestampMode::First) => {
+            for ch in data.chars() {
+                if *at_line_start && ch != '\r' && ch != '\n' {
+                    out.push_str(&Local::now().format("[%H:%M:%S%.3f] ").to_string());
+                    *at_line_start = false;
+                }
+                if ch == '\n' {
+                    *at_line_start = true;
+                }
+                out.push(ch);
+            }
+        }
+        Some(RxTimestampMode::Eol) => {
+            for ch in data.chars() {
+                if ch == '\n' {
+                    out.push_str(&Local::now().format(" [%H:%M:%S%.3f]").to_string());
+                }
+                out.push(ch);
+            }
+        }
+        None => return data.to_string(),
+    }
+    out
 }
 
 // Events sent from the reader thread to the main thread
@@ -526,16 +573,9 @@ pub fn start_native(
     vid: Option<String>,
     rx_timestamps: Option<String>,
     history_file_name: String,
+    agent_stream: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let rx_ts_mode = match rx_timestamps.as_deref() {
-        Some("first") => Some(RxTimestampMode::First),
-        Some("eol")   => Some(RxTimestampMode::Eol),
-        Some(other) => {
-            eprintln!("Warning: unknown --rx-timestamps value '{}', valid values are 'first' or 'eol'", other);
-            None
-        }
-        None => None,
-    };
+    let rx_ts_mode = parse_rx_timestamp_mode(rx_timestamps.as_deref());
     // Open log file if required
     let log_file = open_log_file(log, &log_folder)?;
 
@@ -570,6 +610,10 @@ pub fn start_native(
         baud_rate,
         write_rx,
     );
+
+    if agent_stream {
+        return run_agent_stream(serial_rx, write_tx, running, no_reconnect, log_file, rx_ts_mode);
+    }
 
     // Set up display
     let history_file_path = format!("{}/{}", app_folder, history_file_name);
@@ -666,6 +710,7 @@ pub fn start_non_native(
     log_folder: String,
     vid: Option<String>,
     rx_timestamps: Option<String>,
+    agent_stream: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut args = vec![
         "monitor".to_string(),
@@ -682,7 +727,7 @@ pub fn start_non_native(
         args.push(v);
     }
     if no_reconnect {
-        args.push("-n".to_string());
+        args.push("-r".to_string());
     }
     if log {
         args.push("-l".to_string());
@@ -693,26 +738,142 @@ pub fn start_non_native(
         args.push("--rx-timestamps".to_string());
         args.push(mode);
     }
+    if agent_stream {
+        args.push("--agent-stream".to_string());
+    }
 
-    let process = Command::new("raft.exe")
-        .args(args)
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .spawn();
+    let mut command = Command::new("raft.exe");
+    command.args(args);
+    if agent_stream {
+        command.stdin(Stdio::inherit()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    } else {
+        command.stdin(Stdio::inherit()).stdout(Stdio::inherit()).stderr(Stdio::inherit());
+    }
+
+    let process = command.spawn();
 
     match process {
         Ok(mut child) => {
-            match child.wait() {
-                Ok(_status) => {}
-                Err(e) => {
-                    println!("Error in serial monitor: {:?}", e);
-                }
+            let stdout_thread = if agent_stream {
+                child.stdout.take().map(|mut stdout| {
+                    thread::spawn(move || {
+                        let mut out = io::stdout();
+                        let _ = io::copy(&mut stdout, &mut out);
+                        let _ = out.flush();
+                    })
+                })
+            } else {
+                None
+            };
+
+            let stderr_thread = if agent_stream {
+                child.stderr.take().map(|mut stderr| {
+                    thread::spawn(move || {
+                        let mut err = io::stderr();
+                        let _ = io::copy(&mut stderr, &mut err);
+                        let _ = err.flush();
+                    })
+                })
+            } else {
+                None
+            };
+
+            let status = child.wait()?;
+            if let Some(handle) = stdout_thread {
+                let _ = handle.join();
+            }
+            if let Some(handle) = stderr_thread {
+                let _ = handle.join();
+            }
+            if !status.success() {
+                return Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("Windows raft.exe monitor command failed with exit code: {:?}", status.code()),
+                )));
             }
         }
         Err(e) => {
-            println!("Error starting serial monitor: {:?}", e);
+            if e.kind() == std::io::ErrorKind::NotFound {
+                return Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "Could not find raft.exe (Windows version of raftcli).\n\n\
+                    When using WSL, raftcli needs the Windows version (raft.exe) to access USB serial ports.\n\n\
+                    Please ensure:\n\
+                    1. raftcli is installed on Windows: cargo install raftcli\n\
+                    2. raft.exe is in your Windows PATH\n\
+                    3. You can access Windows executables from WSL (try: raft.exe --version)\n\n\
+                    Alternative: Use the -n flag to attempt monitoring with native Linux serial ports (requires USBIPD or similar)",
+                )));
+            }
+            return Err(Box::new(e));
         }
     }
 
+    Ok(())
+}
+
+fn run_agent_stream(
+    serial_rx: mpsc::Receiver<ReaderEvent>,
+    write_tx: mpsc::Sender<Vec<u8>>,
+    running: Arc<AtomicBool>,
+    no_reconnect: bool,
+    log_file: crate::console_log::SharedLogFile,
+    rx_timestamps: Option<RxTimestampMode>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let stdin_write_tx = write_tx.clone();
+    thread::spawn(move || {
+        let stdin = io::stdin();
+        for line in stdin.lock().lines() {
+            match line {
+                Ok(line) => {
+                    let mut data = line.into_bytes();
+                    data.push(b'\n');
+                    if stdin_write_tx.send(data).is_err() {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
+    let mut at_line_start = true;
+    let mut stdout = io::stdout();
+    while running.load(Ordering::SeqCst) {
+        match serial_rx.recv_timeout(Duration::from_millis(50)) {
+            Ok(ReaderEvent::Data(bytes)) => {
+                if rx_timestamps.is_some() {
+                    let text = String::from_utf8_lossy(&bytes);
+                    let text = inject_timestamps_for_stream(&text, &rx_timestamps, &mut at_line_start);
+                    stdout.write_all(text.as_bytes())?;
+                    stdout.flush()?;
+                    write_to_log(&log_file, &text);
+                } else {
+                    stdout.write_all(&bytes)?;
+                    stdout.flush()?;
+                    let text = String::from_utf8_lossy(&bytes);
+                    write_to_log(&log_file, &text);
+                }
+            }
+            Ok(ReaderEvent::Error(msg)) => {
+                eprintln!("Serial monitor error: {}", msg);
+                if no_reconnect {
+                    running.store(false, Ordering::SeqCst);
+                    return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, msg)));
+                }
+            }
+            Ok(ReaderEvent::Reconnected) => {
+                eprintln!("Serial monitor reconnected");
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                running.store(false, Ordering::SeqCst);
+                return Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "Serial reader thread disconnected",
+                )));
+            }
+        }
+    }
     Ok(())
 }
