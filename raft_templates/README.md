@@ -8,6 +8,16 @@ Follow the instructions to install the Raft CLI and then:
 raft run
 ```
 
+## Customising this app
+
+A few things you will commonly want to change after the project is generated:
+
+- **Raft library versions** (e.g. `RaftCore`, `RaftSysMods`, `RaftWebServer`, `RaftI2C`) — these default to the `main` branch. To pin a different branch, tag or commit, edit [`systypes/Common/features.cmake`](systypes/Common/features.cmake) and change the `@main` suffix on the relevant component name (for example `RaftCore@v1.2.3`).
+
+- **Hardware and runtime settings** (e.g. I2C SDA/SCL pin numbers, BLE settings, WiFi AP credentials, enabled SysMods) — edit [`systypes/{{sys_type_name}}/SysTypes.json`](systypes/{{sys_type_name}}/SysTypes.json). I2C pins live under `DevMan.Buses.buslist` (the `sdaPin` / `sclPin` fields).
+
+- **ESP-IDF version, flash size, partition table, sdkconfig defaults** — see [`systypes/{{sys_type_name}}/sdkconfig.defaults`](systypes/{{sys_type_name}}/sdkconfig.defaults) and [`systypes/{{sys_type_name}}/partitions.csv`](systypes/{{sys_type_name}}/partitions.csv).
+
 Links to further information:
 
 - [Raft command line documentation](https://github.com/robdobsn/RaftCLI)

@@ -74,7 +74,7 @@ fn get_schema(base_folder: &str) -> serde_json::Value {
         {
             "key": "sys_type_name",
             "prompt": "System Type Name",
-            "default": "RaftSys",
+            "default": "{{project_name}}",
             "datatype": "string",
             "description": "The name of the system type to create",
             "pattern": "^[a-zA-Z0-9_]+$",
@@ -204,14 +204,11 @@ fn get_schema(base_folder: &str) -> serde_json::Value {
             "generator": "\n        {{{user_sys_mod_name}}}"
         },
         {
+            // Git tag for the Raft Core library. No prompt: edit
+            // systypes/Common/features.cmake to change after generation.
             "key": "raft_core_git_tag",
-            "prompt": "Raft Core Git Tag",
             "default": "main",
-            "datatype": "string",
-            "description": "The git tag for the Raft Core library",
-            "pattern": "^[a-zA-Z0-9_]*$",
-            "message": "",
-            "error": "Invalid git tag"
+            "datatype": "string"
         },
         {
             "key": "use_raft_sysmods",
@@ -224,14 +221,11 @@ fn get_schema(base_folder: &str) -> serde_json::Value {
             "error": "Invalid Raft SysMods choice"
         },
         {
+            // Git tag for the Raft SysMods library. No prompt: edit
+            // systypes/Common/features.cmake to change after generation.
             "key": "raft_sysmods_git_tag",
-            "prompt": "Raft SysMods Git Tag",
             "default": "main",
             "datatype": "string",
-            "description": "The git tag for the Raft SysMods library",
-            "pattern": "^[a-zA-Z0-9_]*$",
-            "message": "",
-            "error": "Invalid git tag",
             "condition": "use_raft_sysmods"
         },
         {
@@ -250,14 +244,11 @@ fn get_schema(base_folder: &str) -> serde_json::Value {
             "error": "Invalid Raft WebServer choice"
         },
         {
+            // Git tag for the Raft Web Server library. No prompt: edit
+            // systypes/Common/features.cmake to change after generation.
             "key": "raft_webserver_git_tag",
-            "prompt": "Raft Web Server Git Tag",
             "default": "main",
             "datatype": "string",
-            "description": "The git tag for the Raft Web Server library",
-            "pattern": "^[a-zA-Z0-9_]*$",
-            "message": "",
-            "error": "Invalid git tag",
             "condition": "use_raft_webserver"
         },
         {
@@ -338,14 +329,11 @@ fn get_schema(base_folder: &str) -> serde_json::Value {
             "error": "Invalid I2C support choice"
         },
         {
+            // Git tag for the Raft I2C library. No prompt: edit
+            // systypes/Common/features.cmake to change after generation.
             "key": "raft_i2c_git_tag",
-            "prompt": "Raft I2C Git Tag",
             "default": "main",
             "datatype": "string",
-            "description": "The git tag for the Raft I2C library",
-            "pattern": "^[a-zA-Z0-9_]*$",
-            "message": "",
-            "error": "Invalid git tag",
             "condition": "use_raft_i2c"
         },
         {
@@ -502,9 +490,13 @@ pub fn get_user_input(base_folder: &str) -> Result<String, Box<dyn std::error::E
     let mut eval_context = HashMapContext::new();
 
     // PRE-PASS: Initialize all variables with defaults
-    // This ensures every variable exists in the context before any condition evaluation
+    // This ensures every variable exists in the context before any condition evaluation.
+    // Includes prompt-driven questions AND non-prompt questions that have a default
+    // (used for values like git tags that are no longer asked for interactively).
     for question in &questions {
-        if question.prompt.is_some() {
+        if question.prompt.is_some()
+            || (question.default.is_some() && question.generator.is_none())
+        {
             add_default_value_to_context(&question, &mut responses, &mut eval_context);
         }
     }

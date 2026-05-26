@@ -460,6 +460,7 @@ fn open_serial_port(
 ) -> Result<Box<dyn SerialPort>, Box<dyn std::error::Error>> {
     let port = serial_new(port_name, baud_rate)
         .timeout(Duration::from_millis(50))
+        .dtr_on_open(true)
         .open()?;
     Ok(port)
 }
