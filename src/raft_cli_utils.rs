@@ -29,6 +29,7 @@ pub struct BuildInfo {
     pub last_flash_baud: Option<u32>,
     pub last_vid: Option<String>,
     pub last_no_fs: Option<bool>,
+    pub last_ip_addr: Option<String>,
 }
 
 impl Default for BuildInfo {
@@ -43,6 +44,7 @@ impl Default for BuildInfo {
             last_flash_baud: None,
             last_vid: None,
             last_no_fs: None,
+            last_ip_addr: None,
         }
     }
 }
@@ -63,6 +65,7 @@ pub fn read_build_info(app_folder: &str) -> BuildInfo {
                 last_flash_baud: json["last_flash_baud"].as_u64().map(|v| v as u32),
                 last_vid: json["last_vid"].as_str().map(|s| s.to_string()),
                 last_no_fs: json["last_no_fs"].as_bool(),
+                last_ip_addr: json["last_ip_addr"].as_str().map(|s| s.to_string()),
             };
         }
     }
@@ -98,6 +101,7 @@ pub fn write_build_info(
         last_flash_baud: updates.last_flash_baud.or(existing.last_flash_baud),
         last_vid: updates.last_vid.clone().or(existing.last_vid),
         last_no_fs: updates.last_no_fs.or(existing.last_no_fs),
+        last_ip_addr: updates.last_ip_addr.clone().or(existing.last_ip_addr),
     };
 
     let mut raft_info = serde_json::json!({
@@ -112,6 +116,7 @@ pub fn write_build_info(
     if let Some(v) = merged.last_flash_baud { raft_info["last_flash_baud"] = serde_json::json!(v); }
     if let Some(ref v) = merged.last_vid { raft_info["last_vid"] = serde_json::json!(v); }
     if let Some(v) = merged.last_no_fs { raft_info["last_no_fs"] = serde_json::json!(v); }
+    if let Some(ref v) = merged.last_ip_addr { raft_info["last_ip_addr"] = serde_json::json!(v); }
     
     fs::write(&raft_info_path, serde_json::to_string_pretty(&raft_info)?)?;
     Ok(())

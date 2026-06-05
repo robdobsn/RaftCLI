@@ -17,6 +17,9 @@ mod app_flash;
 use app_flash::flash_raft_app;
 mod app_ota;
 use app_ota::ota_raft_app;
+mod http_client;
+mod app_fs;
+use app_fs::{fs_app, FsCmd};
 mod app_debug_remote;
 mod terminal_io;
 mod raft_cli_utils;
@@ -47,6 +50,8 @@ enum Action {
     Flash(FlashCmd),
     #[clap(name = "ota", about = "Over-the-air update", alias = "o")]
     Ota(OtaCmd),
+    #[clap(name = "fs", about = "Manage files on a running device")]
+    Fs(FsCmd),
     #[clap(name = "ports", about = "Manage serial ports", alias = "p")]
     Ports(PortsCmd),
     #[clap(name = "libs", about = "Fetch local Raft development libraries", alias = "l")]
@@ -520,6 +525,12 @@ fn main() {
                 cmd.use_curl);
             if result.is_err() {
                 println!("OTA operation failed {:?}", result);
+                std::process::exit(1);
+            }
+        }
+        Action::Fs(cmd) => {
+            if let Err(e) = fs_app(cmd) {
+                eprintln!("fs operation failed: {}", e);
                 std::process::exit(1);
             }
         }
