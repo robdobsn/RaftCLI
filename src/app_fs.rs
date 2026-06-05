@@ -7,15 +7,56 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use crate::http_client::{http_get, http_post_multipart_file};
+use crate::raft_cli_utils::utils_get_sys_type;
 
 // ---------------------------------------------------------------------------
 // CLI definitions
 // ---------------------------------------------------------------------------
 
 #[derive(Clone, Args, Debug)]
+#[clap(args_conflicts_with_subcommands = true)]
 pub struct FsCmd {
     #[clap(subcommand)]
-    pub command: FsSub,
+    pub command: Option<FsSub>,
+    /// Default action (no subcommand): mirror a built FSImage onto the device
+    #[clap(flatten)]
+    pub image: FsImageArgs,
+}
+
+// Options for the default action: `raft fs <ip> -s <systype>` uploads the built
+// filesystem image (build/<systype>/raft/FSImage) in mirror mode.
+#[derive(Clone, Args, Debug)]
+pub struct FsImageArgs {
+    /// Device IP address or hostname
+    #[clap(value_name = "IP_ADDRESS_OR_HOSTNAME")]
+    pub ip_addr: Option<String>,
+    /// System type whose built FSImage to upload (default: last built / first found)
+    #[clap(short = 's', long = "sys-type", value_name = "SYSTYPE")]
+    pub sys_type: Option<String>,
+    /// Path to the application folder (default: current directory)
+    #[clap(long = "app-folder", value_name = "APPLICATION_FOLDER")]
+    pub app_folder: Option<String>,
+    /// HTTP port (default 80)
+    #[clap(short = 'p', long)]
+    pub port: Option<u16>,
+    /// Target filesystem: local or sd (default local)
+    #[clap(long)]
+    pub fs: Option<String>,
+    /// Glob/name patterns to exclude (repeatable; default: .built)
+    #[clap(long, value_name = "PATTERN")]
+    pub exclude: Vec<String>,
+    /// Do not delete remote files missing locally (default is mirror/delete)
+    #[clap(long)]
+    pub no_delete: bool,
+    /// Use size-only change detection instead of content hash (CRC16)
+    #[clap(long)]
+    pub no_hash: bool,
+    /// Preview the planned actions without changing the device
+    #[clap(long)]
+    pub dry_run: bool,
+    /// Prompt before deleting stale remote files (default: skip prompt)
+    #[clap(long)]
+    pub confirm: bool,
 }
 
 // Options common to all fs subcommands
@@ -106,6 +147,9 @@ pub enum FsSub {
         /// Use content hash (CRC16) to detect changes (else size-only)
         #[clap(long)]
         hash: bool,
+        /// Glob/name patterns to exclude (repeatable)
+        #[clap(long, value_name = "PATTERN")]
+        exclude: Vec<String>,
         /// Skip confirmation for deletions
         #[clap(short = 'y', long)]
         yes: bool,
@@ -150,7 +194,11 @@ fn encode_device_path(path: &str) -> String {
 // ---------------------------------------------------------------------------
 
 pub fn fs_app(cmd: FsCmd) -> Result<(), Box<dyn std::error::Error>> {
-    match cmd.command {
+    let command = match cmd.command {
+        Some(c) => c,
+        None => return fs_image_default(&cmd.image),
+    };
+    match command {
         FsSub::List { common, folder, json, recursive } => {
             let ctx = resolve_ctx(&common)?;
             fs_list(&ctx, folder.as_deref().unwrap_or(""), json, recursive)
@@ -176,15 +224,66 @@ pub fn fs_app(cmd: FsCmd) -> Result<(), Box<dyn std::error::Error>> {
             let ctx = resolve_ctx(&common)?;
             fs_delete(&ctx, &remote, yes)
         }
-        FsSub::Sync { common, localdir, remotedir, delete, dry_run, hash, yes } => {
+        FsSub::Sync { common, localdir, remotedir, delete, dry_run, hash, exclude, yes } => {
             let ctx = resolve_ctx(&common)?;
-            fs_sync(&ctx, &localdir, remotedir.as_deref().unwrap_or(""), delete, dry_run, hash, yes)
+            fs_sync(&ctx, &localdir, remotedir.as_deref().unwrap_or(""), delete, dry_run, hash, &exclude, yes)
         }
         FsSub::Format { common, yes } => {
             let ctx = resolve_ctx(&common)?;
             fs_format(&ctx, yes)
         }
     }
+}
+
+// Default action: `raft fs <ip> -s <systype>` mirrors the built filesystem image
+// (build/<systype>/raft/FSImage) onto the device's filesystem.
+fn fs_image_default(args: &FsImageArgs) -> Result<(), Box<dyn std::error::Error>> {
+    let ip_addr = match &args.ip_addr {
+        Some(ip) => ip.clone(),
+        None => {
+            return Err(
+                "no device specified. Usage: raft fs <ip> -s <systype>  (or use a subcommand, see 'raft fs --help')".into(),
+            );
+        }
+    };
+
+    let app_folder = args.app_folder.clone().unwrap_or_else(|| ".".to_string());
+    let sys_type = utils_get_sys_type(&args.sys_type, app_folder.clone())?;
+    if sys_type.is_empty() {
+        return Err("could not determine system type. Specify one with -s <systype>".into());
+    }
+
+    let localdir = format!("{}/build/{}/raft/FSImage", app_folder, sys_type);
+    if !Path::new(&localdir).is_dir() {
+        return Err(format!(
+            "built filesystem image not found: {} (build the '{}' system type first)",
+            localdir, sys_type
+        )
+        .into());
+    }
+
+    // Default excludes the build marker file; user-supplied patterns override.
+    let exclude: Vec<String> = if args.exclude.is_empty() {
+        vec![".built".to_string()]
+    } else {
+        args.exclude.clone()
+    };
+
+    let ctx = DeviceCtx {
+        ip_addr,
+        port: args.port.unwrap_or(80),
+        fs: args.fs.clone().unwrap_or_else(|| "local".to_string()),
+    };
+
+    println!(
+        "Mirroring FSImage for system type '{}' -> device {} (fs {})",
+        sys_type, ctx.ip_addr, ctx.fs
+    );
+
+    let delete = !args.no_delete;
+    let hash = !args.no_hash;
+    let yes = !args.confirm;
+    fs_sync(&ctx, &localdir, "", delete, args.dry_run, hash, &exclude, yes)
 }
 
 // ---------------------------------------------------------------------------
@@ -439,6 +538,7 @@ fn fs_sync(
     delete: bool,
     dry_run: bool,
     hash: bool,
+    exclude: &[String],
     yes: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let base = Path::new(localdir);
@@ -449,6 +549,11 @@ fn fs_sync(
     // Enumerate local files (recursively)
     let mut local_files: Vec<LocalEntry> = Vec::new();
     enumerate_local(base, base, &mut local_files)?;
+
+    // Drop excluded files
+    if !exclude.is_empty() {
+        local_files.retain(|e| !is_excluded(&e.rel, exclude));
+    }
 
     // Enumerate remote files (recursively)
     let mut remote_files: Vec<(String, u64)> = Vec::new();
@@ -585,6 +690,30 @@ fn remote_hash(ctx: &DeviceCtx, remote: &str) -> Option<String> {
 fn basename(path: &str) -> String {
     let p = path.replace('\\', "/");
     p.rsplit('/').next().unwrap_or(&p).to_string()
+}
+
+// True if a relative path matches any exclude pattern (against the full path or
+// its basename). Patterns support '*' as a wildcard.
+fn is_excluded(rel: &str, patterns: &[String]) -> bool {
+    let base = rel.rsplit('/').next().unwrap_or(rel);
+    patterns
+        .iter()
+        .any(|pat| glob_match(pat, rel) || glob_match(pat, base))
+}
+
+// Minimal glob matcher supporting '*' (matches any sequence, including '/').
+fn glob_match(pattern: &str, text: &str) -> bool {
+    fn helper(p: &[u8], t: &[u8]) -> bool {
+        if p.is_empty() {
+            return t.is_empty();
+        }
+        if p[0] == b'*' {
+            helper(&p[1..], t) || (!t.is_empty() && helper(p, &t[1..]))
+        } else {
+            !t.is_empty() && p[0] == t[0] && helper(&p[1..], &t[1..])
+        }
+    }
+    helper(pattern.as_bytes(), text.as_bytes())
 }
 
 fn join_remote(folder: &str, name: &str) -> String {

@@ -31,7 +31,7 @@ use raft_cli_utils::{read_build_info, write_build_info, BuildInfo};
 mod app_ports;
 use app_ports::{PortsCmd, manage_ports};
 mod app_libs;
-use app_libs::{fetch_raft_libs, LibsCmd};
+use app_libs::{run_libs, LibsCmd};
 mod cmd_history;
 
 const HISTORY_FILE_NAME: &str = ".raftcli_history"; // Default name, configurable if needed
@@ -54,7 +54,7 @@ enum Action {
     Fs(FsCmd),
     #[clap(name = "ports", about = "Manage serial ports", alias = "p")]
     Ports(PortsCmd),
-    #[clap(name = "libs", about = "Fetch local Raft development libraries", alias = "l")]
+    #[clap(name = "libs", about = "Manage local Raft development libraries (fetch, status)", alias = "l")]
     Libs(LibsCmd),
     #[clap(name = "debug", about = "Start remote debug console", alias = "d")]
     DebugRemote(DebugRemoteCmd),
@@ -539,7 +539,7 @@ fn main() {
         }
 
         Action::Libs(cmd) => {
-            if let Err(e) = fetch_raft_libs(&cmd) {
+            if let Err(e) = run_libs(&cmd) {
                 eprintln!("Libs operation failed: {}", e);
                 std::process::exit(1);
             }
