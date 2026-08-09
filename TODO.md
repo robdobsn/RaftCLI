@@ -33,6 +33,19 @@
   - on platformio the configurations could maybe be managed by the platformio.ini file so and there could be an option in the raftcli to generate a platformio.ini file?
   - maybe there should be a raftcli prebuild function which runs this script?
 
+## Fixed in 1.20.1
+- Scaffold template CMakeLists.txt now derives the RaftBootstrap.cmake URL from
+  the `RaftCore@<tag>` pin in systypes/Common/features.cmake: pinned tag -> that
+  release's asset, `main` -> releases/latest (RaftCore >= v1.52.1 attaches the
+  asset to every release via GitHub Action)
+- Local raftdevlibs/RaftCore override for bootstrap development; stamp-file
+  guard skips re-download when the URL is unchanged and keeps a previously
+  downloaded copy (with warning) if the download fails
+
+## Fixed in 1.19.1
+- esp32p4 added as a target chip
+- ESP IDF bumped to 6.0.2
+
 ## Fixed in 1.8.1
 - ESP IDF 5.5.2
 
