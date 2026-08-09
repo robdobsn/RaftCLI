@@ -511,7 +511,7 @@ The following questions are asked to complete the scaffolding from template file
 | Create User SysMod | Select true to create a SysMod for the main part of your application's code - SysMods are a key concept in raft apps as they allow user code to be managed like an Arduino app with setup() and loop() functions |
 | User SysMod Class | If you answered true above then you will be asked for the name you want to give to your app's main SysMod |
 | User SysMod Name | A SysMod can be given a different name from its class - so either enter the same name used for the Class here or give it a different name |
-| Raft Core git tag | RaftCore is the core element of the raft framework. Specify which version of RaftCore to use here. The default will be the latest version - which is called main |
+| Raft Core git tag | RaftCore is the core element of the raft framework. Specify which version of RaftCore to use here. The default will be the latest version - which is called main. This tag also determines the RaftBootstrap.cmake used to configure the build: a specific tag downloads that release's bootstrap (fully pinned build) while main uses the latest release's bootstrap. The tag can be changed after generation by editing RaftCore@\<tag\> in systypes/Common/features.cmake |
 | Use RaftSysMods | RaftSysMods are building blocks that help build a raft application. For instance WiFi, MQTT, etc. Select true to enable these in your application |
 | RaftSysMods git tag | The git tag of the RaftSysMods to use - defaults to main which is the latest version |
 | Use RaftWebServer | Select true to enable the raft Web Server |
