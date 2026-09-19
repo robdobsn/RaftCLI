@@ -23,10 +23,10 @@ public:
 
 protected:
 
-    // Setup
+    // Setup (runs on the main task)
     virtual void setup() override final;
 
-    // Loop (called frequently)
+    // Loop (called frequently on the main task - see the notes on tasks at the top of the .cpp file)
     virtual void loop() override final;
 
 private:

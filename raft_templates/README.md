@@ -18,6 +18,22 @@ A few things you will commonly want to change after the project is generated:
 
 - **ESP-IDF version, flash size, partition table, sdkconfig defaults** — see [`systypes/{{sys_type_name}}/sdkconfig.defaults`](systypes/{{sys_type_name}}/sdkconfig.defaults) and [`systypes/{{sys_type_name}}/partitions.csv`](systypes/{{sys_type_name}}/partitions.csv).
 
+## Keep the Raft library versions in step
+
+`RaftSysMods`, `RaftI2C` and `RaftWebServer` depend on features of `RaftCore`. In particular the concurrency-hardening changes merged to `main` in all four libraries in September 2026 must be used together: a version of one of these libraries that includes those changes will not build against a `RaftCore` that doesn't. The default `@main` takes care of this. If you pin versions in [`systypes/Common/features.cmake`](systypes/Common/features.cmake) then pin all of the libraries, and move them all forward together.
+
+## Tasks and thread safety
+
+Your SysMod's `setup()` and `loop()` functions, and any REST API endpoint handlers, run on the *main task*, which calls `loop()` on every SysMod in turn. Most of the Raft framework is owned by that task and is not protected by locks. This includes publishing and sending messages, the config object, network/WiFi control and LED patterns.
+
+- On chips with more than one core the main task runs on the core chosen when the project was generated: core 1 if [`systypes/{{sys_type_name}}/sdkconfig.defaults`](systypes/{{sys_type_name}}/sdkconfig.defaults) contains `CONFIG_ESP_MAIN_TASK_AFFINITY_CPU1=y`, otherwise core 0. WiFi, BLE and other system tasks run on core 0, so on core 1 the main loop isn't held up by them - but it also runs truly in parallel with them, which makes the rules below matter more. A bus task configured with `"taskCore": 1` (e.g. I2C) shares core 1 with the main task and, having a higher priority, takes precedence over it.
+- Don't call the framework from a task you create yourself. Pass the data to `loop()` using a `ThreadSafeQueue` or a `std::atomic` value and act on it there.
+- Some callbacks are not made on the main task. Device data-change callbacks and poll-result callbacks for devices on a bus (such as I2C) run on the bus's worker task, possibly on the other core and at the same time as `loop()`. Keep them short, don't block in them, and hand the data over to `loop()` in the same way.
+- If you see the error `... called from task other than main - NOT THREAD SAFE` in the log then a main-task-only function has been called from another task. This is a real bug in the calling code even if it appears to work. To find the caller, uncomment `add_compile_definitions(RAFT_MAIN_TASK_CHECK_ABORT)` in [`systypes/Common/features.cmake`](systypes/Common/features.cmake), which turns the error into an abort with a backtrace.
+- [`systypes/{{sys_type_name}}/sdkconfig.defaults`](systypes/{{sys_type_name}}/sdkconfig.defaults) has a commented-out block of debug checks (assertions, lwIP thread-safety checking and heap poisoning) which is useful when tracking down crashes.
+
+If `loop()` seems to stall, look for `loop sysMod <name> SLOW` warnings in the log, which name the SysMod that took too long. Console logging itself can block: on chips where the console uses the built-in USB Serial/JTAG peripheral, a log write waits for buffer space when no USB host is reading. `RAFT_LOGGER_USB_JTAG_WRITE_TIMEOUT_MS` in [`systypes/Common/features.cmake`](systypes/Common/features.cmake) limits that wait (log output is dropped instead).
+
 Links to further information:
 
 - [Raft command line documentation](https://github.com/robdobsn/RaftCLI)

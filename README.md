@@ -506,6 +506,7 @@ The following questions are asked to complete the scaffolding from template file
 | -- | -- |
 | Project Name | name for your project |
 | Target Chip | e.g. esp32, esp32s3 or esp32c3 |
+| CPU core for the main task | Only asked for chips with more than one core (esp32, esp32s3, esp32p4). The main task runs the loop() function of every SysMod. WiFi, BLE and other system tasks run on core 0, so the default of 1 keeps the main loop from being held up by them. With 1, `CONFIG_ESP_MAIN_TASK_AFFINITY_CPU1=y` is added to the SysType's sdkconfig.defaults - remove that line to move the main task back to core 0. The main loop then runs truly in parallel with tasks on core 0, so use versions of the Raft libraries that include the September 2026 concurrency-hardening changes (the default, main, does) |
 | SysType | the name of the main SysType (or system type) - SysTypes, for instance, allow a project to target different hardware - set the name for the main SysType that you want to create here - additional SysTypes are added manually |
 | ESP IDF Version | the version of the ESP IDF to use to build the app - defaults to 6.0 |
 | Create User SysMod | Select true to create a SysMod for the main part of your application's code - SysMods are a key concept in raft apps as they allow user code to be managed like an Arduino app with setup() and loop() functions |

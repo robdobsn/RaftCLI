@@ -91,6 +91,36 @@ fn get_schema(base_folder: &str) -> serde_json::Value {
             "message": "Target chip must be one of esp32, esp32s3, esp32c3, esp32c5, esp32c6, esp32p4",
             "error": "Invalid target chip"
         },
+        {
+            // The esp32 has no USB Serial/JTAG peripheral so the console must be on a UART
+            "key": "console_uart_sdkconfig",
+            "condition": "target_chip == \"esp32\"",
+            "generator": "# Serial port (console on UART0 as the esp32 has no USB Serial/JTAG peripheral)\nCONFIG_ESP_CONSOLE_UART_DEFAULT=y"
+        },
+        {
+            "key": "console_usb_jtag_sdkconfig",
+            "condition": "target_chip != \"esp32\"",
+            "generator": "# Serial port (console on the built-in USB Serial/JTAG peripheral)\nCONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y\nCONFIG_ESP_CONSOLE_SECONDARY_NONE=y"
+        },
+        {
+            // Only offered for chips with more than one core (esp32, esp32s3, esp32p4)
+            // Note that when the question isn't asked the default value remains in the context
+            // so the generator below must check for a multi-core chip too
+            "key": "main_task_core",
+            "prompt": "CPU core for the main task (0 or 1) - WiFi, BLE and other system tasks run on core 0",
+            "default": "1",
+            "datatype": "int",
+            "description": "The CPU core that the main task (which runs the loop() function of every SysMod) is pinned to",
+            "pattern": "^(0|1)$",
+            "message": "Main task core must be 0 or 1",
+            "error": "Invalid main task core",
+            "condition": "target_chip == \"esp32\" || target_chip == \"esp32s3\" || target_chip == \"esp32p4\""
+        },
+        {
+            "key": "main_task_core_sdkconfig",
+            "condition": "(target_chip == \"esp32\" || target_chip == \"esp32s3\" || target_chip == \"esp32p4\") && main_task_core == 1",
+            "generator": "\n\n# Run the main task (which runs loop() for every SysMod) on core 1 - away from the WiFi, BLE and\n# other system tasks which run on core 0. Remove the following line to run the main task on core 0.\nCONFIG_ESP_MAIN_TASK_AFFINITY_CPU1=y"
+        },
         // {
         //     "key": "use_spiram",
         //     "prompt": "Use SPIRAM (PSRAM)",
@@ -568,28 +598,172 @@ pub fn get_user_input(base_folder: &str) -> Result<String, Box<dyn std::error::E
     }
 
     // PASS 2: Process all generators (all variables now exist in context)
-    for question in &questions {
+    process_generators(&questions, &handlebars, &mut responses, &eval_context)?;
+
+    // Convert the map to a JSON string
+    let config_json = serde_json::to_string_pretty(&responses)?;
+    Ok(config_json)
+}
+
+// Process all generators - adds the generated values to responses
+fn process_generators(
+    questions: &Vec<ConfigQuestion>,
+    handlebars: &Handlebars,
+    responses: &mut Map<String, JsonValue>,
+    eval_context: &HashMapContext
+) -> Result<(), Box<dyn std::error::Error>> {
+    for question in questions {
         if let Some(generator) = &question.generator {
             // Process condition
             if let Some(condition) = &question.condition {
                 // Render the condition using Handlebars
                 let rendered_condition = handlebars.render_template(condition, &responses)?;
                 // Evaluate the rendered condition using evalexpr
-                if !evaluate_condition(&rendered_condition, &eval_context) {
+                if !evaluate_condition(&rendered_condition, eval_context) {
                     continue; // Skip this generator if the condition is false
                 }
             }
 
             // Generate the value
             let generated_value = handlebars.render_template(generator, &responses)?;
-            
+
             // Save generated value
             let key = question.key.clone();
             responses.insert(key, JsonValue::String(generated_value));
         }
     }
+    Ok(())
+}
 
-    // Convert the map to a JSON string
-    let config_json = serde_json::to_string_pretty(&responses)?;
-    Ok(config_json)
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Generate the config for a target chip using default values for everything else
+    fn generate_config_for_chip(target_chip: &str) -> Map<String, JsonValue> {
+        generate_config(target_chip, None)
+    }
+
+    // Generate the config for a target chip and (optionally) a main task core answer
+    fn generate_config(target_chip: &str, main_task_core: Option<i64>) -> Map<String, JsonValue> {
+        let questions = serde_json::from_value::<Vec<ConfigQuestion>>(get_schema(".")).unwrap();
+        let mut responses = Map::new();
+        let mut eval_context = HashMapContext::new();
+        for question in &questions {
+            if question.prompt.is_some()
+                || (question.default.is_some() && question.generator.is_none())
+            {
+                add_default_value_to_context(&question, &mut responses, &mut eval_context);
+            }
+        }
+        // Defaults may themselves be templates (e.g. the SysType name defaults to the project name) and
+        // are rendered when the user is prompted - so do the same here (in question order)
+        for question in &questions {
+            let rendered = match responses.get(&question.key) {
+                Some(JsonValue::String(value)) if value.contains("{{") =>
+                    Handlebars::new().render_template(value, &responses).unwrap(),
+                _ => continue,
+            };
+            responses.insert(question.key.clone(), JsonValue::String(rendered));
+        }
+        responses.insert("target_chip".to_string(), JsonValue::String(target_chip.to_string()));
+        eval_context.set_value("target_chip".to_string(), Value::from(target_chip)).unwrap();
+        if let Some(core) = main_task_core {
+            responses.insert("main_task_core".to_string(), JsonValue::Number(serde_json::Number::from(core)));
+            eval_context.set_value("main_task_core".to_string(), Value::Int(core)).unwrap();
+        }
+        process_generators(&questions, &Handlebars::new(), &mut responses, &eval_context).unwrap();
+        responses
+    }
+
+    #[test]
+    fn console_is_uart_on_esp32() {
+        // The esp32 has no USB Serial/JTAG peripheral
+        let config = generate_config_for_chip("esp32");
+        assert!(config["console_uart_sdkconfig"].as_str().unwrap().contains("CONFIG_ESP_CONSOLE_UART_DEFAULT=y"));
+        assert!(!config.contains_key("console_usb_jtag_sdkconfig"));
+    }
+
+    #[test]
+    fn console_is_usb_jtag_on_other_chips() {
+        for chip in ["esp32s3", "esp32c3", "esp32c5", "esp32c6", "esp32p4"] {
+            let config = generate_config_for_chip(chip);
+            assert!(config["console_usb_jtag_sdkconfig"].as_str().unwrap().contains("CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y"), "{}", chip);
+            assert!(!config.contains_key("console_uart_sdkconfig"), "{}", chip);
+        }
+    }
+
+    const MAIN_TASK_CORE_1: &str = "CONFIG_ESP_MAIN_TASK_AFFINITY_CPU1=y";
+
+    fn render_sdkconfig(config: Map<String, JsonValue>) -> String {
+        let template = include_str!("../raft_templates/systypes/{{sys_type_name}}/sdkconfig.defaults");
+        Handlebars::new().render_template(template, &JsonValue::Object(config)).unwrap()
+    }
+
+    #[test]
+    fn main_task_defaults_to_core_1_on_multi_core_chips() {
+        for chip in ["esp32", "esp32s3", "esp32p4"] {
+            assert!(render_sdkconfig(generate_config_for_chip(chip)).contains(MAIN_TASK_CORE_1), "{}", chip);
+            assert!(render_sdkconfig(generate_config(chip, Some(1))).contains(MAIN_TASK_CORE_1), "{}", chip);
+        }
+    }
+
+    #[test]
+    fn main_task_core_0_can_be_chosen() {
+        for chip in ["esp32", "esp32s3", "esp32p4"] {
+            assert!(!render_sdkconfig(generate_config(chip, Some(0))).contains("MAIN_TASK_AFFINITY"), "{}", chip);
+        }
+    }
+
+    #[test]
+    fn main_task_core_is_never_set_on_single_core_chips() {
+        // The question isn't asked for these chips so the default value (1) remains in the context
+        // and the affinity setting (which is invalid on a single core chip) must not be generated
+        for chip in ["esp32c3", "esp32c5", "esp32c6"] {
+            assert!(!render_sdkconfig(generate_config_for_chip(chip)).contains("MAIN_TASK_AFFINITY"), "{}", chip);
+        }
+    }
+
+    #[test]
+    fn main_task_core_question_only_asked_for_multi_core_chips() {
+        let questions = serde_json::from_value::<Vec<ConfigQuestion>>(get_schema(".")).unwrap();
+        let question = questions.iter().find(|q| q.key == "main_task_core").unwrap();
+        let condition = question.condition.as_ref().unwrap();
+        for (chip, expected) in [("esp32", true), ("esp32s3", true), ("esp32p4", true),
+                    ("esp32c3", false), ("esp32c5", false), ("esp32c6", false)] {
+            let mut eval_context = HashMapContext::new();
+            eval_context.set_value("target_chip".to_string(), Value::from(chip)).unwrap();
+            assert_eq!(evaluate_condition(condition, &eval_context), expected, "{}", chip);
+        }
+    }
+
+    #[test]
+    fn text_templates_render() {
+        let config = JsonValue::Object(generate_config_for_chip("esp32s3"));
+        for template in [
+            include_str!("../raft_templates/README.md"),
+            include_str!("../raft_templates/systypes/Common/features.cmake"),
+            include_str!("../raft_templates/components/{{user_sys_mod_name}}/{{user_sys_mod_class}}.cpp"),
+            include_str!("../raft_templates/components/{{user_sys_mod_name}}/{{user_sys_mod_class}}.h"),
+        ] {
+            let rendered = Handlebars::new().render_template(template, &config).unwrap();
+            let unrendered = rendered.lines().find(|line| line.contains("{{"));
+            assert!(unrendered.is_none(), "{:?}", unrendered);
+        }
+    }
+
+    #[test]
+    fn sdkconfig_template_renders_one_console_section() {
+        let template = include_str!("../raft_templates/systypes/{{sys_type_name}}/sdkconfig.defaults");
+        for (chip, expected, not_expected) in [
+            ("esp32", "CONFIG_ESP_CONSOLE_UART_DEFAULT=y", "CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y"),
+            ("esp32s3", "CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y", "CONFIG_ESP_CONSOLE_UART_DEFAULT=y"),
+        ] {
+            let config = JsonValue::Object(generate_config_for_chip(chip));
+            let rendered = Handlebars::new().render_template(template, &config).unwrap();
+            assert!(rendered.contains(expected), "{}", chip);
+            assert!(!rendered.contains(not_expected), "{}", chip);
+            assert!(!rendered.contains("{{"), "{}", chip);
+        }
+    }
 }
