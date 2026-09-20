@@ -6,6 +6,7 @@ use handlebars::Handlebars;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value as JsonValue};
 use regex::Regex;
+use std::collections::HashMap;
 use dialoguer::Input;
 
 use crate::raft_cli_utils::default_esp_idf_version;
@@ -510,10 +511,22 @@ fn add_default_value_to_context(
     }
 }
 
-pub fn get_user_input(base_folder: &str) -> Result<String, Box<dyn std::error::Error>> {
+// Get the configuration for a new app
+// use_defaults: don't prompt - use the default answer for every question (for scripts and automated tests)
+// overrides: answers given on the command line (key=value) which are used instead of prompting
+pub fn get_user_input(base_folder: &str, use_defaults: bool, overrides: &HashMap<String, String>)
+            -> Result<String, Box<dyn std::error::Error>> {
     // Load and deserialize the schema
     let schema = get_schema(base_folder);
     let questions = serde_json::from_value::<Vec<ConfigQuestion>>(schema)?;
+
+    // Check that the overrides are all answers to questions
+    for key in overrides.keys() {
+        if !questions.iter().any(|q| q.prompt.is_some() && &q.key == key) {
+            let valid_keys: Vec<&str> = questions.iter().filter(|q| q.prompt.is_some()).map(|q| q.key.as_str()).collect();
+            return Err(format!("Unknown setting \"{}\" - valid settings are: {}", key, valid_keys.join(", ")).into());
+        }
+    }
 
     let mut responses = Map::new();
     let handlebars = Handlebars::new();
@@ -556,23 +569,34 @@ pub fn get_user_input(base_folder: &str) -> Result<String, Box<dyn std::error::E
             let re = Regex::new(&pattern)?;
             let message = question.message.clone().unwrap_or("Invalid input".to_string());
 
-            // Prompt user for input
-            let response = Input::new()
-                .with_prompt(prompt)
-                .default(default_value)
-                .validate_with({
-                    let re = re; // Move `re` into the closure
-                    let message = message.clone(); // Clone `message` for use in the closure
-                    move |input: &String| {
-                        if re.is_match(input) {
-                            Ok(())
-                        } else {
-                            Err(message.clone())
+            // Use the answer from the command line, the default (if not prompting) or prompt the user for input
+            let response = if let Some(override_value) = overrides.get(&question.key) {
+                if !re.is_match(override_value) {
+                    return Err(format!("Invalid value \"{}\" for {}: {}", override_value, question.key, message).into());
+                }
+                println!("{}: {}", prompt, override_value);
+                override_value.clone()
+            } else if use_defaults {
+                println!("{}: {}", prompt, default_value);
+                default_value
+            } else {
+                Input::new()
+                    .with_prompt(prompt)
+                    .default(default_value)
+                    .validate_with({
+                        let re = re; // Move `re` into the closure
+                        let message = message.clone(); // Clone `message` for use in the closure
+                        move |input: &String| {
+                            if re.is_match(input) {
+                                Ok(())
+                            } else {
+                                Err(message.clone())
+                            }
                         }
-                    }
-                })
-                .interact_text()
-                .unwrap_or_default();
+                    })
+                    .interact_text()
+                    .unwrap_or_default()
+            };
 
             // Save response (overwriting the default)
             let key = question.key.clone();
@@ -735,6 +759,54 @@ mod tests {
             eval_context.set_value("target_chip".to_string(), Value::from(chip)).unwrap();
             assert_eq!(evaluate_condition(condition, &eval_context), expected, "{}", chip);
         }
+    }
+
+    #[test]
+    fn non_interactive_generation() {
+        // All defaults
+        let config: JsonValue = serde_json::from_str(&get_user_input("MyApp", true, &HashMap::new()).unwrap()).unwrap();
+        assert_eq!(config["project_name"], "MyApp");
+        assert_eq!(config["sys_type_name"], "MyApp");
+        assert_eq!(config["target_chip"], "esp32s3");
+        assert!(config["main_task_core_sdkconfig"].as_str().unwrap().contains(MAIN_TASK_CORE_1));
+
+        // Answers from the command line
+        let overrides: HashMap<String, String> = [("target_chip", "esp32c6"), ("sys_type_name", "BoardA"), ("use_raft_ble", "false")]
+            .iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        let config: JsonValue = serde_json::from_str(&get_user_input("MyApp", true, &overrides).unwrap()).unwrap();
+        assert_eq!(config["target_chip"], "esp32c6");
+        assert_eq!(config["sys_type_name"], "BoardA");
+        assert_eq!(config["use_raft_ble"], false);
+        assert!(config.get("main_task_core_sdkconfig").is_none());
+        assert!(config.get("inc_bleman_in_sdkconfig").is_none());
+
+        // Invalid answers and unknown settings are errors
+        let bad_value: HashMap<String, String> = [("target_chip".to_string(), "z80".to_string())].into_iter().collect();
+        assert!(get_user_input("MyApp", true, &bad_value).is_err());
+        let bad_key: HashMap<String, String> = [("no_such_setting".to_string(), "1".to_string())].into_iter().collect();
+        assert!(get_user_input("MyApp", true, &bad_key).is_err());
+    }
+
+    #[test]
+    fn esp_idf_version_is_in_features_cmake_not_the_dockerfile() {
+        use crate::esp_idf::{classify_dockerfile, parse_features_cmake_version, DockerfileKind};
+        let overrides: HashMap<String, String> = [("esp_idf_version".to_string(), "6.1".to_string())].into_iter().collect();
+        let config: JsonValue = serde_json::from_str(&get_user_input("MyApp", true, &overrides).unwrap()).unwrap();
+        let render = |template: &str| Handlebars::new().render_template(template, &config).unwrap();
+
+        // The version is the project default in Common/features.cmake
+        let common = render(include_str!("../raft_templates/systypes/Common/features.cmake"));
+        assert_eq!(parse_features_cmake_version(&common), Ok(Some("6.1".to_string())));
+
+        // The SysType features.cmake only has a commented-out override
+        let sys_type = render(include_str!("../raft_templates/systypes/{{sys_type_name}}/features.cmake"));
+        assert_eq!(parse_features_cmake_version(&sys_type), Ok(None));
+        assert!(sys_type.contains("# set(ESP_IDF_VERSION \"6.1\")"));
+
+        // The Dockerfile has a placeholder rather than a version
+        let dockerfile = render(include_str!("../raft_templates/Dockerfile"));
+        assert_eq!(classify_dockerfile(Some(&dockerfile)), DockerfileKind::Placeholder { default_tag: None });
+        assert!(!dockerfile.contains("6.1"));
     }
 
     #[test]

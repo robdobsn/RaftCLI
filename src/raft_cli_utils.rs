@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+#[cfg(not(target_os = "windows"))]
 use std::env;
 use std::path::Path;
 use std::path::PathBuf;
@@ -30,6 +31,8 @@ pub struct BuildInfo {
     pub last_vid: Option<String>,
     pub last_no_fs: Option<bool>,
     pub last_ip_addr: Option<String>,
+    // ESP-IDF version last used to build each SysType (a build folder can't be reused with a different version)
+    pub idf_versions: HashMap<String, String>,
 }
 
 impl Default for BuildInfo {
@@ -45,6 +48,7 @@ impl Default for BuildInfo {
             last_vid: None,
             last_no_fs: None,
             last_ip_addr: None,
+            idf_versions: HashMap::new(),
         }
     }
 }
@@ -66,6 +70,11 @@ pub fn read_build_info(app_folder: &str) -> BuildInfo {
                 last_vid: json["last_vid"].as_str().map(|s| s.to_string()),
                 last_no_fs: json["last_no_fs"].as_bool(),
                 last_ip_addr: json["last_ip_addr"].as_str().map(|s| s.to_string()),
+                idf_versions: json["idf_versions"].as_object().map(|versions| {
+                    versions.iter()
+                        .filter_map(|(sys_type, version)| version.as_str().map(|v| (sys_type.clone(), v.to_string())))
+                        .collect()
+                }).unwrap_or_default(),
             };
         }
     }
@@ -102,6 +111,11 @@ pub fn write_build_info(
         last_vid: updates.last_vid.clone().or(existing.last_vid),
         last_no_fs: updates.last_no_fs.or(existing.last_no_fs),
         last_ip_addr: updates.last_ip_addr.clone().or(existing.last_ip_addr),
+        idf_versions: {
+            let mut idf_versions = existing.idf_versions;
+            idf_versions.extend(updates.idf_versions.clone());
+            idf_versions
+        },
     };
 
     let mut raft_info = serde_json::json!({
@@ -117,6 +131,7 @@ pub fn write_build_info(
     if let Some(ref v) = merged.last_vid { raft_info["last_vid"] = serde_json::json!(v); }
     if let Some(v) = merged.last_no_fs { raft_info["last_no_fs"] = serde_json::json!(v); }
     if let Some(ref v) = merged.last_ip_addr { raft_info["last_ip_addr"] = serde_json::json!(v); }
+    if !merged.idf_versions.is_empty() { raft_info["idf_versions"] = serde_json::json!(merged.idf_versions); }
     
     fs::write(&raft_info_path, serde_json::to_string_pretty(&raft_info)?)?;
     Ok(())
@@ -229,8 +244,17 @@ impl Display for CommandError {
 impl Error for CommandError {}
 
 pub fn execute_and_capture_output(command: String, args: &Vec<String>, cur_dir: String, env_vars_to_add: HashMap<String, String>) -> Result<(String, bool), CommandError> {
-    
-    let process = Command::new(command.clone())
+    execute_and_capture_output_env(command, args, cur_dir, env_vars_to_add, &vec![])
+}
+
+pub fn execute_and_capture_output_env(command: String, args: &Vec<String>, cur_dir: String, env_vars_to_add: HashMap<String, String>,
+            env_vars_to_remove: &Vec<String>) -> Result<(String, bool), CommandError> {
+
+    let mut command_builder = Command::new(command.clone());
+    for name in env_vars_to_remove {
+        command_builder.env_remove(name);
+    }
+    let process = command_builder
         .current_dir(cur_dir)
         .args(args)
         .envs(env_vars_to_add.iter())
@@ -538,62 +562,6 @@ pub fn check_target_folder_valid(target_folder: &str, clean: bool) -> bool {
     true
 }
 
-// Check if ESP IDF Environment is active
-pub fn is_esp_idf_env() -> bool {
-    // Check if the IDF_PATH environment variable is set
-    env::var("IDF_PATH").is_ok()
-}
-
-// Check if the ESP IDF version is correct
-pub fn idf_version_ok(required_esp_idf_version: String) -> bool {
-    // Run the idf.py --version command
-    let idf_output = Command::new("idf.py")
-        .arg("--version")
-        .output()
-        .expect("Failed to run idf.py --version");
-
-    // TODO remove
-    println!("idf_version returned from idf.py: {:?}", idf_output);
-
-    // Check if the command was successful
-    if !idf_output.status.success() {
-        println!("Failed to run idf.py --version");
-        return false;
-    }
-
-    // Extract the version string from the output
-    let idf_version_output = String::from_utf8_lossy(&idf_output.stdout);
-    let idf_version = idf_version_output
-        .split_whitespace() // Split by whitespace
-        .nth(1)             // Get the second token (e.g., "v5.3.1-dirty")
-        .unwrap_or("")      // Fallback to an empty string if parsing fails
-        .trim_start_matches('v') // Remove the leading 'v' if present
-        .split('-')         // Split by '-' to ignore any suffix like '-dirty'
-        .next()             // Take the first part (e.g., "5.3.1")
-        .unwrap_or("");
-
-    // Normalize both versions to major.minor.patch format
-    let idf_version_normalized = idf_version.split('.').take(3).collect::<Vec<&str>>().join(".");
-    let required_version_normalized = required_esp_idf_version.split('.').take(3).collect::<Vec<&str>>().join(".");
-
-    // Debugging: Print normalized versions
-    println!(
-        "idf_version_normalized: {:?}, required_version_normalized: {:?}",
-        idf_version_normalized, required_version_normalized
-    );
-
-    // Compare the normalized versions
-    if idf_version_normalized != required_version_normalized {
-        println!(
-            "Error: ESP-IDF version mismatch: Required: {}, Found: {}",
-            required_version_normalized, idf_version_normalized
-        );
-        return false;
-    }
-
-    true
-}
-
 // Function to check if Docker is available
 pub fn is_docker_available() -> bool {
     Command::new("docker")
@@ -602,157 +570,37 @@ pub fn is_docker_available() -> bool {
         .map_or(false, |output| output.status.success())
 }
 
-pub fn get_esp_idf_version_from_dockerfile(dockerfile_path: &str) -> Result<String, Box<dyn std::error::Error>> {
-    let dockerfile_path = Path::new(dockerfile_path).join("Dockerfile");
-    let dockerfile_content = fs::read_to_string(dockerfile_path)?;
-    for line in dockerfile_content.lines() {
-        if line.starts_with("FROM espressif/idf:") {
-            let version = line.replace("FROM espressif/idf:", "").trim().to_string();
-            // Remove the 'v' prefix if it exists
-            if version.starts_with('v') {
-                return Ok(version[1..].to_string());
-            }
-            return Ok(version);
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn raft_info_is_backward_compatible_and_records_idf_versions() {
+        let app_folder = std::env::temp_dir().join(format!("raftcli_info_test_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&app_folder);
+        fs::create_dir_all(app_folder.join("build")).unwrap();
+        let app_folder_str = app_folder.to_string_lossy().to_string();
+
+        // A raft.info written by an earlier version of RaftCLI (no idf_versions)
+        fs::write(app_folder.join("build").join("raft.info"),
+            r#"{"last_built_systype":"BoardA","last_build_method":"local_idf","last_idf_path_explicit":true,"last_idf_path":"/home/me/esp/esp-idf-v6.0.2","last_port":"COM15"}"#).unwrap();
+        let info = read_build_info(&app_folder_str);
+        assert_eq!(info.last_built_systype.as_deref(), Some("BoardA"));
+        assert!(info.last_idf_path_explicit);
+        assert!(info.idf_versions.is_empty());
+
+        // Versions are recorded per SysType and merged with what is already there
+        for (sys_type, version) in [("BoardA", "6.0.2"), ("BoardB", "6.1.0"), ("BoardA", "6.1.0")] {
+            let mut updates = BuildInfo::default();
+            updates.idf_versions.insert(sys_type.to_string(), version.to_string());
+            write_build_info(&app_folder_str, &updates).unwrap();
         }
+        let info = read_build_info(&app_folder_str);
+        assert_eq!(info.idf_versions.get("BoardA").map(|s| s.as_str()), Some("6.1.0"));
+        assert_eq!(info.idf_versions.get("BoardB").map(|s| s.as_str()), Some("6.1.0"));
+        assert_eq!(info.last_port.as_deref(), Some("COM15"));
+        assert_eq!(info.last_idf_path.as_deref(), Some("/home/me/esp/esp-idf-v6.0.2"));
+
+        let _ = fs::remove_dir_all(&app_folder);
     }
-    Err(Box::new(std::io::Error::new(
-        std::io::ErrorKind::NotFound,
-        "ESP-IDF version not found in Dockerfile",
-    )))
-}
-
-pub fn find_matching_esp_idf(target_version: String, user_path: Option<String>) -> Option<PathBuf> {
-    // 1. Check user-specified path
-    if let Some(path) = user_path {
-        let user_dir = Path::new(&path);
-        if user_dir.is_dir() {
-            // Check if the folder is an ESP-IDF folder by checking if it contains a file named export.sh
-            if user_dir.join("export.sh").is_file() {
-                // TODO remove
-                println!("Found required ESP IDF folder {:?}", user_dir);
-                return Some(user_dir.to_path_buf());
-            }
-            // If it's a directory, look for subfolders named esp-idf-vx.y.z
-            if let Some(matching_path) = user_dir
-                .read_dir()
-                .ok()?
-                .filter_map(|entry| entry.ok())
-                .map(|entry| entry.path())
-                .find(|p| p.file_name().map_or(false, |name| name.to_string_lossy().ends_with(&target_version)))
-            {
-                // TODO remove
-                println!("Found matching path: {:?}", matching_path);
-                return Some(matching_path);
-            }
-        }
-    }
-
-    // 2. Default paths based on the platform
-    let default_paths = get_default_esp_idf_paths();
-
-    // TODO remove
-    println!("Searching default paths: {:?}", default_paths);
-
-    for path in default_paths {
-        if path.is_dir() {
-            if let Some(matching_path) = path
-                .read_dir()
-                .ok()?
-                .filter_map(|entry| entry.ok())
-                .map(|entry| entry.path())
-                .find(|p| p.file_name().map_or(false, |name| name.to_string_lossy().ends_with(&target_version)))
-            {
-                // TODO remove
-                println!("Found matching path: {:?}", matching_path);
-                return Some(matching_path);
-            }
-        }
-    }
-
-    // TODO remove
-    println!("No matching ESP-IDF found for {:?}", target_version);
-    None
-}
-
-// Helper function to get default paths based on OS
-fn get_default_esp_idf_paths() -> Vec<PathBuf> {
-    let mut paths = Vec::new();
-
-    #[cfg(target_os = "linux")]
-    paths.push(dirs::home_dir().unwrap_or_default().join("esp"));
-
-    #[cfg(target_os = "windows")]
-    paths.push(PathBuf::from("C:\\Espressif\\frameworks"));
-
-    #[cfg(target_os = "macos")]
-    paths.push(dirs::home_dir().unwrap_or_default().join("esp"));
-
-    paths
-}
-
-pub fn prepare_esp_idf(idf_path: &Path) -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {
-    let mut env_vars = HashMap::new();
-
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
-    {
-        let export_script = idf_path.join("export.sh");
-        if export_script.exists() {
-            println!("Capturing ESP-IDF environment from {}", idf_path.display());
-            let output = Command::new("bash")
-                .arg("-c")
-                .arg(format!("source {} && env", export_script.display()))
-                .stdout(Stdio::piped())
-                .output()?;
-            if !output.status.success() {
-                return Err(Box::new(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "Failed to capture ESP-IDF environment",
-                )));
-            }
-
-            // Parse the environment variables
-            for line in String::from_utf8_lossy(&output.stdout).lines() {
-                if let Some((key, value)) = line.split_once('=') {
-                    env_vars.insert(key.to_string(), value.to_string());
-                }
-            }
-        } else {
-            return Err(Box::new(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "export.sh not found in ESP-IDF folder",
-            )));
-        }
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        let export_script = idf_path.join("export.bat");
-        if export_script.exists() {
-            println!("Capturing ESP-IDF environment from {}", idf_path.display());
-            let output = Command::new("cmd")
-                .args(["/C", export_script.to_str().unwrap(), "&&", "set"])
-                .stdout(Stdio::piped())
-                .output()?;
-            if !output.status.success() {
-                return Err(Box::new(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "Failed to capture ESP-IDF environment",
-                )));
-            }
-
-            // Parse the environment variables
-            for line in String::from_utf8_lossy(&output.stdout).lines() {
-                if let Some((key, value)) = line.split_once('=') {
-                    env_vars.insert(key.to_string(), value.to_string());
-                }
-            }
-        } else {
-            return Err(Box::new(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "export.bat not found in ESP-IDF folder",
-            )));
-        }
-    }
-
-    Ok(env_vars)
 }

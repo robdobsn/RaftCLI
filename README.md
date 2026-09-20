@@ -77,9 +77,30 @@ python3 -m pip install esptool
 
 Alternatively you can [install the Espressif ESP IDF](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/get-started/index.html). Make sure all of the requirements are installed correctly as I find the Espressif installation docs to be a bit unclear. Also, if installing an ESP IDF from the [releases page on github](https://github.com/espressif/esp-idf/releases), ensure that you install the tools by changing to the ESP IDF folder and running ./install.sh or similar commands on different OSs - see [install-scripts](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-guides/tools/idf-tools.html#install-scripts).
 
-You will also need to make sure you run the raft command line interface program in a shell with the IDF environment installed. You can do this on linux/mac using a command like `. ~/esp/esp-idf-v6.0/export.sh` or similar based on where the esp idf got installed and what version it is. Another option, and one that works on Windows, is use the [Espressif VS Code extension](https://github.com/espressif/vscode-esp-idf-extension) which handles the shell environment for you. Otherwise, on Windows and depending on how you installed the ESP IDF, you may need to use a shortcut that runs the ESP IDF shell. 
+The recommended way to install the ESP IDF is now the [Espressif Installation Manager (EIM)](https://docs.espressif.com/projects/idf-im-ui/en/latest/), for example `eim install -i v6.0.2`. RaftCLI finds ESP IDF versions installed by EIM automatically (from EIM's `eim_idf.json` manifest) as well as ones installed the traditional way in `~/esp` (Linux/Mac) or `C:\Espressif\frameworks` (Windows). So the simplest way to build is `raft build -i` which finds an installed ESP IDF of the version the app requires, from any shell, with no need to set up the ESP IDF environment first. See [Which ESP IDF version is used](#which-esp-idf-version-is-used).
 
-In this case use the `--no-docker` option, i.e. `raft run --no-docker` or `raft build --no-docker` to disable the use of Docker.
+Alternatively you can run the raft command line interface program in a shell with the IDF environment installed. You can do this on linux/mac using a command like `. ~/esp/esp-idf-v6.0/export.sh` or similar based on where the esp idf got installed and what version it is. Another option, and one that works on Windows, is use the [Espressif VS Code extension](https://github.com/espressif/vscode-esp-idf-extension) which handles the shell environment for you. Otherwise, on Windows and depending on how you installed the ESP IDF, you may need to use a shortcut that runs the ESP IDF shell. 
+
+In this case use the `--no-docker` option, i.e. `raft run --no-docker` or `raft build --no-docker` to disable the use of Docker. If the ESP IDF in the shell is not the version the app requires then RaftCLI looks for an installed one which is.
+
+### Which ESP IDF version is used
+
+The ESP IDF version required to build a SysType is found in this order:
+
+1. the `--idf-version` option e.g. `raft build --idf-version 6.0.2`
+2. `set(ESP_IDF_VERSION "6.0.2")` in `systypes/<SysType>/features.cmake` - so different SysTypes in the same app can be built with different versions
+3. `set(ESP_IDF_VERSION "6.0.2")` in `systypes/Common/features.cmake` - the default for all SysTypes (this is where `raft new` puts it)
+4. the version in the `Dockerfile` (`FROM espressif/idf:v6.0.2`) - this is how apps created with earlier versions of RaftCLI specify it and continues to work
+5. RaftCLI's default version
+
+The `set(ESP_IDF_VERSION ...)` line must contain a literal version on a single line because RaftCLI reads it without running CMake. In a SysType's `features.cmake` place it after the `include` of the Common file.
+
+The same version is used for local and Docker builds:
+
+- Local builds use an installed ESP IDF of that version. The `-e` option specifies one explicitly, either as the path of an ESP IDF folder or the name of an EIM installation (as shown by `eim list`) e.g. `raft build -e v6.0.2`, and this choice is remembered for later builds. If EIM's manifest is not in the default location use `--eim-json <path to eim_idf.json>` or set the `RAFT_EIM_IDF_JSON` environment variable.
+- Docker builds use the `espressif/idf` image with that tag. Apps created by `raft new` have a `Dockerfile` with no version in it (`ARG ESP_IDF_VERSION` / `FROM espressif/idf:${ESP_IDF_VERSION}`) and RaftCLI supplies the version when it builds the image - so that `Dockerfile` can't be built directly with `docker build`. If a `Dockerfile` does contain a version and a different one is required then RaftCLI leaves the `Dockerfile` alone and builds the image from a generated copy in `build/raft_docker/<SysType>/Dockerfile`. Images are tagged `raftbuilder:idf-<version>`; these are large so you may want to remove ones no longer needed (`docker image ls raftbuilder`).
+
+When the required version for a SysType changes RaftCLI deletes that SysType's build folder since a build folder can't be reused with a different ESP IDF. With a version of RaftCore that supports it, building with a different ESP IDF version from the one required (for example by running `idf.py` directly in the wrong environment) is reported as an error by CMake.
 
 ## Troubleshooting
 
@@ -141,9 +162,18 @@ Arguments:
   [APPLICATION_FOLDER]  Path to the application folder
 
 Options:
-  -c, --clean  Clean the target folder
-  -h, --help   Print help
+  -c, --clean            Clean the target folder
+  -d, --defaults         Don't prompt - use the default answer for every question (see also --set)
+      --set <KEY=VALUE>  Answer a question without prompting e.g. --set target_chip=esp32c6 (can be repeated)
+  -h, --help             Print help
 ```
+
+To create an app without being asked any questions (for instance from a script) use `--defaults`, optionally with `--set` to answer specific questions. The keys are: project_name, sys_type_name, target_chip, main_task_core, flash_size_for_partition_table, esp_idf_version, create_user_sysmod, user_sys_mod_class, user_sys_mod_name, use_raft_sysmods, use_raft_webserver, use_raft_ble, use_raft_ble_peripheral, use_raft_ble_central, use_raft_i2c, raft_i2c_sda_pin, raft_i2c_scl_pin, use_raft_core_dev_types. For example:
+
+```
+raft new MyApp --defaults --set target_chip=esp32c6 --set use_raft_ble=false
+```
+
 ## Building a raft app
 
 To build an existing raft app use:
@@ -156,7 +186,7 @@ raft b
 
 This will build the raft app in the current folder using Docker (unless you are in a prompt with the ESP IDF already sourced in which case ESP IDF will be used natively). If your raft app has multiple SysTypes then you can define which SysType to build using the -s option.
 
-If you don't want to use Docker for the build then you can use the no-docker option (see below) and, in this case, you will need to ensure that a correctly installed ESP IDF (Espressif's development environment) is present on the system. You can ask RaftCLI to find a local ESP IDF matching the Dockerfile version using the -i option, or override the ESP IDF folder using the -e option.
+If you don't want to use Docker for the build then you can use the no-docker option (see below) and, in this case, you will need to ensure that a correctly installed ESP IDF (Espressif's development environment) is present on the system. You can ask RaftCLI to find a local ESP IDF of the required version (including ones installed with the Espressif Installation Manager) using the -i option, or specify the ESP IDF using the -e option (which also selects a local build). See [Which ESP IDF version is used](#which-esp-idf-version-is-used).
 
 To perform a clean build use the -c option.
 
@@ -174,8 +204,10 @@ Options:
   -n, --clean-only                   Clean only
       --docker                       Use docker for build
       --no-docker                    Do not use docker for build
-  -i, --idf-local-build              Find and use local ESP IDF matching Dockerfile version
-  -e, --esp-idf-path <ESP_IDF_PATH>  Full path to ESP IDF folder for local build (when not using docker)
+  -i, --idf-local-build              Find and use a local ESP IDF of the required version (see ESP_IDF_VERSION in features.cmake)
+  -e, --esp-idf-path <ESP_IDF_PATH>  Path to ESP IDF folder, or name of an EIM installation, for local build (when not using docker)
+      --idf-version <VERSION>        ESP IDF version to build with (overrides ESP_IDF_VERSION in features.cmake and the Dockerfile)
+      --eim-json <FILE>              Path to the Espressif Installation Manager eim_idf.json (if not in the default location)
   -h, --help                         Print help
 ```
 
@@ -210,8 +242,10 @@ Options:
   -c, --clean                        Clean the target folder
       --docker                       Use docker for build
       --no-docker                    Do not use docker for build
-  -i, --idf-local-build              Find and use local ESP IDF matching Dockerfile version
-  -e, --esp-idf-path <ESP_IDF_PATH>  Full path to ESP IDF folder for local build (when not using docker)
+  -i, --idf-local-build              Find and use a local ESP IDF of the required version (see ESP_IDF_VERSION in features.cmake)
+  -e, --esp-idf-path <ESP_IDF_PATH>  Path to ESP IDF folder, or name of an EIM installation, for local build (when not using docker)
+      --idf-version <VERSION>        ESP IDF version to build with (overrides ESP_IDF_VERSION in features.cmake and the Dockerfile)
+      --eim-json <FILE>              Path to the Espressif Installation Manager eim_idf.json (if not in the default location)
   -p, --port <PORT>                  Serial port
   -o, --ip-addr <IP_ADDR>            IP address or hostname for OTA flashing
   -b, --monitor-baud <MONITOR_BAUD>  Monitor baud rate
@@ -508,7 +542,7 @@ The following questions are asked to complete the scaffolding from template file
 | Target Chip | e.g. esp32, esp32s3 or esp32c3 |
 | CPU core for the main task | Only asked for chips with more than one core (esp32, esp32s3, esp32p4). The main task runs the loop() function of every SysMod. WiFi, BLE and other system tasks run on core 0, so the default of 1 keeps the main loop from being held up by them. With 1, `CONFIG_ESP_MAIN_TASK_AFFINITY_CPU1=y` is added to the SysType's sdkconfig.defaults - remove that line to move the main task back to core 0. The main loop then runs truly in parallel with tasks on core 0, so use versions of the Raft libraries that include the September 2026 concurrency-hardening changes (the default, main, does) |
 | SysType | the name of the main SysType (or system type) - SysTypes, for instance, allow a project to target different hardware - set the name for the main SysType that you want to create here - additional SysTypes are added manually |
-| ESP IDF Version | the version of the ESP IDF to use to build the app - defaults to 6.0 |
+| ESP IDF Version | the version of the ESP IDF to use to build the app - this is written to systypes/Common/features.cmake as `set(ESP_IDF_VERSION ...)` and can be changed there later, or overridden for a single SysType - see [Which ESP IDF version is used](#which-esp-idf-version-is-used) |
 | Create User SysMod | Select true to create a SysMod for the main part of your application's code - SysMods are a key concept in raft apps as they allow user code to be managed like an Arduino app with setup() and loop() functions |
 | User SysMod Class | If you answered true above then you will be asked for the name you want to give to your app's main SysMod |
 | User SysMod Name | A SysMod can be given a different name from its class - so either enter the same name used for the Class here or give it a different name |
@@ -524,6 +558,12 @@ The following questions are asked to complete the scaffolding from template file
 New raft apps are "scaffolded" using template information in the raft_templates folder.
 
 The handlebars templating library is used to fill in the gaps in the templates based on the answers to questions asked when running "raft new".
+
+### The build bootstrap and older apps
+
+The `CMakeLists.txt` of a raft app downloads `RaftBootstrap.cmake` from a RaftCore release. That script fetches RaftCore (and the other raft libraries) and then hands over to the rest of the build scripts inside the RaftCore it fetched. The `CMakeLists.txt` generated by `raft new` works out which release to download from the `RaftCore@<tag>` entry in `features.cmake` (the matching release for a tag, the latest release for `main`) so the two stay in step.
+
+Apps created with older versions of RaftCLI have the URL of one specific release written into `CMakeLists.txt` (e.g. `.../releases/download/v1.37.1/RaftBootstrap.cmake`). If such an app uses a RaftCore which is not a fixed release (`RaftCore@main`, a branch, or no tag) then the bootstrap gets further and further behind the RaftCore it is used with, and `raft build` prints a warning. To fix it replace the bootstrap section of the app's `CMakeLists.txt` with the one from a newly generated app and do a clean build (`raft build -c`). An app which pins RaftCore to a release is assumed to be locked down deliberately and is not warned about.
 
 In addition to generating source code, build files are generated for various build scenarios including:
 

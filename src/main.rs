@@ -12,7 +12,9 @@ mod serial_monitor;
 mod native_terminal;
 mod line_editor;
 mod app_build;
-use app_build::build_raft_app;
+use app_build::{build_raft_app, IdfBuildOptions};
+mod esp_idf;
+mod bootstrap_check;
 mod app_flash;
 use app_flash::flash_raft_app;
 mod app_ota;
@@ -70,6 +72,12 @@ struct NewCmd {
     base_folder: Option<String>,
     #[clap(short = 'c', long, help = "Clean the target folder")]
     clean: bool,
+    // Option to generate without prompting
+    #[clap(short = 'd', long, help = "Don't prompt - use the default answer for every question (see also --set)")]
+    defaults: bool,
+    // Option to provide answers to questions
+    #[clap(long, value_name = "KEY=VALUE", help = "Answer a question without prompting e.g. --set target_chip=esp32c6 (can be repeated)")]
+    set: Vec<String>,
 }
 
 // Define arguments specific to the `build` subcommand
@@ -94,11 +102,17 @@ struct BuildCmd {
     #[clap(long, help = "Do not use docker for build")]
     no_docker: bool,
     // Option to find matching esp idf and source it ready to build locally
-    #[clap(short = 'i', long, help = "Find and use local ESP IDF matching Dockerfile version")]
-    idf_local_build: bool,    
+    #[clap(short = 'i', long, help = "Find and use a local ESP IDF of the required version (see ESP_IDF_VERSION in features.cmake)")]
+    idf_local_build: bool,
     // Option to specify path to ESP IDF folder
-    #[clap(short = 'e', long, help = "Full path to ESP IDF folder for local build (when not using docker)")]
+    #[clap(short = 'e', long, help = "Path to ESP IDF folder, or name of an EIM installation, for local build (when not using docker)")]
     esp_idf_path: Option<String>,
+    // Option to override the required ESP IDF version
+    #[clap(long, value_name = "VERSION", help = "ESP IDF version to build with (overrides ESP_IDF_VERSION in features.cmake and the Dockerfile)")]
+    idf_version: Option<String>,
+    // Option to specify the location of the EIM manifest
+    #[clap(long, value_name = "FILE", help = "Path to the Espressif Installation Manager eim_idf.json (if not in the default location)")]
+    eim_json: Option<String>,
 }
 
 // Define arguments specific to the `monitor` subcommand
@@ -153,11 +167,17 @@ struct RunCmd {
     #[clap(long, help = "Do not use docker for build")]
     no_docker: bool,
     // Option to find matching esp idf and source it ready to build locally
-    #[clap(short = 'i', long, help = "Find and use local ESP IDF matching Dockerfile version")]
-    idf_local_build: bool,    
+    #[clap(short = 'i', long, help = "Find and use a local ESP IDF of the required version (see ESP_IDF_VERSION in features.cmake)")]
+    idf_local_build: bool,
     // Option to specify path to ESP IDF folder
-    #[clap(short = 'e', long, help = "Full path to ESP IDF folder for local build (when not using docker)")]
+    #[clap(short = 'e', long, help = "Path to ESP IDF folder, or name of an EIM installation, for local build (when not using docker)")]
     esp_idf_path: Option<String>,
+    // Option to override the required ESP IDF version
+    #[clap(long, value_name = "VERSION", help = "ESP IDF version to build with (overrides ESP_IDF_VERSION in features.cmake and the Dockerfile)")]
+    idf_version: Option<String>,
+    // Option to specify the location of the EIM manifest
+    #[clap(long, value_name = "FILE", help = "Path to the Espressif Installation Manager eim_idf.json (if not in the default location)")]
+    eim_json: Option<String>,
     // Add an option to specify the serial port
     #[clap(short = 'p', long, help = "Serial port")]
     port: Option<String>,
@@ -308,9 +328,27 @@ fn main() {
                 std::process::exit(1);
             }
             
+            // Answers provided on the command line
+            let mut overrides = std::collections::HashMap::new();
+            for setting in &cmd.set {
+                match setting.split_once('=') {
+                    Some((key, value)) => { overrides.insert(key.trim().to_string(), value.trim().to_string()); }
+                    None => {
+                        println!("Error: --set requires KEY=VALUE but got {}", setting);
+                        std::process::exit(1);
+                    }
+                }
+            }
+
             // Get configuration
-            let json_config_str = get_user_input(&base_folder);
-            let json_config = serde_json::from_str(&json_config_str.unwrap()).unwrap();
+            let json_config_str = match get_user_input(&base_folder, cmd.defaults, &overrides) {
+                Ok(json_config_str) => json_config_str,
+                Err(e) => {
+                    println!("Error: {}", e);
+                    std::process::exit(1);
+                }
+            };
+            let json_config = serde_json::from_str(&json_config_str).unwrap();
 
             // Generate a new app
             let _result = generate_new_app(&base_folder, json_config).unwrap();
@@ -321,9 +359,14 @@ fn main() {
         Action::Build(cmd) => {
             // Get the app folder (or default to current folder)
             let app_folder = cmd.app_folder.unwrap_or(".".to_string());
-            let result = build_raft_app(&cmd.sys_type, cmd.clean, 
-                        cmd.clean_only, app_folder, cmd.docker, cmd.no_docker, 
-                        cmd.idf_local_build, cmd.esp_idf_path);
+            let result = build_raft_app(&cmd.sys_type, cmd.clean,
+                        cmd.clean_only, app_folder, cmd.docker, cmd.no_docker,
+                        IdfBuildOptions {
+                            use_local_idf: cmd.idf_local_build,
+                            idf_path_or_name: cmd.esp_idf_path,
+                            idf_version: cmd.idf_version,
+                            eim_json: cmd.eim_json,
+                        });
             // println!("{:?}", result);
 
             // Check for build error
@@ -420,8 +463,12 @@ fn main() {
             // Build the app
             let result = build_raft_app(&cmd.sys_type, cmd.clean, false,
                         app_folder.clone(), cmd.docker, cmd.no_docker,
-                        cmd.idf_local_build, 
-                        cmd.esp_idf_path);
+                        IdfBuildOptions {
+                            use_local_idf: cmd.idf_local_build,
+                            idf_path_or_name: cmd.esp_idf_path,
+                            idf_version: cmd.idf_version,
+                            eim_json: cmd.eim_json,
+                        });
 
             // Check for build error
             if result.is_err() {

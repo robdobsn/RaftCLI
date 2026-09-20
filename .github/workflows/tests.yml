@@ -1,0 +1,39 @@
+name: Tests
+
+# Unit tests on every platform RaftCLI supports
+# These include the ESP-IDF selection logic (traditional and Espressif Installation Manager installs, the
+# required version from features.cmake / Dockerfile and Docker build planning) which is written so that it
+# can be tested without an ESP-IDF being installed
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: cargo test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux prerequisites
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libudev-dev
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run tests
+        run: cargo test --all-targets
+
+      - name: Scaffold an app without prompting
+        shell: bash
+        run: |
+          cargo run -- new "$RUNNER_TEMP/ScaffoldTest" --defaults --set target_chip=esp32c6
+          grep -q 'set(ESP_IDF_VERSION' "$RUNNER_TEMP/ScaffoldTest/systypes/Common/features.cmake"
+          grep -q '^ARG ESP_IDF_VERSION' "$RUNNER_TEMP/ScaffoldTest/Dockerfile"

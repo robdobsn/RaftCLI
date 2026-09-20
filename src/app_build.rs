@@ -6,18 +6,29 @@ use std::io;
 use std::path::Path;
 #[cfg(unix)]
 use nix::unistd::{getuid, getgid};
-use crate::raft_cli_utils::{default_esp_idf_version, find_matching_esp_idf, is_docker_available, is_esp_idf_env, prepare_esp_idf, utils_get_sys_type, write_build_info, read_build_info, BuildInfo};
+use crate::raft_cli_utils::{default_esp_idf_version, is_docker_available, utils_get_sys_type, write_build_info, read_build_info, BuildInfo};
 use crate::raft_cli_utils::check_app_folder_valid;
-use crate::raft_cli_utils::execute_and_capture_output;
+use crate::raft_cli_utils::{execute_and_capture_output, execute_and_capture_output_env};
 use crate::raft_cli_utils::convert_path_for_docker;
 use crate::raft_cli_utils::CommandError;
-use crate::raft_cli_utils::get_esp_idf_version_from_dockerfile;
-use crate::raft_cli_utils::idf_version_ok;
+use crate::esp_idf::{self, IdfInstall, IdfKind, LocatorInputs, RequiredVersion};
+
+/// Options which control which ESP-IDF is used for a build
+#[derive(Debug, Clone, Default)]
+pub struct IdfBuildOptions {
+    /// -i option: find and use a local ESP-IDF of the required version
+    pub use_local_idf: bool,
+    /// -e option: path to an ESP-IDF folder (or the name of an EIM installation)
+    pub idf_path_or_name: Option<String>,
+    /// --idf-version option: overrides the version from features.cmake / Dockerfile
+    pub idf_version: Option<String>,
+    /// --eim-json option: location of the EIM manifest (eim_idf.json)
+    pub eim_json: Option<String>,
+}
 
 pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: bool, app_folder: String,
-            force_docker_arg: bool, no_docker_arg: bool, 
-            use_local_idf_matching_dockerfile_idf: bool, 
-            idf_path_full: Option<String>) 
+            force_docker_arg: bool, no_docker_arg: bool,
+            idf_options: IdfBuildOptions)
                             -> Result<String, Box<dyn std::error::Error>> {
 
     // println!("Building the app in folder: {} clean {} clean_only {} no_docker_arg {}", app_folder, clean, clean_only, no_docker_arg);
@@ -34,11 +45,32 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: 
     }
     let sys_type = sys_type.unwrap();
 
-    // Flags indicating the build folder should be deleted
-    let delete_build_folder = clean || clean_only;
+    // Determine the ESP-IDF version required - this can be set for the SysType (or for all SysTypes) in
+    // features.cmake and otherwise comes from the Dockerfile
+    let required_version = esp_idf::get_required_version(&app_folder, &sys_type,
+                idf_options.idf_version.as_deref(), &default_esp_idf_version())
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+    println!("Required ESP-IDF {} (from {})", required_version.as_written, required_version.source);
+
+    // Warn if the project downloads a RaftBootstrap.cmake which doesn't match the RaftCore version it uses
+    if let Some(warning) = crate::bootstrap_check::check_bootstrap_version(&app_folder, &sys_type) {
+        println!("{}", warning);
+    }
 
     // Read previous build information
     let build_info = read_build_info(&app_folder);
+
+    // Flags indicating the build folder should be deleted
+    let mut delete_build_folder = clean || clean_only;
+
+    // A build folder configured with one version of the ESP-IDF can't be used with another
+    if let Some(last_version) = build_info.idf_versions.get(&sys_type) {
+        if *last_version != required_version.for_cmake() && !delete_build_folder {
+            println!("The build folder for SysType {} was built with ESP-IDF {} and {} is now required so it will be deleted",
+                        sys_type, last_version, required_version.for_cmake());
+            delete_build_folder = true;
+        }
+    }
 
     // Determine if docker is to be used for build
     let mut no_docker = std::env::var("RAFT_NO_DOCKER").unwrap_or("false".to_string()) == "true";
@@ -53,7 +85,7 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: 
     }
 
     // Apply saved build method preference if no explicit flags set
-    if !no_docker_arg && !force_docker_arg && !use_local_idf_matching_dockerfile_idf && idf_path_full.is_none() {
+    if !no_docker_arg && !force_docker_arg && !idf_options.use_local_idf && idf_options.idf_path_or_name.is_none() {
         if let Some(ref last_method) = build_info.last_build_method {
             if last_method == "docker" {
                 if is_docker_available() {
@@ -68,45 +100,37 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: 
     }
 
     // Handle building with or without docker
-    let (build_result, actual_build_method, actual_idf_path, idf_path_was_explicit) = 
-        if use_local_idf_matching_dockerfile_idf || no_docker || !is_docker_available() && !force_docker {
-        // Get idf path - priority order:
-        // 1. Explicit path from -e flag
-        // 2. Saved explicit path from previous build
-        // 3. IDF_PATH environment variable
-        let mut idf_path = idf_path_full.clone();
-        let mut path_was_explicit = idf_path_full.is_some();
-        
-        // If no explicit path and we have a saved explicit path, try to use it
-        if idf_path.is_none() && build_info.last_idf_path_explicit {
-            if let Some(ref saved_path) = build_info.last_idf_path {
-                if Path::new(saved_path).exists() {
-                    println!("Using saved ESP-IDF path: {}", saved_path);
-                    idf_path = Some(saved_path.clone());
-                    path_was_explicit = true;
-                } else {
-                    println!("Warning: Saved ESP-IDF path no longer exists: {}", saved_path);
-                }
-            }
-        }
-        
-        // Fall back to environment variable if still none
-        if idf_path.is_none() {
-            idf_path = std::env::var("IDF_PATH").ok();
-        }
-        
-        let actual_path = idf_path.clone();
+    let (build_result, actual_build_method, actual_idf_path, idf_path_was_explicit) =
+        if idf_options.use_local_idf || (idf_options.idf_path_or_name.is_some() && !force_docker)
+                    || no_docker || !is_docker_available() && !force_docker {
+        // (specifying an ESP-IDF with the -e option implies a local build)
+
+        // Explicit path saved from a previous build (only used if there is no -e option)
+        let saved_explicit = if build_info.last_idf_path_explicit { build_info.last_idf_path.clone() } else { None };
 
         // Build without docker
         let result = build_without_docker(app_folder.clone(), sys_type.clone(), clean, clean_only,
-                    delete_build_folder, idf_path);
-        (result, "local_idf", actual_path, path_was_explicit)
+                    delete_build_folder, &required_version, &idf_options, saved_explicit.clone());
+        match result {
+            Ok((output, install)) => {
+                // The -e option (or a saved -e option which was used) is remembered for the next build
+                let (path_to_save, explicit) = if let Some(ref explicit) = idf_options.idf_path_or_name {
+                    (Some(explicit.clone()), true)
+                } else if install.origin.contains("saved") {
+                    (saved_explicit, true)
+                } else {
+                    (Some(install.idf_path.to_string_lossy().to_string()), false)
+                };
+                (Ok(output), "local_idf", path_to_save, explicit)
+            }
+            Err(e) => (Err(e), "local_idf", None, false)
+        }
     } else if is_docker_available() {
         // Build with docker
         let result = build_with_docker(app_folder.clone(), sys_type.clone(), clean, clean_only,
-                    delete_build_folder);
+                    delete_build_folder, &required_version);
         (result, "docker", None, false)
-    } else 
+    } else
     {
         // Either ESP IDF or docker must be available to build
         let result = Err(std::io::Error::new(
@@ -122,11 +146,16 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: 
     }
 
     // Save complete build info to raft.info file after successful build
+    let mut idf_versions = HashMap::new();
+    if !clean_only {
+        idf_versions.insert(sys_type.clone(), required_version.for_cmake());
+    }
     let build_updates = BuildInfo {
         last_built_systype: Some(sys_type.clone()),
         last_build_method: Some(actual_build_method.to_string()),
         last_idf_path_explicit: idf_path_was_explicit,
         last_idf_path: actual_idf_path,
+        idf_versions,
         ..BuildInfo::default()
     };
     if let Err(e) = write_build_info(
@@ -141,20 +170,43 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: 
 
 // Build with docker and return output as a string
 fn build_with_docker(project_dir: String, systype_name: String, clean: bool, clean_only: bool,
-            delete_build_folder: bool) -> Result<String, std::io::Error> {
+            delete_build_folder: bool, required_version: &RequiredVersion) -> Result<String, std::io::Error> {
 
     // Build with docker
     println!("Raft build SysType {} in {}{}",  systype_name, project_dir.clone(),
                     if clean { " (clean first)" } else { "" });
 
+    // Decide how the Docker image is to be built so that it has the required ESP-IDF version
+    // The project's Dockerfile is never modified - if it specifies a different version then a copy is generated
+    let dockerfile_content = fs::read_to_string(Path::new(&project_dir).join("Dockerfile")).ok();
+    let docker_plan = esp_idf::plan_docker_build(dockerfile_content.as_deref(), required_version)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+    if let Some(ref note) = docker_plan.note {
+        println!("Note: {}", note);
+    }
+    let mut docker_image_build_args: Vec<String> = vec!["build".to_string(), "-t".to_string(), docker_plan.image_tag.clone()];
+    docker_image_build_args.extend(docker_plan.build_args.iter().cloned());
+    if let Some(ref generated_dockerfile) = docker_plan.generated_dockerfile {
+        // The generated Dockerfile is not placed in the SysType's build folder as that may be deleted by the build
+        let generated_rel_path = format!("build/raft_docker/{}/Dockerfile", systype_name);
+        let generated_path = Path::new(&project_dir).join(&generated_rel_path);
+        if let Some(parent) = generated_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(&generated_path, generated_dockerfile)?;
+        println!("Using generated Dockerfile {}", generated_rel_path);
+        docker_image_build_args.push("-f".to_string());
+        docker_image_build_args.push(generated_rel_path);
+    }
+    docker_image_build_args.push(".".to_string());
+
     // Build the Docker image
     let fail_docker_image_msg = format!("Docker build command failed");
-    let docker_image_build_args = vec!["build", "-t", "raftbuilder", "."];
     let docker_image_build_status = Command::new("docker")
         .current_dir(project_dir.clone())
         .args(docker_image_build_args)
         .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())        
+        .stderr(Stdio::inherit())
         .status()
         .expect(&fail_docker_image_msg);
 
@@ -185,6 +237,9 @@ fn build_with_docker(project_dir: String, systype_name: String, clean: bool, cle
         command_sequence += " build";
     }
 
+    // The required version is passed to CMake (which checks it against the ESP-IDF in use)
+    let version_env = format!("{}={}", esp_idf::RAFT_ESP_IDF_VERSION_ENV, required_version.for_cmake());
+
     // Get current user and group IDs to run Docker with same permissions as host (Unix only)
     #[cfg(unix)]
     let user_group = format!("{}:{}", getuid(), getgid());
@@ -193,9 +248,10 @@ fn build_with_docker(project_dir: String, systype_name: String, clean: bool, cle
     let docker_run_args = vec![
         "run", "--rm",
         "--user", &user_group,
+        "-e", &version_env,
         "-v", &project_dir_full,
         "-w", "/project",
-        "raftbuilder",
+        &docker_plan.image_tag,
         "/bin/bash", "-c", &command_sequence,
     ];
 
@@ -203,9 +259,10 @@ fn build_with_docker(project_dir: String, systype_name: String, clean: bool, cle
     #[cfg(not(unix))]
     let docker_run_args = vec![
         "run", "--rm",
+        "-e", &version_env,
         "-v", &project_dir_full,
         "-w", "/project",
-        "raftbuilder",
+        &docker_plan.image_tag,
         "/bin/bash", "-c", &command_sequence,
     ];
 
@@ -241,10 +298,58 @@ fn build_with_docker(project_dir: String, systype_name: String, clean: bool, cle
     }
 }
 
+// Find the ESP-IDF to use for a local build
+fn find_esp_idf(required_version: &RequiredVersion, idf_options: &IdfBuildOptions, saved_explicit: Option<String>)
+            -> Result<IdfInstall, std::io::Error> {
+    let is_windows = cfg!(target_os = "windows");
+    let home_dir = dirs::home_dir();
+
+    // ESP-IDFs installed using the Espressif Installation Manager (EIM) are listed in its manifest
+    let (eim_manifest, eim_warning) = esp_idf::load_eim_manifest(idf_options.eim_json.as_deref());
+    if let Some(warning) = eim_warning {
+        println!("{}", warning);
+    }
+
+    let env_idf_path = std::env::var("IDF_PATH").ok();
+    let locate_result = esp_idf::locate_esp_idf(&LocatorInputs {
+        required: required_version,
+        explicit: idf_options.idf_path_or_name.as_deref(),
+        saved_explicit: saved_explicit.as_deref(),
+        env_idf_path: env_idf_path.as_deref(),
+        legacy_roots: esp_idf::default_legacy_roots(),
+        eim_manifest: eim_manifest.as_ref(),
+        eim_tools_folder: esp_idf::default_eim_tools_folder(is_windows, home_dir.as_deref()),
+        eim_install_roots: esp_idf::default_eim_install_root(is_windows, home_dir.as_deref()).into_iter().collect(),
+        is_windows,
+    });
+
+    locate_result.map_err(|e| {
+        let mut message = e.message.clone();
+        if idf_options.idf_path_or_name.is_some() && e.found.is_empty() {
+            // The -e option didn't identify an ESP-IDF (nothing else is searched when it is used)
+            eprintln!("{}", message);
+            return io::Error::new(io::ErrorKind::Other, e.message);
+        }
+        if e.found.is_empty() {
+            message += "\nNo ESP-IDF installations were found";
+        } else {
+            message += "\nESP-IDF installations found:";
+            for install in &e.found {
+                message += &format!("\n  {}", install.describe());
+            }
+        }
+        message += &format!("\nTo install it with the Espressif Installation Manager use: eim install -i v{}", required_version.as_written);
+        message += "\nAlternatively build using Docker (--docker) or specify an ESP-IDF using the -e option";
+        eprintln!("{}", message);
+        io::Error::new(io::ErrorKind::Other, e.message)
+    })
+}
+
 // Build without docker
 fn build_without_docker(project_dir: String, systype_name: String, clean: bool, clean_only: bool,
-    delete_build_folder: bool, idf_path: Option<String>) -> Result<String, std::io::Error> {
-    
+    delete_build_folder: bool, required_version: &RequiredVersion, idf_options: &IdfBuildOptions,
+    saved_explicit: Option<String>) -> Result<(String, IdfInstall), std::io::Error> {
+
     // Debug
     println!(
         "Raft build SysType {} in {}{} (no Docker)",
@@ -252,7 +357,7 @@ fn build_without_docker(project_dir: String, systype_name: String, clean: bool, 
         project_dir,
         if clean { " (clean first)" } else { "" }
     );
-    
+
     // Folders
     let build_dir = format!("build/{}", systype_name);
 
@@ -264,55 +369,49 @@ fn build_without_docker(project_dir: String, systype_name: String, clean: bool, 
         }
     }
 
+    // Find the ESP-IDF to use
+    let install = find_esp_idf(required_version, idf_options, saved_explicit)?;
+    println!("Using {}", install.describe());
+
+    // The version passed to CMake (which checks it against the ESP-IDF in use) is the required version unless
+    // an ESP-IDF of a different version has been specified explicitly
+    let mut version_for_cmake = required_version.for_cmake();
+    if let Some(install_version) = install.version {
+        if !required_version.matches(&install_version) {
+            println!("Warning: ESP-IDF {} is required (from {}) but the ESP-IDF specified is version {}",
+                        required_version.as_written, required_version.source, install_version);
+            version_for_cmake = install_version.to_string();
+        }
+    }
+
+    // Get the environment and the command needed to run idf.py
+    let run_setup = esp_idf::prepare_idf_run(&install).map_err(|e| {
+        let hint = match install.kind {
+            IdfKind::Eim { .. } => "",
+            _ => " - if this ESP-IDF was downloaded manually then run its install script (install.sh / install.bat)",
+        };
+        io::Error::new(io::ErrorKind::Other, format!("{}{}", e, hint))
+    })?;
+    let mut idf_env_vars_to_add = run_setup.env_vars;
+    idf_env_vars_to_add.insert(esp_idf::RAFT_ESP_IDF_VERSION_ENV.to_string(), version_for_cmake);
+
     // IDF args in a vector of Strings
-    let mut idf_run_args = vec!["-B".to_string(), build_dir];
+    let mut idf_run_args = run_setup.leading_args;
+    idf_run_args.push("-B".to_string());
+    idf_run_args.push(build_dir);
     if clean {
         idf_run_args.push("fullclean".to_string());
     }
     if !clean_only {
         idf_run_args.push("build".to_string());
     }
-    
-    // Get required ESP IDF version from Dockerfile
-    let required_esp_idf_version = get_esp_idf_version_from_dockerfile(&project_dir).unwrap_or(default_esp_idf_version());
-
-    // // TODO remove
-    // println!("Required ESP-IDF version: {:?} esp_idf_env_set {:?}", esp_idf_version, is_esp_idf_env());
-
-    // Check if we an ESP IDF environment is set and the version is correct
-    let mut idf_env_vars_to_add: HashMap<String, String> = HashMap::new();
-    let esp_idf_ok = is_esp_idf_env() && idf_version_ok(required_esp_idf_version.clone());
-    if !esp_idf_ok {
-
-        // Use the IDF path provided or the IDF_PATH environment variable
-        let idf_path: Option<String> = idf_path.or_else(|| std::env::var("IDF_PATH").ok());
-
-        // No ESP IDF found so try to find one
-        let idf_found_at_path = find_matching_esp_idf(required_esp_idf_version.clone(), idf_path);
-
-        // TODO remove
-        println!("IDF found {:?}", idf_found_at_path);
-
-        // Prepare the ESP-IDF environment
-        if idf_found_at_path.is_some() {
-            let idf_prep_result = prepare_esp_idf(idf_found_at_path.unwrap().as_path());
-            if idf_prep_result.is_err() {
-                return Err(std::io::Error::new(std::io::ErrorKind::Other, "No ESP-IDF environment variables found"));
-            }
-            idf_env_vars_to_add = idf_prep_result.unwrap();
-        } else {
-            return Err(std::io::Error::new(std::io::ErrorKind::Other, "No matching ESP-IDF found"));
-        }
-           
-        // return Err(std::io::Error::new(std::io::ErrorKind::Other, "ESP-IDF environment not found"));
-    }
 
     // Execute the command and handle the output
-    let idf_py_command = "idf.py".to_string();
-    match execute_and_capture_output(idf_py_command.clone(), &idf_run_args, project_dir.clone(), idf_env_vars_to_add) {
+    match execute_and_capture_output_env(run_setup.program.clone(), &idf_run_args, project_dir.clone(), idf_env_vars_to_add,
+                &run_setup.env_vars_to_remove) {
         Ok((output, success_flag)) => {
             if success_flag {
-                Ok(output) // Return the output directly
+                Ok((output, install)) // Return the output directly
             } else {
                 // If the command executed but failed, provide detailed feedback
                 eprintln!("idf.py build executed but failed: {}", output);
@@ -338,4 +437,3 @@ fn build_without_docker(project_dir: String, systype_name: String, clean: bool, 
         }
     }
 }
-

@@ -105,9 +105,11 @@ mod tests {
         assert_eq!(command_history.get_current(), "second command");
         command_history.move_down();
         assert_eq!(command_history.get_current(), "third command");
+        // Moving down past the most recent command gives an empty line (as in a shell)
         command_history.move_down();
-        assert_eq!(command_history.get_current(), "third command");
+        assert_eq!(command_history.get_current(), "");
         command_history.move_down();
+        assert_eq!(command_history.get_current(), "");
 
         // Cleanup
         let _ = fs::remove_file(test_history_path);

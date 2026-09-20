@@ -1,6 +1,11 @@
 # Set the target Espressif chip
 set(IDF_TARGET "{{target_chip}}")
 
+# ESP-IDF version used to build (for both local and Docker builds using "raft build")
+# This is the default for all SysTypes - it can be overridden in systypes/<SysType>/features.cmake
+# It must be a literal version on one line as it is also read by the raft command line tool
+set(ESP_IDF_VERSION "{{esp_idf_version}}")
+
 # Raft components
 set(RAFT_COMPONENTS
     RaftCore@{{raft_core_git_tag}}
