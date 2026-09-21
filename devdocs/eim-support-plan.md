@@ -46,9 +46,17 @@ Differences from the plan below:
   is not deleted by a clean and does not leave a non-CMake file in the ESP-IDF build folder.
 - `raft.info` gains `idf_versions` (SysType -> version) instead of `last_idf_kind`/`last_idf_name`/`last_idf_version`;
   the kind is recovered from the path via the manifest.
-- Not implemented: the `eim run` last-resort fallback (4.3); per-SysType `DEPENDENCIES_LOCK` (it would move the
-  lock file for every existing project, so it needs a decision first); the nightly CI job that installs EIM and
-  builds firmware (5.3) - only the `cargo test` matrix workflow was added.
+- Not implemented: the `eim run` last-resort fallback (4.3); the nightly CI job that installs EIM and builds
+  firmware (5.3) - only the `cargo test` matrix workflow was added.
+- 2026-09-20: per-SysType component manager lock file done in RaftCore stage 2 (`RaftBootstrapPhase2.cmake` and
+  `RaftProject.cmake`, after the ESP-IDF `project.cmake` include, using the `DEPENDENCIES_LOCK` build property).
+  A SysType uses `systypes/<SysType>/dependencies.lock` if the project sets `ESP_IDF_VERSION` or if that file
+  already exists; otherwise the root `dependencies.lock` is used exactly as before, so existing projects are
+  not affected (this was the concern that had held it back). Per SysType rather than per version because the
+  lock also records the target chip. `managed_components/` cannot be relocated and stays shared. Tested with
+  two SysTypes on 6.0.2 and 6.0.1: each lock file is created once and is byte-identical after switching back
+  and forth; a project without `ESP_IDF_VERSION` still writes the root file; moving that file into the SysType
+  folder opts it in. `RaftCore/unit_tests` lock file moved to `unit_tests/systypes/unittest/`.
 - 2026-09-20: the CMake version check was moved out of `RaftBootstrap.cmake` (stage 1, which is now back to
   exactly the v1.54.1 release asset) into `RaftBootstrapPhase2.cmake`. Stage 1 is downloaded from a release,
   cached and, in older projects, pinned to an old release, so changes there reach projects late or never;
