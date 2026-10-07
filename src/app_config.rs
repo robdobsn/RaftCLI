@@ -788,7 +788,7 @@ mod tests {
     }
 
     #[test]
-    fn esp_idf_version_is_in_features_cmake_not_the_dockerfile() {
+    fn esp_idf_version_in_features_cmake_matches_dockerfile_default() {
         use crate::esp_idf::{classify_dockerfile, parse_features_cmake_version, DockerfileKind};
         let overrides: HashMap<String, String> = [("esp_idf_version".to_string(), "6.1".to_string())].into_iter().collect();
         let config: JsonValue = serde_json::from_str(&get_user_input("MyApp", true, &overrides).unwrap()).unwrap();
@@ -803,10 +803,12 @@ mod tests {
         assert_eq!(parse_features_cmake_version(&sys_type), Ok(None));
         assert!(sys_type.contains("# set(ESP_IDF_VERSION \"6.1\")"));
 
-        // The Dockerfile has a placeholder rather than a version
+        // The Dockerfile takes the version as a build-arg placeholder (so raft build can override it) whose
+        // default is the same version as features.cmake, with the "v" prefix the espressif/idf image tag needs
         let dockerfile = render(include_str!("../raft_templates/Dockerfile"));
-        assert_eq!(classify_dockerfile(Some(&dockerfile)), DockerfileKind::Placeholder { default_tag: None });
-        assert!(!dockerfile.contains("6.1"));
+        assert_eq!(classify_dockerfile(Some(&dockerfile)), DockerfileKind::Placeholder { default_tag: Some("v6.1".to_string()) });
+        assert!(dockerfile.contains("ARG ESP_IDF_VERSION=v6.1"));
+        assert!(dockerfile.contains("FROM espressif/idf:${ESP_IDF_VERSION}"));
     }
 
     #[test]

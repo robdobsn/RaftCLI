@@ -52,6 +52,8 @@ Then install the app with:
 cargo install raftcli
 ```
 
+If the install fails to compile because of a problem in one of the crates that raftcli depends on, use `cargo install raftcli --locked` instead. By default `cargo install` uses the newest compatible version of every dependency, whereas `--locked` uses exactly the versions that the release was built and tested with.
+
 If you are using a Linux OS and see an install failure like:
 
 - `failed to run custom build command for libudev-sys`
@@ -77,7 +79,7 @@ python3 -m pip install esptool
 
 Alternatively you can [install the Espressif ESP IDF](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/get-started/index.html). Make sure all of the requirements are installed correctly as I find the Espressif installation docs to be a bit unclear. Also, if installing an ESP IDF from the [releases page on github](https://github.com/espressif/esp-idf/releases), ensure that you install the tools by changing to the ESP IDF folder and running ./install.sh or similar commands on different OSs - see [install-scripts](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-guides/tools/idf-tools.html#install-scripts).
 
-The recommended way to install the ESP IDF is now the [Espressif Installation Manager (EIM)](https://docs.espressif.com/projects/idf-im-ui/en/latest/), for example `eim install -i v6.0.2`. RaftCLI finds ESP IDF versions installed by EIM automatically (from EIM's `eim_idf.json` manifest) as well as ones installed the traditional way in `~/esp` (Linux/Mac) or `C:\Espressif\frameworks` (Windows). So the simplest way to build is `raft build -i` which finds an installed ESP IDF of the version the app requires, from any shell, with no need to set up the ESP IDF environment first. See [Which ESP IDF version is used](#which-esp-idf-version-is-used).
+The recommended way to install the ESP IDF is now the [Espressif Installation Manager (EIM)](https://docs.espressif.com/projects/idf-im-ui/en/latest/), for example `eim install -i v6.1`. RaftCLI finds ESP IDF versions installed by EIM automatically (from EIM's `eim_idf.json` manifest) as well as ones installed the traditional way in `~/esp` (Linux/Mac) or `C:\Espressif\frameworks` (Windows). So the simplest way to build is `raft build -i` which finds an installed ESP IDF of the version the app requires, from any shell, with no need to set up the ESP IDF environment first. See [Which ESP IDF version is used](#which-esp-idf-version-is-used).
 
 Alternatively you can run the raft command line interface program in a shell with the IDF environment installed. You can do this on linux/mac using a command like `. ~/esp/esp-idf-v6.0/export.sh` or similar based on where the esp idf got installed and what version it is. Another option, and one that works on Windows, is use the [Espressif VS Code extension](https://github.com/espressif/vscode-esp-idf-extension) which handles the shell environment for you. Otherwise, on Windows and depending on how you installed the ESP IDF, you may need to use a shortcut that runs the ESP IDF shell. 
 
@@ -87,18 +89,18 @@ In this case use the `--no-docker` option, i.e. `raft run --no-docker` or `raft 
 
 The ESP IDF version required to build a SysType is found in this order:
 
-1. the `--idf-version` option e.g. `raft build --idf-version 6.0.2`
-2. `set(ESP_IDF_VERSION "6.0.2")` in `systypes/<SysType>/features.cmake` - so different SysTypes in the same app can be built with different versions
-3. `set(ESP_IDF_VERSION "6.0.2")` in `systypes/Common/features.cmake` - the default for all SysTypes (this is where `raft new` puts it)
-4. the version in the `Dockerfile` (`FROM espressif/idf:v6.0.2`) - this is how apps created with earlier versions of RaftCLI specify it and continues to work
-5. RaftCLI's default version
+1. the `--idf-version` option e.g. `raft build --idf-version 6.1`
+2. `set(ESP_IDF_VERSION "6.1")` in `systypes/<SysType>/features.cmake` - so different SysTypes in the same app can be built with different versions
+3. `set(ESP_IDF_VERSION "6.1")` in `systypes/Common/features.cmake` - the default for all SysTypes (this is where `raft new` puts it)
+4. the version in the `Dockerfile` (`FROM espressif/idf:v6.1`) - this is how apps created with earlier versions of RaftCLI specify it and continues to work
+5. RaftCLI's default version (currently 6.1)
 
 The `set(ESP_IDF_VERSION ...)` line must contain a literal version on a single line because RaftCLI reads it without running CMake. In a SysType's `features.cmake` place it after the `include` of the Common file.
 
 The same version is used for local and Docker builds:
 
-- Local builds use an installed ESP IDF of that version. The `-e` option specifies one explicitly, either as the path of an ESP IDF folder or the name of an EIM installation (as shown by `eim list`) e.g. `raft build -e v6.0.2`, and this choice is remembered for later builds. If EIM's manifest is not in the default location use `--eim-json <path to eim_idf.json>` or set the `RAFT_EIM_IDF_JSON` environment variable.
-- Docker builds use the `espressif/idf` image with that tag. Apps created by `raft new` have a `Dockerfile` with no version in it (`ARG ESP_IDF_VERSION` / `FROM espressif/idf:${ESP_IDF_VERSION}`) and RaftCLI supplies the version when it builds the image - so that `Dockerfile` can't be built directly with `docker build`. If a `Dockerfile` does contain a version and a different one is required then RaftCLI leaves the `Dockerfile` alone and builds the image from a generated copy in `build/raft_docker/<SysType>/Dockerfile`. Images are tagged `raftbuilder:idf-<version>`; these are large so you may want to remove ones no longer needed (`docker image ls raftbuilder`).
+- Local builds use an installed ESP IDF of that version. The `-e` option specifies one explicitly, either as the path of an ESP IDF folder or the name of an EIM installation (as shown by `eim list`) e.g. `raft build -e v6.1`, and this choice is remembered for later builds. If EIM's manifest is not in the default location use `--eim-json <path to eim_idf.json>` or set the `RAFT_EIM_IDF_JSON` environment variable.
+- Docker builds use the `espressif/idf` image with that tag. Apps created by `raft new` have a `Dockerfile` that takes the version as a build argument (`ARG ESP_IDF_VERSION=v<version>` / `FROM espressif/idf:${ESP_IDF_VERSION}`) and RaftCLI supplies the required version when it builds the image, overriding the default. The default is set by `raft new` to match `features.cmake` so the `Dockerfile` can also be built directly with `docker build`. If a `Dockerfile` does contain a literal version and a different one is required then RaftCLI leaves the `Dockerfile` alone and builds the image from a generated copy in `build/raft_docker/<SysType>/Dockerfile`. Images are tagged `raftbuilder:idf-<version>`; these are large so you may want to remove ones no longer needed (`docker image ls raftbuilder`).
 
 The ESP IDF component manager's lock file (which records the versions of managed components such as mdns and littlefs, together with the ESP IDF version and target chip they were chosen for) is kept per SysType, in `systypes/<SysType>/dependencies.lock`, in any app which sets `ESP_IDF_VERSION`. Otherwise SysTypes which use different ESP IDF versions (or different chips) would each invalidate a shared `dependencies.lock` every time you switched between them. Commit these files if you want repeatable builds. An app which doesn't set `ESP_IDF_VERSION` keeps using `dependencies.lock` in the app folder as before, unless a `dependencies.lock` exists in the SysType folder (so an older app can opt in by moving its lock file there). This needs a version of RaftCore which supports it.
 
@@ -529,10 +531,10 @@ Clone the repo:
 ```
 git clone https://github.com/robdobsn/RaftCLI
 cd RaftCLI
-cargo install --path .
+cargo install --path . --locked
 ```
 
-This will build and install the app into the binary executables folder that cargo uses.
+This will build and install the app into the binary executables folder that cargo uses. The `--locked` option uses the dependency versions recorded in `Cargo.lock` (without it cargo ignores that file and uses the newest compatible version of every dependency).
 
 ## Scaffolding Questions
 
