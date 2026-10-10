@@ -6,7 +6,7 @@ use std::io;
 use std::path::Path;
 #[cfg(unix)]
 use nix::unistd::{getuid, getgid};
-use crate::raft_cli_utils::{default_esp_idf_version, is_docker_available, utils_get_sys_type, write_build_info, read_build_info, BuildInfo};
+use crate::raft_cli_utils::{default_esp_idf_version, docker_status, docker_unavailable_message, utils_get_sys_type, write_build_info, read_build_info, BuildInfo, DockerStatus};
 use crate::raft_cli_utils::check_app_folder_valid;
 use crate::raft_cli_utils::{execute_and_capture_output, execute_and_capture_output_env};
 use crate::raft_cli_utils::convert_path_for_docker;
@@ -84,14 +84,20 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: 
         force_docker = true;
     }
 
+    // Probe Docker once so we can give the user precise diagnostics.
+    let docker = docker_status();
+    let docker_ok = matches!(docker, DockerStatus::Available);
+
     // Apply saved build method preference if no explicit flags set
     if !no_docker_arg && !force_docker_arg && !idf_options.use_local_idf && idf_options.idf_path_or_name.is_none() {
         if let Some(ref last_method) = build_info.last_build_method {
             if last_method == "docker" {
-                if is_docker_available() {
+                if docker_ok {
                     force_docker = true;
                 } else {
                     println!("Warning: Previous build used Docker but Docker is not available, falling back to local IDF");
+                    println!();
+                    println!("{}", docker_unavailable_message(&docker));
                 }
             } else if last_method == "local_idf" {
                 no_docker = true;
@@ -102,7 +108,7 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: 
     // Handle building with or without docker
     let (build_result, actual_build_method, actual_idf_path, idf_path_was_explicit) =
         if idf_options.use_local_idf || (idf_options.idf_path_or_name.is_some() && !force_docker)
-                    || no_docker || !is_docker_available() && !force_docker {
+                    || no_docker || (!docker_ok && !force_docker) {
         // (specifying an ESP-IDF with the -e option implies a local build)
 
         // Explicit path saved from a previous build (only used if there is no -e option)
@@ -125,17 +131,21 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: 
             }
             Err(e) => (Err(e), "local_idf", None, false)
         }
-    } else if is_docker_available() {
+    } else if docker_ok {
         // Build with docker
         let result = build_with_docker(app_folder.clone(), sys_type.clone(), clean, clean_only,
                     delete_build_folder, &required_version);
         (result, "docker", None, false)
     } else
     {
-        // Either ESP IDF or docker must be available to build
+        // Docker was explicitly requested (via flag/env var) but is not available.
+        eprintln!();
+        eprintln!("Cannot build: Docker was requested but is not available.");
+        eprintln!();
+        eprintln!("{}", docker_unavailable_message(&docker));
         let result = Err(std::io::Error::new(
             std::io::ErrorKind::Other,
-            "Either ESP IDF or Docker must be available to build",
+            "Docker is not available (see message above)",
         ));
         (result, "unknown", None, false)
     };
@@ -201,17 +211,33 @@ fn build_with_docker(project_dir: String, systype_name: String, clean: bool, cle
     docker_image_build_args.push(".".to_string());
 
     // Build the Docker image
-    let fail_docker_image_msg = format!("Docker build command failed");
     let docker_image_build_status = Command::new("docker")
         .current_dir(project_dir.clone())
         .args(docker_image_build_args)
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
-        .status()
-        .expect(&fail_docker_image_msg);
+        .status();
+
+    let docker_image_build_status = match docker_image_build_status {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!();
+            eprintln!("Failed to invoke 'docker build': {}", e);
+            eprintln!();
+            eprintln!("{}", docker_unavailable_message(&docker_status()));
+            return Err(std::io::Error::new(std::io::ErrorKind::Other,
+                "Docker is not available (see message above)"));
+        }
+    };
 
     if !docker_image_build_status.success() {
-        eprintln!("Docker image build command failed");
+        eprintln!();
+        eprintln!("Docker image build failed.");
+        let status = docker_status();
+        if !matches!(status, DockerStatus::Available) {
+            eprintln!();
+            eprintln!("{}", docker_unavailable_message(&status));
+        }
         return Err(std::io::Error::new(std::io::ErrorKind::Other, "Docker image build command failed"));
     }
 

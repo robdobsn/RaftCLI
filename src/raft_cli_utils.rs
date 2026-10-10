@@ -562,12 +562,104 @@ pub fn check_target_folder_valid(target_folder: &str, clean: bool) -> bool {
     true
 }
 
-// Function to check if Docker is available
+// Docker availability status with enough detail to give the user a useful
+// diagnostic when something is wrong.
+#[derive(Debug, Clone)]
+pub enum DockerStatus {
+    Available,
+    NotInstalled,
+    DaemonNotRunning(String),
+}
+
+// Probe Docker: first check the CLI is present, then verify the daemon
+// responds to `docker info`. The CLI succeeding on `--version` is not
+// sufficient on Windows/macOS where Docker Desktop may be installed but
+// not running.
+pub fn docker_status() -> DockerStatus {
+    let version = Command::new("docker").arg("--version").output();
+    match version {
+        Err(_) => return DockerStatus::NotInstalled,
+        Ok(out) if !out.status.success() => return DockerStatus::NotInstalled,
+        Ok(_) => {}
+    }
+
+    let info = Command::new("docker")
+        .args(["info", "--format", "{{.ServerVersion}}"])
+        .output();
+    match info {
+        Ok(out) if out.status.success() => {
+            let server_version = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if server_version.is_empty() {
+                DockerStatus::DaemonNotRunning(String::new())
+            } else {
+                DockerStatus::Available
+            }
+        }
+        Ok(out) => {
+            let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+            DockerStatus::DaemonNotRunning(stderr)
+        }
+        Err(e) => DockerStatus::DaemonNotRunning(e.to_string()),
+    }
+}
+
+// Function to check if Docker is available (and the daemon is responsive)
+#[allow(dead_code)]
 pub fn is_docker_available() -> bool {
-    Command::new("docker")
-        .arg("--version")
-        .output()
-        .map_or(false, |output| output.status.success())
+    matches!(docker_status(), DockerStatus::Available)
+}
+
+// Build a user-friendly, OS-tailored explanation for why Docker can't be
+// used right now, plus suggestions for what to do about it.
+pub fn docker_unavailable_message(status: &DockerStatus) -> String {
+    let mut msg = String::new();
+    match status {
+        DockerStatus::Available => return msg,
+        DockerStatus::NotInstalled => {
+            msg.push_str("Docker was not found on this system (the 'docker' command is not on PATH).\n");
+        }
+        DockerStatus::DaemonNotRunning(detail) => {
+            msg.push_str("Docker is installed, but the Docker daemon is not responding.\n");
+            let trimmed: String = detail
+                .lines()
+                .filter(|l| !l.trim().is_empty())
+                .take(3)
+                .collect::<Vec<_>>()
+                .join("\n  ");
+            if !trimmed.is_empty() {
+                msg.push_str("Details:\n  ");
+                msg.push_str(&trimmed);
+                msg.push('\n');
+            }
+        }
+    }
+    msg.push('\n');
+    if cfg!(target_os = "windows") {
+        msg.push_str("On Windows:\n");
+        msg.push_str("  - Install Docker Desktop: https://www.docker.com/products/docker-desktop/\n");
+        msg.push_str("  - Start Docker Desktop from the Start menu and wait until the whale icon\n");
+        msg.push_str("    in the system tray reports 'Docker Desktop is running'.\n");
+        msg.push_str("  - If you just installed it, you may need to sign out/in (or reboot) so\n");
+        msg.push_str("    your account picks up membership in the 'docker-users' group.\n");
+        msg.push_str("  - Verify from a new PowerShell window:  docker info\n");
+    } else if cfg!(target_os = "macos") {
+        msg.push_str("On macOS:\n");
+        msg.push_str("  - Install Docker Desktop: https://www.docker.com/products/docker-desktop/\n");
+        msg.push_str("  - Launch Docker Desktop (whale icon in the menu bar) and wait until it\n");
+        msg.push_str("    reports the engine is running.\n");
+        msg.push_str("  - Verify with:  docker info\n");
+    } else {
+        msg.push_str("On Linux:\n");
+        msg.push_str("  - Install Docker Engine: https://docs.docker.com/engine/install/\n");
+        msg.push_str("  - Start the daemon:  sudo systemctl start docker\n");
+        msg.push_str("  - Add your user to the 'docker' group so sudo isn't needed:\n");
+        msg.push_str("      sudo usermod -aG docker $USER   (then log out and back in)\n");
+        msg.push_str("  - Verify with:  docker info\n");
+    }
+    msg.push_str("\nOr build without Docker using a local ESP-IDF install:\n");
+    msg.push_str("  raft build --no-docker            (uses IDF_PATH or an auto-detected ESP-IDF)\n");
+    msg.push_str("  raft build -e <path-to-esp-idf>   (use a specific ESP-IDF folder)\n");
+    msg
 }
 
 #[cfg(test)]
