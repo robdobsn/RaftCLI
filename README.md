@@ -359,6 +359,8 @@ The `raftdevlibs` folder is in `.gitignore`, so it is never committed.
 | `raft l unlink` | Remove links (all of them, or those given with `--libs`). The linked repos are not changed |
 | `raft l remove --libs <LIB>...` (`raft l rm`) | Delete clones. Refused if a clone has uncommitted changes, stashes or commits not pushed to a remote, unless `--force` |
 
+Every subcommand accepts `--dest <DEST_DIR>` to work on a folder other than `<app-folder>/raftdevlibs`, but the build only uses `raftdevlibs`. Use `raft l <subcommand> --help` for all the options.
+
 ### Fetching clones
 
 ```
@@ -387,8 +389,9 @@ On Windows, creating a symlink needs Developer Mode or Administrator rights, so 
 ### Building with local libraries
 
 - After a library is added to or removed from `raftdevlibs`, the next `raft build` deletes and recreates the SysType's build folder, because CMake doesn't notice the change by itself.
-- Docker builds mount each linked repo into the container, as links to folders outside the project would otherwise not resolve there.
-- A broken link (for example after its repo was moved) for a library the project uses stops the build with an error, so the build never quietly falls back to the remote version.
+- Docker builds mount each linked repo into the container, as links to folders outside the project would otherwise not resolve there. A Docker build is refused if a linked repo would be mounted over a system folder in the container (for example a repo kept under `/opt`, where the ESP IDF image keeps its tools) or over the project itself; build with `--no-docker` or keep the repo somewhere else.
+- A broken link (for example after its repo was moved) for a library the project uses stops the build with an error, so the build never quietly falls back to the remote version. A broken link for a library the project doesn't use only gives a warning.
+- On Windows, Docker builds of a project in a Windows folder are much slower than on Linux, because Docker Desktop shares every file with its Linux VM. Linking doesn't change this, but for a faster Docker build keep the project in the WSL filesystem and run `raft build` from WSL.
 
 ## Flash firmware to a development board (without rebuilding)
 
@@ -536,7 +539,7 @@ Several command-line settings are automatically saved to `build/raft.info` when 
 
 To override a saved setting, simply specify the option again on the command line. The new value will replace the previously saved one. For example, if `--no-fs` was previously used and saved, use `--fs` to re-enable file system flashing.
 
-Build-related settings (system type, build method, ESP IDF path) are also saved automatically after a successful build.
+Build-related settings (system type, build method, ESP IDF path) are also saved automatically after a successful build. For each SysType the ESP IDF version and the libraries used from `raftdevlibs` are recorded too, so that the build folder is recreated when either changes.
 
 ### Build from source
 
@@ -594,7 +597,7 @@ The best way to build a raft application depends on your OS and requirements. I 
 
 ## Appendix: Finding local Git changes
 
-When using `raftdevlibs`, local Raft library checkouts can accumulate changes inside individual projects. The helper script `scripts/find_git_changes.py` scans a folder tree for Git repositories and prints only the repository folders that contain local changes.
+When using `raftdevlibs`, local Raft library checkouts can accumulate changes inside individual projects. The helper script `scripts/find_git_changes.py` scans a folder tree for Git repositories and prints only the repository folders that contain local changes. It doesn't follow links, so a library linked into `raftdevlibs` is reported once, at the repo's own location (if that is inside the folder scanned). For a single project, `raft l` shows the same information.
 
 From a workspace folder containing multiple projects, run:
 

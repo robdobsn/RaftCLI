@@ -33,6 +33,15 @@
   - on platformio the configurations could maybe be managed by the platformio.ini file so and there could be an option in the raftcli to generate a platformio.ini file?
   - maybe there should be a raftcli prebuild function which runs this script?
 
+## Fixed in 1.25.1
+- `raft libs` reworked for local libraries in raftdevlibs (see devdocs/raftdevlibs-links-plan.md):
+  bare `raft l` now shows status; status shows clone/link (with target), pinned version and broken links;
+  new `link` (symlink, or junction on Windows), `unlink` and `remove` subcommands; `fetch` never changes a
+  linked repo and defaults to the libraries in RAFT_COMPONENTS; `pull` includes linked repos
+- `raft build`: Docker builds mount linked libraries into the container; a broken link to a library the
+  project uses is an error; the build folder is recreated when the set of local libraries changes
+- Scaffold sdkconfig.defaults raises CONFIG_LWIP_MAX_SOCKETS and CONFIG_LWIP_MAX_ACTIVE_TCP to 24
+
 ## Fixed in 1.20.1
 - Scaffold template CMakeLists.txt now derives the RaftBootstrap.cmake URL from
   the `RaftCore@<tag>` pin in systypes/Common/features.cmake: pinned tag -> that

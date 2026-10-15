@@ -8,7 +8,9 @@ below; the rest of the document is the plan as agreed (decisions in section 7).
 
 Code: `src/app_libs.rs` (rewritten around the classifier), `src/app_build.rs`, `src/raft_cli_utils.rs`
 (`raft.info`), `src/main.rs` (help text, readable build errors), `Cargo.toml` (`junction`, Windows only),
-`raft_templates/CMakeLists.txt`, `README.md`; RaftCore `scripts/RaftBootstrap.cmake`.
+`raft_templates/CMakeLists.txt`, `README.md`, `TODO.md` ("Fixed in 1.25.1"); RaftCore `scripts/RaftBootstrap.cmake`
+and `unit_tests/deferred_responses_hw/README.md` (now uses `raft build --docker`, keeping the manual `docker run`
+for older RaftCLI versions).
 
 Done, by plan section:
 
