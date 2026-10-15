@@ -25,6 +25,9 @@ endif()
 
 # Bootstrap using the RaftBootstrap script
 # A local RaftCore copy in raftdevlibs takes precedence (development workflow)
+if(IS_SYMLINK "${CMAKE_SOURCE_DIR}/raftdevlibs/RaftCore" AND NOT EXISTS "${CMAKE_SOURCE_DIR}/raftdevlibs/RaftCore")
+    message(FATAL_ERROR "raftdevlibs/RaftCore is a broken link - fix it or remove it with 'raft l unlink --libs RaftCore'")
+endif()
 if(EXISTS "${CMAKE_SOURCE_DIR}/raftdevlibs/RaftCore/scripts/RaftBootstrap.cmake")
     include("${CMAKE_SOURCE_DIR}/raftdevlibs/RaftCore/scripts/RaftBootstrap.cmake")
 else()

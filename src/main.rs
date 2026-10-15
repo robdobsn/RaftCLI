@@ -56,7 +56,7 @@ enum Action {
     Fs(FsCmd),
     #[clap(name = "ports", about = "Manage serial ports", alias = "p")]
     Ports(PortsCmd),
-    #[clap(name = "libs", about = "Manage local Raft development libraries (fetch, status)", alias = "l")]
+    #[clap(name = "libs", about = "Manage local Raft development libraries (status, fetch, pull, link, unlink, remove)", alias = "l")]
     Libs(LibsCmd),
     #[clap(name = "debug", about = "Start remote debug console", alias = "d")]
     DebugRemote(DebugRemoteCmd),
@@ -370,8 +370,8 @@ fn main() {
             // println!("{:?}", result);
 
             // Check for build error
-            if result.is_err() {
-                println!("Build failed {:?}", result);
+            if let Err(e) = &result {
+                println!("Build failed: {}", e);
                 std::process::exit(1);
             }
         }
@@ -471,8 +471,8 @@ fn main() {
                         });
 
             // Check for build error
-            if result.is_err() {
-                println!("Build failed {:?}", result);
+            if let Err(e) = &result {
+                println!("Build failed: {}", e);
                 std::process::exit(1);
             }
             

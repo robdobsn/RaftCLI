@@ -22,6 +22,13 @@ CONFIG_FREERTOS_HZ=1000
 # mDNS
 CONFIG_MDNS_PREDEF_NETIF_STA=y
 
+# lwIP
+# Raise the socket limit (IDF default is 10) and active TCP limit (IDF default is 16) as web
+# server, websocket and RaftRemote connections can exhaust them - running out of heap is easier
+# to diagnose than running out of sockets
+CONFIG_LWIP_MAX_SOCKETS=24
+CONFIG_LWIP_MAX_ACTIVE_TCP=24
+
 # Build type
 CONFIG_COMPILER_OPTIMIZATION_SIZE=y
 CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_DISABLE=y

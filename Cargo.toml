@@ -1,6 +1,6 @@
 [package]
 name = "raftcli"
-version = "1.24.1"
+version = "1.25.1"
 authors = ["Rob Dobson <rob@dobson.com>"]
 license = "MIT"
 keywords = ["cli", "esp32", "espressif", "raft", "framework"]
@@ -42,3 +42,4 @@ nix = { version = "0.31", features = ["user", "term", "poll"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_System_Console", "Win32_Foundation", "Win32_System_Threading"] }
+junction = "1"

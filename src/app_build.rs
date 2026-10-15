@@ -12,6 +12,7 @@ use crate::raft_cli_utils::{execute_and_capture_output, execute_and_capture_outp
 use crate::raft_cli_utils::convert_path_for_docker;
 use crate::raft_cli_utils::CommandError;
 use crate::esp_idf::{self, IdfInstall, IdfKind, LocatorInputs, RequiredVersion};
+use crate::app_libs::{check_docker_mount, DevLibLink};
 
 /// Options which control which ESP-IDF is used for a build
 #[derive(Debug, Clone, Default)]
@@ -68,6 +69,20 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: 
         if *last_version != required_version.for_cmake() && !delete_build_folder {
             println!("The build folder for SysType {} was built with ESP-IDF {} and {} is now required so it will be deleted",
                         sys_type, last_version, required_version.for_cmake());
+            delete_build_folder = true;
+        }
+    }
+
+    // Libraries used from raftdevlibs - a broken link is an error (the build would otherwise quietly use the
+    // remote library) and a change to which libraries are local needs a new build folder as CMake doesn't notice it
+    let dev_libs = crate::app_libs::check_devlibs_for_build(&app_folder)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+    let local_libs = dev_libs.local_names.join(",");
+    if let Some(last_local_libs) = build_info.local_libs.get(&sys_type) {
+        if *last_local_libs != local_libs && !delete_build_folder {
+            let describe = |libs: &str| if libs.is_empty() { "none".to_string() } else { libs.to_string() };
+            println!("The libraries used from raftdevlibs have changed since SysType {} was last built ({} -> {}) so the build folder will be deleted",
+                        sys_type, describe(last_local_libs), describe(&local_libs));
             delete_build_folder = true;
         }
     }
@@ -134,7 +149,7 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: 
     } else if docker_ok {
         // Build with docker
         let result = build_with_docker(app_folder.clone(), sys_type.clone(), clean, clean_only,
-                    delete_build_folder, &required_version);
+                    delete_build_folder, &required_version, &dev_libs.links);
         (result, "docker", None, false)
     } else
     {
@@ -157,8 +172,10 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: 
 
     // Save complete build info to raft.info file after successful build
     let mut idf_versions = HashMap::new();
+    let mut local_libs_built = HashMap::new();
     if !clean_only {
         idf_versions.insert(sys_type.clone(), required_version.for_cmake());
+        local_libs_built.insert(sys_type.clone(), local_libs);
     }
     let build_updates = BuildInfo {
         last_built_systype: Some(sys_type.clone()),
@@ -166,6 +183,7 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: 
         last_idf_path_explicit: idf_path_was_explicit,
         last_idf_path: actual_idf_path,
         idf_versions,
+        local_libs: local_libs_built,
         ..BuildInfo::default()
     };
     if let Err(e) = write_build_info(
@@ -180,7 +198,8 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: 
 
 // Build with docker and return output as a string
 fn build_with_docker(project_dir: String, systype_name: String, clean: bool, clean_only: bool,
-            delete_build_folder: bool, required_version: &RequiredVersion) -> Result<String, std::io::Error> {
+            delete_build_folder: bool, required_version: &RequiredVersion,
+            dev_lib_links: &[DevLibLink]) -> Result<String, std::io::Error> {
 
     // Build with docker
     println!("Raft build SysType {} in {}{}",  systype_name, project_dir.clone(),
@@ -270,30 +289,25 @@ fn build_with_docker(project_dir: String, systype_name: String, clean: bool, cle
     #[cfg(unix)]
     let user_group = format!("{}:{}", getuid(), getgid());
 
-    #[cfg(unix)]
-    let docker_run_args = vec![
-        "run", "--rm",
-        "--user", &user_group,
-        "-e", &version_env,
-        "-v", &project_dir_full,
-        "-w", "/project",
-        &docker_plan.image_tag,
-        "/bin/bash", "-c", &command_sequence,
-    ];
+    let mut docker_run_args: Vec<String> = vec!["run".to_string(), "--rm".to_string()];
 
     // On Windows, Docker handles permissions differently, so we don't need --user flag
-    #[cfg(not(unix))]
-    let docker_run_args = vec![
-        "run", "--rm",
-        "-e", &version_env,
-        "-v", &project_dir_full,
-        "-w", "/project",
-        &docker_plan.image_tag,
-        "/bin/bash", "-c", &command_sequence,
-    ];
+    #[cfg(unix)]
+    docker_run_args.extend(["--user".to_string(), user_group]);
 
-    // Convert to string vector
-    let docker_run_args: Vec<String> = docker_run_args.iter().map(|s| s.to_string()).collect();
+    docker_run_args.extend(["-e".to_string(), version_env, "-v".to_string(), project_dir_full]);
+
+    // Linked libraries in raftdevlibs point outside the project folder so they don't resolve in the container.
+    // Each target is mounted over its link (Docker resolves the link within the container and mounts there).
+    for link in dev_lib_links {
+        check_docker_mount(link).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        let host_path = convert_path_for_docker(link.resolved.clone())?;
+        println!("Mounting linked library {} from {}", link.name, link.resolved.display());
+        docker_run_args.extend(["-v".to_string(), format!("{}:/project/raftdevlibs/{}", host_path, link.name)]);
+    }
+
+    docker_run_args.extend(["-w".to_string(), "/project".to_string(), docker_plan.image_tag.clone(),
+                    "/bin/bash".to_string(), "-c".to_string(), command_sequence]);
 
     // Print args
     // println!("Docker run args: {:?}", docker_run_args);

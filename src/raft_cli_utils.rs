@@ -33,6 +33,9 @@ pub struct BuildInfo {
     pub last_ip_addr: Option<String>,
     // ESP-IDF version last used to build each SysType (a build folder can't be reused with a different version)
     pub idf_versions: HashMap<String, String>,
+    // Libraries used from raftdevlibs when each SysType was last built (comma separated names) - CMake does
+    // not notice when a library switches between local and remote so the build folder must be recreated
+    pub local_libs: HashMap<String, String>,
 }
 
 impl Default for BuildInfo {
@@ -49,6 +52,7 @@ impl Default for BuildInfo {
             last_no_fs: None,
             last_ip_addr: None,
             idf_versions: HashMap::new(),
+            local_libs: HashMap::new(),
         }
     }
 }
@@ -73,6 +77,11 @@ pub fn read_build_info(app_folder: &str) -> BuildInfo {
                 idf_versions: json["idf_versions"].as_object().map(|versions| {
                     versions.iter()
                         .filter_map(|(sys_type, version)| version.as_str().map(|v| (sys_type.clone(), v.to_string())))
+                        .collect()
+                }).unwrap_or_default(),
+                local_libs: json["local_libs"].as_object().map(|libs| {
+                    libs.iter()
+                        .filter_map(|(sys_type, names)| names.as_str().map(|n| (sys_type.clone(), n.to_string())))
                         .collect()
                 }).unwrap_or_default(),
             };
@@ -116,6 +125,11 @@ pub fn write_build_info(
             idf_versions.extend(updates.idf_versions.clone());
             idf_versions
         },
+        local_libs: {
+            let mut local_libs = existing.local_libs;
+            local_libs.extend(updates.local_libs.clone());
+            local_libs
+        },
     };
 
     let mut raft_info = serde_json::json!({
@@ -132,6 +146,7 @@ pub fn write_build_info(
     if let Some(v) = merged.last_no_fs { raft_info["last_no_fs"] = serde_json::json!(v); }
     if let Some(ref v) = merged.last_ip_addr { raft_info["last_ip_addr"] = serde_json::json!(v); }
     if !merged.idf_versions.is_empty() { raft_info["idf_versions"] = serde_json::json!(merged.idf_versions); }
+    if !merged.local_libs.is_empty() { raft_info["local_libs"] = serde_json::json!(merged.local_libs); }
     
     fs::write(&raft_info_path, serde_json::to_string_pretty(&raft_info)?)?;
     Ok(())
@@ -692,6 +707,18 @@ mod tests {
         assert_eq!(info.idf_versions.get("BoardB").map(|s| s.as_str()), Some("6.1.0"));
         assert_eq!(info.last_port.as_deref(), Some("COM15"));
         assert_eq!(info.last_idf_path.as_deref(), Some("/home/me/esp/esp-idf-v6.0.2"));
+        assert!(info.local_libs.is_empty());
+
+        // Local libraries are recorded per SysType (an empty list is recorded too)
+        for (sys_type, libs) in [("BoardA", "RaftCore,RaftSysMods"), ("BoardB", ""), ("BoardA", "RaftCore")] {
+            let mut updates = BuildInfo::default();
+            updates.local_libs.insert(sys_type.to_string(), libs.to_string());
+            write_build_info(&app_folder_str, &updates).unwrap();
+        }
+        let info = read_build_info(&app_folder_str);
+        assert_eq!(info.local_libs.get("BoardA").map(|s| s.as_str()), Some("RaftCore"));
+        assert_eq!(info.local_libs.get("BoardB").map(|s| s.as_str()), Some(""));
+        assert_eq!(info.idf_versions.get("BoardB").map(|s| s.as_str()), Some("6.1.0"));
 
         let _ = fs::remove_dir_all(&app_folder);
     }

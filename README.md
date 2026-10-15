@@ -18,7 +18,7 @@ This command-line application is used to scaffold, build, flash and monitor raft
   - [Build and flash firmware to a development board](#build-and-flash-firmware-to-a-development-board)
   - [Monitoring a serial port](#monitoring-a-serial-port)
   - [Listing serial ports](#listing-serial-ports)
-  - [Fetching local development libraries](#fetching-local-development-libraries)
+  - [Local development libraries](#local-development-libraries)
   - [Flash firmware to a development board (without rebuilding)](#flash-firmware-to-a-development-board-without-rebuilding)
   - [Run esptool directly](#run-esptool-directly)
   - [OTA (Over-the-air) Update Firmware (using WiFi/Ethernet connection)](#ota-over-the-air-update-firmware-using-wifiethernet-connection)
@@ -341,38 +341,54 @@ Options:
 
 When using WSL, the ports command automatically delegates to the Windows version (raft.exe) to access USB serial ports unless the -n flag is specified.
 
-## Fetching local development libraries
+## Local development libraries
 
-Raft projects can use local library checkouts from a `raftdevlibs` folder in the project root. This is useful when developing or debugging Raft libraries locally, because the Raft build system will use `raftdevlibs/<LibraryName>` instead of fetching that library during the build.
+Raft projects can use local copies of Raft libraries from a `raftdevlibs` folder in the project root. The build uses `raftdevlibs/<LibraryName>` in place of the version in `RAFT_COMPONENTS` (in `features.cmake`), which is useful when developing or debugging a library. A library in `raftdevlibs` can be:
 
-To fetch the standard Raft libraries into the current project, use:
+- a **clone** made for this project with `raft l fetch`, or
+- a **link** (a symlink, or a junction on Windows) to a repo you work on elsewhere, made with `raft l link`. Several projects can link to the same repo.
+
+The `raftdevlibs` folder is in `.gitignore`, so it is never committed.
+
+| Command | Use |
+| -- | -- |
+| `raft l` or `raft l status` | Show each library in `raftdevlibs` (clone or link and where it points, pinned version, branch, commit, ahead/behind, uncommitted changes) and the libraries the build fetches. `--fetch` refreshes from the remotes first |
+| `raft l fetch` (`raft l f`) | Clone libraries, or update existing clones (`git fetch`, checkout of `--branch`, fast-forward pull) |
+| `raft l pull` (`raft l p`) | Fast-forward pull every clean library which has an upstream, including linked repos (`--no-links` to skip them) |
+| `raft l link [SOURCE_DIR]` | Link library repos from `SOURCE_DIR` into `raftdevlibs` |
+| `raft l unlink` | Remove links (all of them, or those given with `--libs`). The linked repos are not changed |
+| `raft l remove --libs <LIB>...` (`raft l rm`) | Delete clones. Refused if a clone has uncommitted changes, stashes or commits not pushed to a remote, unless `--force` |
+
+### Fetching clones
 
 ```
-raft libs
-OR
-raft l
+raft l fetch [OPTIONS] [APPLICATION_FOLDER]
 ```
 
-By default this fetches `RaftCore`, `RaftSysMods`, `RaftI2C` and `RaftWebServer` from the `robdobsn` GitHub account, checks out `main`, and stores them in `./raftdevlibs`.
+By default this fetches the libraries listed in `RAFT_COMPONENTS` (or `RaftCore`, `RaftSysMods`, `RaftI2C` and `RaftWebServer` if none are found) from the `robdobsn` GitHub account (`--account`) and checks out `main` (`--branch`). Use `--libs` to choose libraries. A library which is already in `raftdevlibs` is updated, but the command stops before updating a clone with uncommitted changes unless `--force` is given. Linked libraries are never changed by `fetch` - manage those repos directly.
+
+### Linking repos
 
 ```
-Fetch local Raft development libraries
-
-Usage: raft libs [OPTIONS] [APPLICATION_FOLDER]
-
-Arguments:
-  [APPLICATION_FOLDER]  Path to the application folder
-
-Options:
-      --account <ACCOUNT>  GitHub account or organisation [default: robdobsn]
-      --libs <LIB>...      Libraries to fetch
-      --branch <BRANCH>    Git branch, tag or commit to checkout [default: main]
-      --dest <DEST_DIR>    Destination directory (default: <app-folder>/raftdevlibs)
-      --force              Update existing repositories even when they have uncommitted changes
-  -h, --help               Print help
+raft l link [SOURCE_DIR] [--libs <LIB>...] [--app <APPLICATION_FOLDER>] [--relative] [--force]
 ```
 
-Existing repositories are updated with `git fetch --all --tags`, checkout of the requested branch/tag/commit, and a fast-forward pull for branch refs. If an existing checkout has uncommitted changes, the command stops before updating it unless `--force` is specified.
+`SOURCE_DIR` is the folder containing the library repos, relative to the app folder (default `..`). For example, with the app in `~/dev/projects/MyApp` and the libraries in `~/dev/raft`:
+
+```
+raft l link ../../raft
+raft l link ../../raft --libs RaftCore
+```
+
+Without `--libs` every library in `RAFT_COMPONENTS` found in `SOURCE_DIR` is linked. Links hold absolute paths unless `--relative` is given. An existing link to a different repo is only replaced with `--force`, and a clone is never replaced - delete it first with `raft l remove`.
+
+On Windows, creating a symlink needs Developer Mode or Administrator rights, so `raft l link` makes a directory junction when symlinks aren't permitted. Junctions always hold absolute paths.
+
+### Building with local libraries
+
+- After a library is added to or removed from `raftdevlibs`, the next `raft build` deletes and recreates the SysType's build folder, because CMake doesn't notice the change by itself.
+- Docker builds mount each linked repo into the container, as links to folders outside the project would otherwise not resolve there.
+- A broken link (for example after its repo was moved) for a library the project uses stops the build with an error, so the build never quietly falls back to the remote version.
 
 ## Flash firmware to a development board (without rebuilding)
 
