@@ -145,3 +145,26 @@ pub fn http_post_multipart_file(
     stream.read_to_end(&mut raw)?;
     Ok(parse_http_response(&raw)?)
 }
+
+// HTTP GET with a connect and read timeout (e.g. to poll a device that is restarting)
+pub fn http_get_timeout(ip_addr: &str, port: u16, path: &str, timeout: Duration) -> Result<HttpResponse, Box<dyn std::error::Error>> {
+    use std::net::ToSocketAddrs;
+    let addr = format!("{}:{}", ip_addr, port)
+        .to_socket_addrs()?
+        .next()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Address not found"))?;
+    let mut stream = TcpStream::connect_timeout(&addr, timeout)?;
+    stream.set_read_timeout(Some(timeout))?;
+    stream.set_write_timeout(Some(timeout))?;
+
+    let request = format!(
+        "GET {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\nAccept: */*\r\n\r\n",
+        path, ip_addr
+    );
+    stream.write_all(request.as_bytes())?;
+    stream.flush()?;
+
+    let mut raw = Vec::new();
+    stream.read_to_end(&mut raw)?;
+    Ok(parse_http_response(&raw)?)
+}
