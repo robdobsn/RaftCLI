@@ -514,6 +514,7 @@ raft devtypes status <IP>                   # what the device loaded, and whethe
 ```
 
 - `-s <SysType>` chooses the SysType (default: last built / first found); `init`, `add` and `remove` change the SysType's file, or Common's with `--common`.
+- Type files are built against the records the last build compiled (`build/<SysType>/raft/DeviceTypeRecords.compiled.json`, which includes `DevTypes.json` and `DEV_TYPE_JSON_FILES` records), or the `builtin` selection if the project hasn't been built; `--compiled <file>` chooses another.
 - `--config <file>` uses a `DeviceTypeSources.json` on its own instead of a project's, e.g. to make type files for devices running firmware built elsewhere.
 - `push` uploads the file as `devlib.new.json`, has the device check it (the device's own rules decide, and its report is shown), then asks before applying it (`--yes` doesn't ask; `--dry-run` stops after the check and removes the upload). After the restart it confirms the device loaded the file. It warns if the device's file has changed since the last push from this project, and does nothing if the device already has the file (`--force` pushes anyway).
 - Device commands use HTTP (`-p` for a port other than 80).

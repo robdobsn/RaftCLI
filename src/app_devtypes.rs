@@ -97,7 +97,7 @@ pub enum DevTypesSub {
         /// Output file (default: build/<SysType>/raft/devlib.json)
         #[clap(long)]
         out: Option<String>,
-        /// Catalogue file of the records compiled into the firmware (default: the builtin selection)
+        /// Catalogue file of the records compiled into the firmware (default: the last build's, else the builtin selection)
         #[clap(long)]
         compiled: Option<String>,
         /// Size limit in bytes (default 65536)
@@ -111,7 +111,7 @@ pub enum DevTypesSub {
     Push {
         #[clap(flatten)]
         device: DeviceArgs,
-        /// Catalogue file of the records compiled into the firmware (default: the builtin selection)
+        /// Catalogue file of the records compiled into the firmware (default: the last build's, else the builtin selection)
         #[clap(long)]
         compiled: Option<String>,
         /// Apply without asking
@@ -168,12 +168,16 @@ struct Project {
     lock: PathBuf,
     cache_dir: PathBuf,
     override_dir: Option<PathBuf>,
+    // The records the last build compiled (build/<SysType>/raft/DeviceTypeRecords.compiled.json), if there is one:
+    // type files are built against them, as the device runs that build's firmware
+    compiled: Option<PathBuf>,
     // Where built type files and the record of pushes are kept
     work_dir: PathBuf,
 }
 
 const SOURCES_FILE: &str = "DeviceTypeSources.json";
 const TOOL_SCRIPT: &str = "scripts/DeviceTypesTool.py";
+const COMPILED_FILE: &str = "DeviceTypeRecords.compiled.json";
 
 fn find_raftcore(explicit: &Option<String>, app_folder: &Path, sys_type: Option<&str>) -> CmdResult<PathBuf> {
     if let Some(dir) = explicit {
@@ -223,6 +227,7 @@ fn resolve_project(cmd: &DevTypesCmd) -> CmdResult<Project> {
             lock: config.with_extension("lock"),
             cache_dir: work_dir.join("devtypes"),
             override_dir: Some(base.join("raftdevtypes")),
+            compiled: None,
             work_dir,
         });
     }
@@ -247,6 +252,7 @@ fn resolve_project(cmd: &DevTypesCmd) -> CmdResult<Project> {
     };
     let work_dir = app_folder.join("build").join(&sys_type).join("raft");
     let raftcore = find_raftcore(&cmd.raftcore, &app_folder, Some(&sys_type))?;
+    let compiled = Some(work_dir.join(COMPILED_FILE)).filter(|p| p.exists());
     Ok(Project {
         raftcore,
         python,
@@ -255,6 +261,7 @@ fn resolve_project(cmd: &DevTypesCmd) -> CmdResult<Project> {
         lock: systypes.join(&sys_type).join("DeviceTypeSources.lock"),
         cache_dir: work_dir.join("devtypes"),
         override_dir: Some(app_folder.join("raftdevtypes")),
+        compiled,
         work_dir,
     })
 }
@@ -271,6 +278,9 @@ impl Project {
         command.arg("--cache-dir").arg(&self.cache_dir);
         if let Some(dir) = &self.override_dir {
             command.arg("--override-dir").arg(dir);
+        }
+        if let Some(compiled) = &self.compiled {
+            command.arg("--compiled").arg(compiled);
         }
         if json {
             command.arg("--json");
