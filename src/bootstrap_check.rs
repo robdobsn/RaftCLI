@@ -52,9 +52,9 @@ pub fn bootstrap_skew_warning(cmakelists: &str, sys_type_features: Option<&str>,
     Some(format!(
         "Warning: CMakeLists.txt downloads RaftBootstrap.cmake from RaftCore release {} but features.cmake uses {}\n\
         which is not a fixed release, so the bootstrap script gets further and further behind the RaftCore it is\n\
-        used with. To fix this replace the bootstrap section of CMakeLists.txt with the one from a project created\n\
-        by a current \"raft new\" (which works out the release to download from RaftCore@<tag> in features.cmake)\n\
-        and then do a clean build (raft build -c).",
+        used with. To fix this run 'raft update-project' (or, if CMakeLists.txt has been changed, replace its\n\
+        bootstrap section with the one from a project created by a current \"raft new\") and then do a clean\n\
+        build (raft build -c).",
         bootstrap_tag, core_description))
 }
 
