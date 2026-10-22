@@ -33,6 +33,12 @@
   - on platformio the configurations could maybe be managed by the platformio.ini file so and there could be an option in the raftcli to generate a platformio.ini file?
   - maybe there should be a raftcli prebuild function which runs this script?
 
+## Unreleased
+- `raft update-project` updates the CMakeLists.txt of older apps: adds the broken raftdevlibs/RaftCore
+  link check, and replaces the old fixed-release bootstrap template when unchanged and RaftCore floats
+- `raft build` warns when raftdevlibs/RaftCore is a link and CMakeLists.txt lacks the check, and offers to fix it
+- Note when a newer RaftCLI is on crates.io (checked at most daily, RAFT_NO_UPDATE_CHECK=1 to disable)
+
 ## Fixed in 1.25.1
 - `raft libs` reworked for local libraries in raftdevlibs (see devdocs/raftdevlibs-links-plan.md):
   bare `raft l` now shows status; status shows clone/link (with target), pinned version and broken links;

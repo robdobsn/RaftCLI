@@ -12,5 +12,6 @@ RUN apt-get update && apt-get install -y curl software-properties-common && \
     apt-get update && apt-get install -y nodejs g++
 # Verify the installation of the specific Node.js version
 RUN node -v && npm -v
-# Configure Git to recognize /project as a safe directory
-RUN git config --global --add safe.directory /project
+# Configure Git to treat all repos (the project and ESP-IDF with its submodules) as safe - system-wide so it
+# applies whichever user the container runs as ("raft build" also sets this via environment variables)
+RUN git config --system --add safe.directory '*'

@@ -78,6 +78,10 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: 
     let dev_libs = crate::app_libs::check_devlibs_for_build(&app_folder)
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
     let local_libs = dev_libs.local_names.join(",");
+
+    // Projects created by an older "raft new" don't stop on a broken raftdevlibs/RaftCore link - offer to fix
+    crate::project_update::check_for_build(&app_folder, &sys_type,
+                dev_libs.links.iter().any(|link| link.name == "RaftCore"));
     if let Some(last_local_libs) = build_info.local_libs.get(&sys_type) {
         if *last_local_libs != local_libs && !delete_build_folder {
             let describe = |libs: &str| if libs.is_empty() { "none".to_string() } else { libs.to_string() };
@@ -296,6 +300,12 @@ fn build_with_docker(project_dir: String, systype_name: String, clean: bool, cle
     docker_run_args.extend(["--user".to_string(), user_group]);
 
     docker_run_args.extend(["-e".to_string(), version_env, "-v".to_string(), project_dir_full]);
+
+    // ESP-IDF and its submodules are owned by a different user in the container so git reports "dubious ownership"
+    // (and IDF version lookups fail) - mark all repos as safe via env vars as this doesn't depend on HOME or the Dockerfile
+    docker_run_args.extend(["-e".to_string(), "GIT_CONFIG_COUNT=1".to_string(),
+                    "-e".to_string(), "GIT_CONFIG_KEY_0=safe.directory".to_string(),
+                    "-e".to_string(), "GIT_CONFIG_VALUE_0=*".to_string()]);
 
     // Linked libraries in raftdevlibs point outside the project folder so they don't resolve in the container.
     // Each target is mounted over its link (Docker resolves the link within the container and mounts there).

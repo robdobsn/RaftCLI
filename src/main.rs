@@ -37,6 +37,8 @@ use app_ports::{PortsCmd, manage_ports};
 mod app_libs;
 use app_libs::{run_libs, LibsCmd};
 mod cmd_history;
+mod project_update;
+mod version_check;
 
 const HISTORY_FILE_NAME: &str = ".raftcli_history"; // Default name, configurable if needed
 
@@ -66,6 +68,15 @@ enum Action {
     DebugRemote(DebugRemoteCmd),
     #[clap(name = "esptool", about = "Run esptool directly with arguments", alias = "e")]
     Esptool(EsptoolCmd),
+    #[clap(name = "update-project", about = "Update the CMakeLists.txt of a project created by an older raft new")]
+    UpdateProject(UpdateProjectCmd),
+}
+
+// Define arguments specific to the `update-project` subcommand
+#[derive(Clone, Parser, Debug)]
+struct UpdateProjectCmd {
+    #[clap(help = "Path to the application folder", value_name = "APPLICATION_FOLDER")]
+    app_folder: Option<String>,
 }
 
 // Define arguments specific to the `new` subcommand
@@ -320,6 +331,11 @@ fn main() {
     let args = Cli::parse();
     // println!("{:?}", args);
 
+    // Tell the user about a newer RaftCLI (checked at most once a day)
+    if matches!(args.action, Action::New(_) | Action::Build(_) | Action::Run(_) | Action::Libs(_) | Action::UpdateProject(_)) {
+        version_check::notify_if_newer();
+    }
+
     // Call the function to test the templates
     match args.action {
         Action::New(cmd) => {
@@ -357,6 +373,16 @@ fn main() {
             // Generate a new app
             let _result = generate_new_app(&base_folder, json_config).unwrap();
             // println!("{:?}", _result);
+
+            // A child process can't change the parent shell's directory, so tell the user how to get there
+            let in_cwd = match (std::fs::canonicalize(&base_folder), std::env::current_dir()) {
+                (Ok(target), Ok(cwd)) => target == cwd,
+                _ => false,
+            };
+            if !in_cwd {
+                let quoted = if base_folder.contains(' ') { format!("\"{}\"", base_folder) } else { base_folder.clone() };
+                println!("\nNext steps:\n  cd {}\n  raft run", quoted);
+            }
 
         }
 
@@ -598,6 +624,14 @@ fn main() {
         Action::Libs(cmd) => {
             if let Err(e) = run_libs(&cmd) {
                 eprintln!("Libs operation failed: {}", e);
+                std::process::exit(1);
+            }
+        }
+
+        Action::UpdateProject(cmd) => {
+            let app_folder = cmd.app_folder.unwrap_or(".".to_string());
+            if let Err(e) = project_update::update_project(&app_folder) {
+                eprintln!("Error: {}", e);
                 std::process::exit(1);
             }
         }
