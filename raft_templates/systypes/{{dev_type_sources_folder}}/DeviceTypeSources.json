@@ -1,0 +1,9 @@
+{
+    "_notes": "Device type records compiled into the firmware (builtin) and for a device type file (typeFile). See RaftCore's wiki page Selecting Device Types",
+    "sources": {
+        "raftcore": { "bundled": true }
+    },
+    "builtin": {
+        "include": ["raftcore:*"]
+    }
+}

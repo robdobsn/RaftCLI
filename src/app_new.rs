@@ -97,3 +97,43 @@ pub fn generate_new_app(target_folder: &str, context: serde_json::Value) -> Resu
     println!("Successfully generated a new raft app in: {}", target_folder);
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app_config::get_user_input;
+    use std::collections::HashMap;
+
+    // Generate an app with default answers (and any overrides) into a new temporary folder
+    fn generate(name: &str, overrides: &[(&str, &str)]) -> std::path::PathBuf {
+        let folder = std::env::temp_dir().join(format!("raftcli_test_{}_{}", name, std::process::id()));
+        let _ = fs::remove_dir_all(&folder);
+        let overrides: HashMap<String, String> = overrides.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        let config = get_user_input("MyApp", true, &overrides).unwrap();
+        generate_new_app(folder.to_str().unwrap(), serde_json::from_str(&config).unwrap()).unwrap();
+        folder
+    }
+
+    #[test]
+    fn device_type_sources_selects_all_raftcore_records() {
+        let folder = generate("devtypes", &[]);
+        let sources: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(folder.join("systypes/Common/DeviceTypeSources.json")).unwrap()).unwrap();
+        assert_eq!(sources["sources"]["raftcore"]["bundled"], true);
+        assert_eq!(sources["builtin"]["include"], serde_json::json!(["raftcore:*"]));
+        // RaftCore's records are selected only by DeviceTypeSources.json (the build stops if DEV_TYPE_JSON_FILES
+        // also names them)
+        let features = fs::read_to_string(folder.join("systypes/MyApp/features.cmake")).unwrap();
+        assert!(!features.contains("DEV_TYPE_JSON_FILES"));
+        fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn no_device_type_sources_without_raftcore_device_types() {
+        let folder = generate("nodevtypes", &[("use_raft_core_dev_types", "false")]);
+        assert!(!folder.join("systypes/Common/DeviceTypeSources.json").exists());
+        assert!(!folder.join("systypes/DeviceTypeSources.json").exists());
+        assert!(folder.join("systypes/MyApp/features.cmake").exists());
+        fs::remove_dir_all(&folder).unwrap();
+    }
+}

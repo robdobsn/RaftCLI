@@ -22,6 +22,8 @@ use app_ota::ota_raft_app;
 mod http_client;
 mod app_fs;
 use app_fs::{fs_app, FsCmd};
+mod app_devtypes;
+use app_devtypes::{dev_types_app, DevTypesCmd};
 mod app_debug_remote;
 mod terminal_io;
 mod raft_cli_utils;
@@ -56,6 +58,8 @@ enum Action {
     Ota(OtaCmd),
     #[clap(name = "fs", about = "Manage files on a running device")]
     Fs(FsCmd),
+    #[clap(name = "devtypes", about = "Manage device type records (selection, checks, type files on a device)", alias = "dt")]
+    DevTypes(DevTypesCmd),
     #[clap(name = "ports", about = "Manage serial ports", alias = "p")]
     Ports(PortsCmd),
     #[clap(name = "libs", about = "Manage local Raft development libraries (status, fetch, pull, link, unlink, remove)", alias = "l")]
@@ -604,6 +608,12 @@ fn main() {
         Action::Fs(cmd) => {
             if let Err(e) = fs_app(cmd) {
                 eprintln!("fs operation failed: {}", e);
+                std::process::exit(1);
+            }
+        }
+        Action::DevTypes(cmd) => {
+            if let Err(e) = dev_types_app(cmd) {
+                eprintln!("devtypes: {}", e);
                 std::process::exit(1);
             }
         }

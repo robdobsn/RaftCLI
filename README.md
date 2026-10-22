@@ -22,6 +22,7 @@ This command-line application is used to scaffold, build, flash and monitor raft
   - [Flash firmware to a development board (without rebuilding)](#flash-firmware-to-a-development-board-without-rebuilding)
   - [Run esptool directly](#run-esptool-directly)
   - [OTA (Over-the-air) Update Firmware (using WiFi/Ethernet connection)](#ota-over-the-air-update-firmware-using-wifiethernet-connection)
+  - [Device type records](#device-type-records)
   - [Remote Debug Console](#remote-debug-console)
   - [Persistent Settings](#persistent-settings)
     - [Build from source](#build-from-source)
@@ -493,6 +494,33 @@ Options:
   -c, --use-curl             Use curl for OTA
   -h, --help                 Print help
 ```
+
+## Device type records
+
+`raft devtypes` (or `raft dt`) manages a project's device type records: the records compiled into the firmware and the records in a device type file loaded by a running device. Both are chosen in `systypes/Common/DeviceTypeSources.json` and `systypes/<SysType>/DeviceTypeSources.json` (see RaftCore's wiki page [Selecting Device Types](https://github.com/robdobsn/RaftCore/wiki/DeviceTypeSources)).
+
+The selection rules are RaftCore's: the commands run `scripts/DeviceTypesTool.py` from the RaftCore the project builds with (`raftdevlibs/RaftCore`, or the build's copy in `build/<SysType>/_deps/raftcore-src`, or `--raftcore <dir>`), with Python 3.
+
+```
+raft devtypes list                          # records for the firmware and the type file, with their sources
+raft devtypes init                          # create DeviceTypeSources.json selecting every RaftCore record
+raft devtypes add raftcore:LSM6DS local:*   # add to the firmware's selection (--typefile: to the type file's)
+raft devtypes remove raftcore:TrillRing     # remove (a record selected by a wildcard is excluded)
+raft devtypes new MySensor --address 0x44   # a new record file in the project's records folder, to fill in
+raft devtypes check                         # grammar, decode code and generator checks, without a build
+raft devtypes update                        # take new commits of git sources (updates the lock file)
+raft devtypes diff [KEY]                    # local copies and type file overrides against what they replace
+raft devtypes typefile                      # build the device type file (build/<SysType>/raft/devlib.json)
+raft devtypes push <IP>                     # build it, check it on the device and apply it (the device restarts)
+raft devtypes pull <IP>                     # download the device's type file and compare it with the project's
+raft devtypes status <IP>                   # what the device loaded, and whether it is the project's file
+```
+
+- `-s <SysType>` chooses the SysType (default: last built / first found); `init`, `add` and `remove` change the SysType's file, or Common's with `--common`.
+- Type files are built against the records the last build compiled (`build/<SysType>/raft/DeviceTypeRecords.compiled.json`, which includes `DevTypes.json` and `DEV_TYPE_JSON_FILES` records), or the `builtin` selection if the project hasn't been built; `--compiled <file>` chooses another.
+- `--config <file>` uses a `DeviceTypeSources.json` on its own instead of a project's, e.g. to make type files for devices running firmware built elsewhere.
+- `push` uploads the file as `devlib.new.json`, has the device check it (the device's own rules decide, and its report is shown), then asks before applying it (`--yes` doesn't ask; `--dry-run` stops after the check and removes the upload). After the restart it confirms the device loaded the file. It warns if the device's file has changed since the last push from this project, and does nothing if the device already has the file (`--force` pushes anyway).
+- Device commands use HTTP (`-p` for a port other than 80).
 
 ## Remote Debug Console
 

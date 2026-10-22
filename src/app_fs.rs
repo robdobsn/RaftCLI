@@ -168,10 +168,10 @@ pub enum FsSub {
 // Resolved connection context
 // ---------------------------------------------------------------------------
 
-struct DeviceCtx {
-    ip_addr: String,
-    port: u16,
-    fs: String,
+pub(crate) struct DeviceCtx {
+    pub(crate) ip_addr: String,
+    pub(crate) port: u16,
+    pub(crate) fs: String,
 }
 
 fn resolve_ctx(common: &FsCommon) -> Result<DeviceCtx, Box<dyn std::error::Error>> {
@@ -383,7 +383,7 @@ fn fs_df(ctx: &DeviceCtx) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 // Download a file using the binary-safe filesection endpoint (base64 in JSON)
-fn download_file(ctx: &DeviceCtx, remote: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+pub(crate) fn download_file(ctx: &DeviceCtx, remote: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     const CHUNK: u64 = 4096;
     let enc = encode_device_path(remote);
     let mut data: Vec<u8> = Vec::new();
@@ -447,7 +447,7 @@ fn fs_put(ctx: &DeviceCtx, local: &str, remote: &str) -> Result<(), Box<dyn std:
 }
 
 // Upload a single file via the streaming multipart endpoint
-fn upload_file(ctx: &DeviceCtx, local: &str, remote: &str, verbose: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) fn upload_file(ctx: &DeviceCtx, local: &str, remote: &str, verbose: bool) -> Result<(), Box<dyn std::error::Error>> {
     // The destination filename is carried in the multipart filename field.
     // The device's default filesystem is used; '/' separators are preserved for sub-folders.
     let path = "/api/fileupload".to_string();
@@ -496,7 +496,7 @@ fn fs_delete(ctx: &DeviceCtx, remote: &str, yes: bool) -> Result<(), Box<dyn std
     Ok(())
 }
 
-fn delete_remote(ctx: &DeviceCtx, remote: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) fn delete_remote(ctx: &DeviceCtx, remote: &str) -> Result<(), Box<dyn std::error::Error>> {
     let enc = encode_device_path(remote);
     let path = format!("/api/filedelete/{}/{}", ctx.fs, enc);
     let resp = http_get(&ctx.ip_addr, ctx.port, &path)?;
@@ -755,7 +755,7 @@ fn human_size(bytes: u64) -> String {
     }
 }
 
-fn confirm(prompt: &str) -> Result<bool, Box<dyn std::error::Error>> {
+pub(crate) fn confirm(prompt: &str) -> Result<bool, Box<dyn std::error::Error>> {
     print!("{} [y/N] ", prompt);
     std::io::stdout().flush()?;
     let mut input = String::new();
@@ -764,7 +764,7 @@ fn confirm(prompt: &str) -> Result<bool, Box<dyn std::error::Error>> {
 }
 
 // CRC16-CCITT matching MiniHDLC::crcUpdateCCITT on the device (init 0xFFFF, poly 0x1021)
-fn crc16_ccitt(data: &[u8]) -> u16 {
+pub(crate) fn crc16_ccitt(data: &[u8]) -> u16 {
     let mut fcs: u16 = 0xFFFF;
     for &b in data {
         fcs = (fcs << 8) ^ crc16_table((((fcs >> 8) as u8) ^ b) as usize);

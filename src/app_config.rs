@@ -394,15 +394,16 @@ fn get_schema(base_folder: &str) -> serde_json::Value {
             "prompt": "Include Raft Core Device Types",
             "default": "true",
             "datatype": "boolean",
-            "description": "Specify whether device types JSON in RaftCore should be included",
+            "description": "Specify whether RaftCore's device type records should be compiled in (selected in systypes/Common/DeviceTypeSources.json)",
             "pattern": "^(true|false|t|f|yes|no|y|n)$",
             "message": "Input must be true or false",
             "error": "Invalid device types include choice"
         },
         {
-            "key": "inc_raft_core_dev_types",
+            // Folder of the DeviceTypeSources.json template - empty (so the file isn't generated) without device types
+            "key": "dev_type_sources_folder",
             "condition": "use_raft_core_dev_types",
-            "generator": "\nset(DEV_TYPE_JSON_FILES \"/devtypes/DeviceTypeRecords.json\")\n"
+            "generator": "Common"
         },
         {
             "key": "depends_raft_i2c",
