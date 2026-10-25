@@ -443,10 +443,12 @@ fn resolve_device_from(
 // `local_paths` are translated for Windows; relative ones work as they are, as WSL starts raft.exe in the same
 // folder. Returns true if the command was handed off (and has run)
 pub fn hand_off_to_windows(device: &str, native_serial_port: bool, local_paths: &[String]) -> CmdResult<bool> {
+    // An invalid device is reported the same way everywhere
+    let spec = parse_device_spec(device)?;
     if native_serial_port || !is_wsl() {
         return Ok(false);
     }
-    if !matches!(parse_device_spec(device)?, DeviceSpec::Serial { .. } | DeviceSpec::Ble { .. }) {
+    if !matches!(spec, DeviceSpec::Serial { .. } | DeviceSpec::Ble { .. }) {
         return Ok(false);
     }
     let mut args: Vec<String> = std::env::args().skip(1).collect();
