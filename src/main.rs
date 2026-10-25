@@ -20,10 +20,15 @@ use app_flash::flash_raft_app;
 mod app_ota;
 use app_ota::ota_raft_app;
 mod http_client;
+mod device_conn;
+mod link;
+mod ricrest;
 mod app_fs;
 use app_fs::{fs_app, FsCmd};
 mod app_devtypes;
 use app_devtypes::{dev_types_app, DevTypesCmd};
+mod app_ble;
+use app_ble::{ble_app, BleCmd};
 mod app_debug_remote;
 mod terminal_io;
 mod raft_cli_utils;
@@ -62,6 +67,8 @@ enum Action {
     DevTypes(DevTypesCmd),
     #[clap(name = "ports", about = "Manage serial ports", alias = "p")]
     Ports(PortsCmd),
+    #[clap(name = "ble", about = "Raft devices over BLE (scan for them; tested on Windows only)")]
+    Ble(BleCmd),
     #[clap(name = "libs", about = "Manage local Raft development libraries (status, fetch, pull, link, unlink, remove)", alias = "l")]
     Libs(LibsCmd),
     #[clap(name = "debug", about = "Start remote debug console", alias = "d")]
@@ -619,6 +626,12 @@ fn main() {
         }
         Action::Ports(cmd) => {
             manage_ports(&cmd);
+        }
+        Action::Ble(cmd) => {
+            if let Err(e) = ble_app(cmd) {
+                eprintln!("ble: {}", e);
+                std::process::exit(1);
+            }
         }
 
         Action::Libs(cmd) => {

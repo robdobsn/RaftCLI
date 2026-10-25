@@ -54,7 +54,7 @@ jobs:
 
     - name: Install build dependencies for Linux
       if: runner.os == 'Linux'
-      run: sudo apt-get update --yes && sudo apt-get install -y pkg-config libudev-dev
+      run: sudo apt-get update --yes && sudo apt-get install -y pkg-config libudev-dev libdbus-1-dev
 
     - name: Build
       run: cargo build --release --target ${{ matrix.target }}

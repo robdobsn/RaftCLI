@@ -6,8 +6,35 @@ use std::io::{self, Read, Write};
 use std::net::TcpStream;
 use std::time::{Duration, Instant};
 
-// Default connect/read timeout
+// Default read/write timeout
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
+
+// Connecting: a connection attempt now and then goes unanswered (seen about once in 1600 from WSL), and without a
+// timeout the system's own (about two minutes on Linux) applies. Nothing has been sent when connecting fails, so it is
+// safe to try again, whatever the request
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+const CONNECT_ATTEMPTS: u32 = 3;
+
+// Connect (trying again, up to attempts times, if the connection isn't made), with the read and write timeout set
+fn connect(ip_addr: &str, port: u16, timeout: Duration, attempts: u32) -> io::Result<TcpStream> {
+    use std::net::ToSocketAddrs;
+    let addr = format!("{}:{}", ip_addr, port)
+        .to_socket_addrs()?
+        .next()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, format!("can't find {}", ip_addr)))?;
+    let mut last_err = None;
+    for _ in 0..attempts.max(1) {
+        match TcpStream::connect_timeout(&addr, CONNECT_TIMEOUT.min(timeout)) {
+            Ok(stream) => {
+                stream.set_read_timeout(Some(timeout))?;
+                stream.set_write_timeout(Some(timeout))?;
+                return Ok(stream);
+            }
+            Err(e) => last_err = Some(e),
+        }
+    }
+    Err(last_err.unwrap_or_else(|| io::Error::new(io::ErrorKind::TimedOut, "connect failed")))
+}
 
 // Result of an HTTP request
 pub struct HttpResponse {
@@ -49,10 +76,7 @@ fn parse_http_response(raw: &[u8]) -> Result<HttpResponse, io::Error> {
 
 // Perform an HTTP GET and return the response (reads until connection close)
 pub fn http_get(ip_addr: &str, port: u16, path: &str) -> Result<HttpResponse, Box<dyn std::error::Error>> {
-    let addr = format!("{}:{}", ip_addr, port);
-    let mut stream = TcpStream::connect(&addr)?;
-    stream.set_read_timeout(Some(DEFAULT_TIMEOUT))?;
-    stream.set_write_timeout(Some(DEFAULT_TIMEOUT))?;
+    let mut stream = connect(ip_addr, port, DEFAULT_TIMEOUT, CONNECT_ATTEMPTS)?;
 
     let request = format!(
         "GET {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\nAccept: */*\r\n\r\n",
@@ -88,10 +112,7 @@ pub fn http_post_multipart_file(
     let file = File::open(file_path)?;
     let mut reader = BufReader::new(file);
 
-    let addr = format!("{}:{}", ip_addr, port);
-    let mut stream = TcpStream::connect(&addr)?;
-    stream.set_read_timeout(Some(DEFAULT_TIMEOUT))?;
-    stream.set_write_timeout(Some(DEFAULT_TIMEOUT))?;
+    let mut stream = connect(ip_addr, port, DEFAULT_TIMEOUT, CONNECT_ATTEMPTS)?;
 
     // Multipart envelope
     let boundary = "----RaftCLIBoundary7c3a1f9e";
@@ -148,14 +169,8 @@ pub fn http_post_multipart_file(
 
 // HTTP GET with a connect and read timeout (e.g. to poll a device that is restarting)
 pub fn http_get_timeout(ip_addr: &str, port: u16, path: &str, timeout: Duration) -> Result<HttpResponse, Box<dyn std::error::Error>> {
-    use std::net::ToSocketAddrs;
-    let addr = format!("{}:{}", ip_addr, port)
-        .to_socket_addrs()?
-        .next()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Address not found"))?;
-    let mut stream = TcpStream::connect_timeout(&addr, timeout)?;
-    stream.set_read_timeout(Some(timeout))?;
-    stream.set_write_timeout(Some(timeout))?;
+    // Once (the caller polls)
+    let mut stream = connect(ip_addr, port, timeout, 1)?;
 
     let request = format!(
         "GET {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\nAccept: */*\r\n\r\n",

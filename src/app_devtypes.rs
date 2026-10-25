@@ -9,10 +9,10 @@ use clap::{Args, Subcommand};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use crate::app_fs::{confirm, crc16_ccitt, delete_remote, download_file, upload_file, DeviceCtx};
-use crate::http_client::{http_get, http_get_timeout};
+use crate::device_conn::{hand_off_to_windows, DeviceArgs};
 use crate::raft_cli_utils::{find_executable, utils_get_sys_type};
 
 // ---------------------------------------------------------------------------
@@ -142,15 +142,6 @@ pub enum DevTypesSub {
     },
 }
 
-#[derive(Clone, Args, Debug)]
-pub struct DeviceArgs {
-    /// Device IP address or hostname
-    #[clap(value_name = "IP_ADDRESS_OR_HOSTNAME")]
-    pub ip_addr: String,
-    /// HTTP port (default 80)
-    #[clap(short = 'p', long)]
-    pub port: Option<u16>,
-}
 
 // ---------------------------------------------------------------------------
 // Project context: the selection files, RaftCore and where things are kept
@@ -189,7 +180,11 @@ fn find_raftcore(explicit: &Option<String>, app_folder: &Path, sys_type: Option<
     }
     let mut candidates = vec![app_folder.join("raftdevlibs").join("RaftCore")];
     if let Some(sys_type) = sys_type {
-        candidates.push(app_folder.join("build").join(sys_type).join("_deps").join("raftcore-src"));
+        // Where the build fetches it (RaftBootstrap.cmake: build/<SysType>/raft/<Library>), and CMake's own
+        // FetchContent folder, which older builds used
+        let build = app_folder.join("build").join(sys_type);
+        candidates.push(build.join("raft").join("RaftCore"));
+        candidates.push(build.join("_deps").join("raftcore-src"));
     }
     for candidate in &candidates {
         if candidate.join(TOOL_SCRIPT).exists() {
@@ -334,9 +329,7 @@ impl Project {
 // ---------------------------------------------------------------------------
 
 fn device_api(ctx: &DeviceCtx, path: &str) -> CmdResult<serde_json::Value> {
-    let resp = http_get(&ctx.ip_addr, ctx.port, &format!("/api/{}", path))?;
-    let body = resp.body_string();
-    serde_json::from_str(&body).map_err(|e| format!("invalid reply from the device to {}: {} ({})", path, e, body).into())
+    ctx.conn.rest(path)
 }
 
 fn device_status(ctx: &DeviceCtx, entries: bool) -> CmdResult<serde_json::Value> {
@@ -439,24 +432,26 @@ fn write_pushed(project: &Project, device: &str, crc: &str) -> CmdResult<()> {
     Ok(())
 }
 
-fn device_ctx(device: &DeviceArgs, fs: &str) -> DeviceCtx {
-    DeviceCtx { ip_addr: device.ip_addr.clone(), port: device.port.unwrap_or(80), fs: fs.to_string() }
+fn device_ctx(device: &DeviceArgs, fs: &str) -> CmdResult<DeviceCtx> {
+    let (name, positionals) = device.resolve(vec![])?;
+    positionals.finish()?;
+    Ok(DeviceCtx { conn: device.open(&name)?, fs: fs.to_string() })
 }
 
-// Wait for the device to answer again after a restart
-fn wait_for_device(ctx: &DeviceCtx, timeout: Duration) -> bool {
-    let start = Instant::now();
-    // Give it time to go down first
-    std::thread::sleep(Duration::from_secs(2));
-    while start.elapsed() < timeout {
-        if let Ok(resp) = http_get_timeout(&ctx.ip_addr, ctx.port, "/api/v", Duration::from_secs(2)) {
-            if resp.is_success() {
-                return true;
-            }
-        }
-        std::thread::sleep(Duration::from_secs(1));
-    }
-    false
+// In WSL, push, pull and status for a serial device run in the Windows raft.exe: true if handed over (and run)
+fn hand_off(cmd: &DevTypesCmd) -> CmdResult<bool> {
+    let (device, out, compiled) = match &cmd.command {
+        DevTypesSub::Push { device, compiled, .. } => (device, None, compiled.clone()),
+        DevTypesSub::Pull { device, out } => (device, out.clone(), None),
+        DevTypesSub::Status { device, .. } => (device, None, None),
+        _ => return Ok(false),
+    };
+    let Ok((name, _)) = device.resolve(vec![]) else {
+        return Ok(false);
+    };
+    let local_paths: Vec<String> =
+        [&cmd.app_folder, &cmd.config, &cmd.raftcore, &out, &compiled].into_iter().flatten().cloned().collect();
+    hand_off_to_windows(&name, device.native_serial_port, &local_paths)
 }
 
 // ---------------------------------------------------------------------------
@@ -467,14 +462,15 @@ fn push(project: &Project, device: &DeviceArgs, compiled: &Option<String>, yes: 
     if !project.has_selection() {
         return Err(format!("no {} - create one with 'raft devtypes init'", SOURCES_FILE).into());
     }
-    let ctx = device_ctx(device, "local");
+    let ctx = device_ctx(device, "local")?;
+    let device_name = ctx.conn.describe().to_string();
     let status = device_status(&ctx, false)?;
     let device_file = str_of(&status, "file").to_string();
     if device_file.is_empty() {
         return Err("the device has no type file set (DevMan typeFile setting)".into());
     }
     let (fs, name) = split_device_path(&device_file)?;
-    let ctx = device_ctx(device, &fs);
+    let ctx = ctx.with_fs(&fs);
     let max_bytes = status["maxFileBytes"].as_u64().filter(|&n| n > 0);
 
     // Build it within the device's limit
@@ -491,7 +487,7 @@ fn push(project: &Project, device: &DeviceArgs, compiled: &Option<String>, yes: 
         println!("The device already has this type file (CRC {}) - nothing to do (--force to push anyway)", crc);
         return Ok(());
     }
-    if let (Some(pushed_crc), Some(current_crc)) = (read_pushed(project).get(&device.ip_addr), &current_crc) {
+    if let (Some(pushed_crc), Some(current_crc)) = (read_pushed(project).get(&device_name), &current_crc) {
         if pushed_crc != current_crc {
             println!(
                 "Warning: the device's type file (CRC {}) isn't the one last pushed from here (CRC {}) - it has been changed since",
@@ -529,7 +525,7 @@ fn push(project: &Project, device: &DeviceArgs, compiled: &Option<String>, yes: 
         println!("Dry run: not applied ({} removed)", staged_path);
         return Ok(());
     }
-    if !yes && !confirm(&format!("Apply it as {} and restart {}?", device_file, device.ip_addr))? {
+    if !yes && !confirm(&format!("Apply it as {} and restart {}?", device_file, device_name))? {
         let _ = delete_remote(&ctx, &staged);
         println!("Aborted ({} removed).", staged_path);
         return Ok(());
@@ -540,22 +536,22 @@ fn push(project: &Project, device: &DeviceArgs, compiled: &Option<String>, yes: 
     if apply["rslt"].as_str() != Some("ok") {
         return Err(format!("apply failed: {}", str_of(&apply, "error")).into());
     }
-    println!("Applied - waiting for {} to restart...", device.ip_addr);
-    if !wait_for_device(&ctx, Duration::from_secs(60)) {
-        return Err(format!("{} didn't answer within 60s of restarting - check it with 'raft devtypes status'", device.ip_addr).into());
+    println!("Applied - waiting for {} to restart...", device_name);
+    if !ctx.conn.wait_for_restart(Duration::from_secs(60)) {
+        return Err(format!("{} didn't answer within 60s of restarting - check it with 'raft devtypes status'", device_name).into());
     }
 
     // Check what the device loaded
     let after = device_status(&ctx, true)?;
     let after_crc = str_of(&after, "crc");
     let state = str_of(&after, "state");
-    println!("{}: type file {} {} (CRC {})", device.ip_addr, str_of(&after, "file"), state, after_crc);
+    println!("{}: type file {} {} (CRC {})", device_name, str_of(&after, "file"), state, after_crc);
     print_counts(&after);
     print_entries(&after);
     if after_crc != crc {
         return Err(format!("the device loaded a type file with CRC {}, not {}", after_crc, crc).into());
     }
-    write_pushed(project, &device.ip_addr, &crc)?;
+    write_pushed(project, &device_name, &crc)?;
     if state != "applied" || num_of(&after, "rejected") > 0 {
         return Err(format!("the device's type file state is {}, with {} rejected", state, num_of(&after, "rejected")).into());
     }
@@ -569,7 +565,7 @@ fn dev_types_of(text: &str) -> CmdResult<serde_json::Map<String, serde_json::Val
 }
 
 fn pull(project: &Project, device: &DeviceArgs, out: &Option<String>) -> CmdResult<()> {
-    let ctx = device_ctx(device, "local");
+    let ctx = device_ctx(device, "local")?;
     let status = device_status(&ctx, false)?;
     let device_file = str_of(&status, "file").to_string();
     if device_file.is_empty() {
@@ -580,7 +576,7 @@ fn pull(project: &Project, device: &DeviceArgs, out: &Option<String>) -> CmdResu
         return Ok(());
     }
     let (fs, name) = split_device_path(&device_file)?;
-    let data = download_file(&device_ctx(device, &fs), &name)?;
+    let data = download_file(&ctx.with_fs(&fs), &name)?;
     let dest = out.as_ref().map(PathBuf::from).unwrap_or_else(|| project.work_dir.join("devlib.device.json"));
     if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent)?;
@@ -616,7 +612,7 @@ fn pull(project: &Project, device: &DeviceArgs, out: &Option<String>) -> CmdResu
 }
 
 fn status(project: &Project, device: &DeviceArgs, json: bool) -> CmdResult<()> {
-    let ctx = device_ctx(device, "local");
+    let ctx = device_ctx(device, "local")?;
     let status = device_status(&ctx, true)?;
     if json {
         println!("{}", serde_json::to_string_pretty(&status)?);
@@ -624,7 +620,7 @@ fn status(project: &Project, device: &DeviceArgs, json: bool) -> CmdResult<()> {
     }
     println!(
         "{}: type file {} - {}{}",
-        device.ip_addr,
+        ctx.conn.describe(),
         str_of(&status, "file"),
         str_of(&status, "state"),
         if status["present"].as_bool().unwrap_or(false) { format!(" (CRC {})", str_of(&status, "crc")) } else { String::new() }
@@ -656,6 +652,9 @@ fn status(project: &Project, device: &DeviceArgs, json: bool) -> CmdResult<()> {
 // ---------------------------------------------------------------------------
 
 pub fn dev_types_app(cmd: DevTypesCmd) -> CmdResult<()> {
+    if hand_off(&cmd)? {
+        return Ok(());
+    }
     let project = resolve_project(&cmd)?;
     let s = |v: &str| v.to_string();
     match &cmd.command {
@@ -716,6 +715,22 @@ mod tests {
         assert_eq!(staged_name("devlib.json"), "devlib.new.json");
         assert_eq!(staged_name("types/devlib.json"), "types/devlib.new.json");
         assert_eq!(staged_name("devlib"), "devlib.new");
+    }
+
+    #[test]
+    fn raftcore_found_where_the_build_fetches_it() {
+        let app = std::env::temp_dir().join(format!("raftcli_test_find_raftcore_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&app);
+        let fetched = app.join("build").join("MySys").join("raft").join("RaftCore");
+        std::fs::create_dir_all(fetched.join("scripts")).unwrap();
+        std::fs::write(fetched.join(TOOL_SCRIPT), "").unwrap();
+        assert_eq!(find_raftcore(&None, &app, Some("MySys")).unwrap(), fetched);
+        // A raftdevlibs copy is preferred
+        let local = app.join("raftdevlibs").join("RaftCore");
+        std::fs::create_dir_all(local.join("scripts")).unwrap();
+        std::fs::write(local.join(TOOL_SCRIPT), "").unwrap();
+        assert_eq!(find_raftcore(&None, &app, Some("MySys")).unwrap(), local);
+        let _ = std::fs::remove_dir_all(&app);
     }
 
     #[test]
