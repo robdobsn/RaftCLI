@@ -1,9 +1,11 @@
 # `raft fs` over serial, WebSocket and BLE: plan
 
-Date: 2026-10-22, updated 2026-10-23
-Status: phases A to D done (2026-10-23, branch `feature/device-conn`, uncommitted); phase E (BLE) next.
-- The BLE spike on Windows is done (§6.5).
-- The RaftSysMods fixes in §8 are on RaftSysMods `main` (`0753ed0`), and the RaftCore upload fix is merged (PR #14).
+Date: 2026-10-22, updated 2026-10-25
+Status: phases A to E done and merged (RaftCLI PR #2, 2026-10-25); BLE is tested on Windows only. Phase F isn't
+planned (§9).
+- The RaftSysMods fixes in §8 are on RaftSysMods `main` (`0753ed0`, and PR #6), and the RaftCore fixes are merged
+  (PRs #14 and #21).
+- btleplug comes from the fork `robdobsn/btleplug` until its WinRT fix is released (deviceplug/btleplug#507).
 - All the decisions in §10 are made.
 
 This plan takes the `raft fs` part of [native-transports-plan.md](native-transports-plan.md) and makes it concrete. That plan
@@ -230,7 +232,7 @@ The CLI is sequential, so `session.rs` is simpler than raftjs:
     with current firmware it sends blocks the device drops without an ack, then waits 1 s for a timer ack after
     every mid-batch loss: 12.9 s against 5.4 s in the raftjs harness. Timer acks can't be told apart from other acks
     by their content: a file block's `req` is `"ufBlock"` too.
-  - The merged raftjs change (PR #17) uses that alternative. A follow-up there to use this rule is recommended.
+  - raftjs PR #17 used that alternative; raftjs PR #18 (merged 2026-10-23) changed it to this rule.
 - `RicrestConn::put_file`:
   - sends `fileName` as `/<fs>/<path>`;
   - checks the result with `filehash`. On a mismatch it deletes the file and fails.
@@ -394,6 +396,10 @@ The Windows findings below were measured with a spike (btleplug 0.11.8 and 0.13.
     more than 3 minutes.
   - While connected, the device doesn't advertise, so no client can find it until it is released or restarts. The
     Axiom also pauses WiFi while BLE is connected.
+  - **Update (2026-10-25):** with RaftSysMods 1.26 or later (`BLEConnArbiter`, two connections) the device keeps
+    advertising while one link is held, and WiFi pausing follows the session. A RaftCLI that is killed (so it can't
+    send `bledisconnect`) is released by Windows about 25 s later, and a new run meanwhile reuses the held link.
+    Details: RaftCore `devdocs/ble-held-links-windows.md`. `bledisconnect` is still sent on every exit.
   - Retry `bledisconnect` up to 3 times. Once, the device was still connected after a run that had sent it, so a
     single attempt isn't enough.
   - If RaftCLI ever finds a device it can't connect to, say so: the fix is `bledisconnect` over another channel, or
@@ -467,6 +473,8 @@ BLE over RICREST is viable on Windows. File transfer is fast and reliable once t
    - `bledisconnect` releases it within 200 ms.
    - If RaftCLI crashes without sending it, the device can't be reached over BLE until it is released another way
      (for example, typing `bledisconnect` on the serial console) or restarted.
+   - Retested on 2026-10-25 with RaftSysMods 1.27 and RaftCLI's BLE link: Windows ended the link of a killed
+     RaftCLI about 25 s after it died (3 of 3 runs), and the device kept advertising meanwhile (§6.3, update).
 4. **btleplug's `ScanFilter` is unusable on Windows.** See §6.2.
 
 5. **Windows sometimes reconnects to the device by itself.**
@@ -621,12 +629,12 @@ the fixes ship.
 | Subscribe event for another handle updates the response state | RaftSysMods `BLEGattServer.cpp:544-546` | A subscription to another characteristic (e.g. Service Changed) can switch replies on or off | Only the response characteristic's handle counts | Done: RaftSysMods `0753ed0`, tested |
 | MTU kept from the previous connection | RaftSysMods `BLEGattOutbound.cpp:49`, `BLEGapServer.cpp:610` | A client that doesn't exchange MTU gets 500-byte chunks, which NimBLE truncates | Size chunks from `ble_att_mtu()` of the current connection (new `BLEGattServer::getConnMTU()`) | Done: RaftSysMods `0753ed0`, tested |
 | Upload acks out of step with the host's batches after a lost block; acks for every block after a lost second block | RaftCore `FileUploadOKTOProtocol.cpp` (`validateRxBlock`) | After a loss, raftjs resent blocks and waited 1 s per batch; RaftCLI resends more | Ack the first block out of sequence at once; don't count blocks out of sequence; restart the count on a timer ack | Done: RaftCore PR #14, merged 2026-10-23 |
-| A serial frame of more than about 1 KB on the wire is lost | RaftSysMods `SerialConsole` | Serial uploads must go a block of up to 900 wire bytes at a time (§7.2): about 10-11 KB/s | Read everything available each loop into one message (not up to 100 bytes, one at a time), and a 4096-byte default `rxBuf` for USB Serial/JTAG | RaftSysMods PR #6 (open): 15.8 KB/s with RaftCLI's default |
-| No release of an idle link | RaftSysMods `BLEGapServer` | A client that leaves without `bledisconnect` (Windows holds the link, §6.5) keeps the device unreachable over BLE | Optional: disconnect after N s with no subscription and no traffic | Open |
+| A serial frame of more than about 1 KB on the wire is lost | RaftSysMods `SerialConsole` | Serial uploads must go a block of up to 900 wire bytes at a time (§7.2): about 10-11 KB/s | Read everything available each loop into one message (not up to 100 bytes, one at a time), and a 4096-byte default `rxBuf` for USB Serial/JTAG | Done: RaftSysMods PR #6 (merged 2026-10-23): 15.8 KB/s with RaftCLI's default |
+| No release of an idle link | RaftSysMods `BLEGapServer` | A client that leaves without `bledisconnect` (Windows holds the link, §6.5) keeps the device unreachable over BLE | Optional: disconnect after N s with no subscription and no traffic | Not needed: Windows keeps the subscription of a dead client, so it couldn't be detected that way, and since RaftSysMods 1.26 the device keeps advertising and Windows ends the link after about 25 s (RaftCore `devdocs/ble-held-links-windows.md`) |
 | Upload CRC16 ignored | RaftCore `FileStreamSession.cpp:518-531` | No end-to-end check; the CLI must call `filehash` | Check `CRC16` when it is given | Open |
-| `dfEnd` after auto-close loses the CRC | RaftCore `FileDownloadOKTOProtocol.cpp:401` | `crcAt=end` is unreliable | Keep the session until `dfEnd` or a short timeout | Open (only matters for phase F) |
+| `dfEnd` after auto-close loses the CRC | RaftCore `FileDownloadOKTOProtocol.cpp:401` | `crcAt=end` is unreliable | Keep the session until `dfEnd` or a short timeout | Done: RaftCore PR #21 (`aea92db`) |
 | `local/` matched anywhere in a path | RaftCore `FileSystem.cpp:629` | `a/nonlocal/b` treated as absolute | Match only at the start (after an optional `/`) | Open; RaftCLI avoids it by always sending `/<fs>/<path>` |
-| Template BLE UUID `bb76…` differs from the library default `aa76…` | RaftCLI `app_config.rs:340` | Clients that try only `aa76…` can't find new apps | Template writes `aa76…` | Done (phase A branch) |
+| Template BLE UUID `bb76…` differs from the library default `aa76…` | RaftCLI `app_config.rs:340` | Clients that try only `aa76…` can't find new apps | Template writes `aa76…` | Done (RaftCLI PR #2) |
 
 ## 9. Phases
 
@@ -639,7 +647,7 @@ Phase numbers here are for `raft fs`. Each phase leaves everything working.
 | **C** (done) | `SerialLink`; `serial:`; WSL hand-off to `raft.exe` (§7.1) | A native-USB ESP32-S3 (Feather, a throwaway `raft new` app) from WSL: all commands, 200 KB each way, the FSImage mirror, devtypes, no reset on open (§7.2). Still to do: a USB-UART board, Linux, macOS |
 | **D** (done) | `WebSocketLink` (`tungstenite` 0.30, blocking); `ws://` | The throwaway app's ESP32-S3 on WiFi: all commands, compared with HTTP (§9.4) |
 | **E** (Windows done) | `BleLink` (btleplug 0.13 with the WinRT fix, CCCD write, `bledisconnect` on every exit), `ble` feature, `raft ble scan`, address cache, "may be held" hint | FeatherS3 and Axiom from Windows, macOS and Linux, on old and fixed firmware: scan, all commands, mirror; Ctrl-C mid-transfer leaves the device advertising |
-| **F** (if needed) | `dfStart` download for speed on serial and WebSocket; tune block and batch sizes from measurements | Throughput table in this doc |
+| **F** (not planned) | `dfStart` download for speed on serial and WebSocket; tune block and batch sizes from measurements | Not needed: `filesection` downloads are as fast or faster on every link (WebSocket 52 KB/s against `dfStart`'s 35-37 KB/s; BLE 6-8 KB/s against about 5), and since RaftSysMods PR #9 they are read on the device's file system worker, off its main loop |
 
 - B and C together are the first useful result: devices with no network can be managed.
 - D is about a day once B is done.
