@@ -18,6 +18,7 @@ This command-line application is used to scaffold, build, flash and monitor raft
   - [Build and flash firmware to a development board](#build-and-flash-firmware-to-a-development-board)
   - [Monitoring a serial port](#monitoring-a-serial-port)
   - [Listing serial ports](#listing-serial-ports)
+  - [BLE devices](#ble-devices)
   - [Local development libraries](#local-development-libraries)
   - [Flash firmware to a development board (without rebuilding)](#flash-firmware-to-a-development-board-without-rebuilding)
   - [Run esptool directly](#run-esptool-directly)
@@ -42,10 +43,11 @@ On Linux (including WSL), install these system packages **before** running `carg
 
 ```sh
 sudo apt-get update
-sudo apt-get install -y pkg-config libudev-dev
+sudo apt-get install -y pkg-config libudev-dev libdbus-1-dev
 ```
 
-Why this is needed: `raftcli` depends on `serialport`, which on Linux uses `libudev` via `pkg-config` at build time.
+Why this is needed: `raftcli` depends on `serialport`, which on Linux uses `libudev` via `pkg-config` at build time,
+and on `btleplug` (for BLE devices), which uses D-Bus to talk to BlueZ.
 
 Then install the app with:
 
@@ -122,15 +124,17 @@ install the required system packages and retry:
 
 ```sh
 sudo apt-get update
-sudo apt-get install -y pkg-config libudev-dev
+sudo apt-get install -y pkg-config libudev-dev libdbus-1-dev
 cargo install raftcli
 ```
 
 Equivalent packages on other distributions:
 
-- Fedora/RHEL: `sudo dnf install pkgconf-pkg-config systemd-devel`
-- Arch: `sudo pacman -S pkgconf systemd`
-- Alpine: `sudo apk add pkgconfig eudev-dev`
+- Fedora/RHEL: `sudo dnf install pkgconf-pkg-config systemd-devel dbus-devel`
+- Arch: `sudo pacman -S pkgconf systemd dbus`
+- Alpine: `sudo apk add pkgconfig eudev-dev dbus-dev`
+
+If BLE devices aren't needed, `cargo install raftcli --no-default-features` builds without BLE (and without D-Bus).
 
 ## Creating a new raft app
 
@@ -344,6 +348,44 @@ Options:
 
 When using WSL, the ports command automatically delegates to the Windows version (raft.exe) to access USB serial ports unless the -n flag is specified.
 
+## BLE devices
+
+`raft fs` and `raft devtypes` can reach a Raft device over BLE, through its RICREST BLE service (RaftSysMods
+`BLEMan`). Name the device as `ble:<name>`, where the name is the one it advertises, the start of it (if only one
+device matches), or its address. `ble:` on its own uses the only Raft device in range.
+
+To see the Raft devices in range:
+
+```
+raft ble scan [-t <seconds>]
+```
+
+```
+NAME                     ADDRESS            RSSI  SERVICE
+Axiom018_2cc23e          DC:B4:D9:2C:C2:3E   -46  aa76677e-9cfd-4626-a510-0d305be57c8d
+```
+
+Then, for example:
+
+```
+raft fs ls ble:Axiom018
+raft fs put ble:Axiom018 config.json
+```
+
+- The first connection scans for the device (up to 10 s, usually 1-3 s). On Windows the address is remembered, so
+  later connections skip the scan.
+- Uploads run at about 15-25 KB/s and downloads at about 5-8 KB/s.
+- **A connected device doesn't advertise, and Windows can keep the link up after a program exits.** RaftCLI tells the
+  device to release the link (`bledisconnect`) whenever it finishes, including on Ctrl-C. If a device that is in
+  range can't be found, it is probably still held: type `bledisconnect` in `raft monitor`, open
+  `http://<device>/api/bledisconnect` over WiFi, or restart it.
+- Devices advertising other UUIDs can be reached with `--ble-service`, `--ble-cmd` and `--ble-resp`; `--ble-mtu`
+  overrides the MTU if the one reported is wrong.
+- WSL has no Bluetooth, so in WSL BLE commands (including `raft ble scan`) are handed to the Windows `raft.exe`, as
+  serial commands are.
+- On Linux, BlueZ must be running and the user may need to be in the `bluetooth` group. On macOS the terminal asks
+  for Bluetooth permission the first time.
+
 ## Local development libraries
 
 Raft projects can use local copies of Raft libraries from a `raftdevlibs` folder in the project root. The build uses `raftdevlibs/<LibraryName>` in place of the version in `RAFT_COMPONENTS` (in `features.cmake`), which is useful when developing or debugging a library. A library in `raftdevlibs` can be:
@@ -511,11 +553,14 @@ raft devtypes check                         # grammar, decode code and generator
 raft devtypes update                        # take new commits of git sources (updates the lock file)
 raft devtypes diff [KEY]                    # local copies and type file overrides against what they replace
 raft devtypes typefile                      # build the device type file (build/<SysType>/raft/devlib.json)
-raft devtypes push <IP>                     # build it, check it on the device and apply it (the device restarts)
-raft devtypes pull <IP>                     # download the device's type file and compare it with the project's
-raft devtypes status <IP>                   # what the device loaded, and whether it is the project's file
+raft devtypes push <DEVICE>                 # build it, check it on the device and apply it (the device restarts)
+raft devtypes pull <DEVICE>                 # download the device's type file and compare it with the project's
+raft devtypes status <DEVICE>               # what the device loaded, and whether it is the project's file
 ```
 
+- `<DEVICE>` is the device's IP address or hostname (`http://host[:port]` also works), `ws://host[:port][/path]` for the device's WebSocket (path default `/ws`; faster than HTTP for downloads), `serial:<port>[@baud]` for a device on a USB serial port, e.g. `serial:COM4` or `serial:/dev/ttyACM0` (`serial:` on its own picks the port as `raft monitor` does), or `ble:<name>` for a device over BLE (see [BLE devices](#ble-devices)). It can be given with `-d/--device` instead, or in the `RAFT_DEVICE` environment variable; then leave it out of the arguments. The same applies to `raft fs`, e.g. `RAFT_DEVICE=serial:COM4 raft fs get config.json`.
+- Over serial the device's console port is shared with its log output: `--show-log` shows the log, and `-v` shows link statistics at the end. The port can't be open in `raft monitor` at the same time. In WSL, serial devices are handed to the Windows `raft.exe` (as for `raft flash`; `-n` uses this system's ports instead).
+- Name a device by hostname (e.g. `MyDevice.local`) rather than IP address when a command restarts it (`devtypes push`): it may come back with another address.
 - `-s <SysType>` chooses the SysType (default: last built / first found); `init`, `add` and `remove` change the SysType's file, or Common's with `--common`.
 - Type files are built against the records the last build compiled (`build/<SysType>/raft/DeviceTypeRecords.compiled.json`, which includes `DevTypes.json` and `DEV_TYPE_JSON_FILES` records), or the `builtin` selection if the project hasn't been built; `--compiled <file>` chooses another.
 - `--config <file>` uses a `DeviceTypeSources.json` on its own instead of a project's, e.g. to make type files for devices running firmware built elsewhere.

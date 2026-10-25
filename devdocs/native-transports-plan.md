@@ -1,7 +1,8 @@
 # RaftCLI native transports: plan
 
 Date: 2026-10-18
-Status: proposed, not started
+Status: the `raft fs` and `raft devtypes` part is done over serial, WebSocket and BLE (BLE tested on Windows only).
+See fs-over-serial-ws-ble-plan.md §9.
 
 ## 1. Goal
 
@@ -120,8 +121,16 @@ platform differences stay inside it. Still to handle:
 - **Linux:** BlueZ must be running, and the user may need to be in the `bluetooth` group.
 - **WSL2:** no Bluetooth; use the Windows build of RaftCLI.
 - **Build:** a `ble` cargo feature (default on), so platforms where `btleplug` doesn't build can leave it out.
-- **Throughput:** a few KB/s, fine for type files (64 KB or less) and single files, slow for whole FSImages or
-  firmware.
+- **Throughput:** measured on Windows against an Axiom: uploads 20–30 KB/s, `filesection` downloads about 8 KB/s,
+  REST round trips 30–45 ms. That is fine for type files, FSImages, and probably firmware (1.5 MB in about a minute).
+- **Windows:** viable. It needs:
+  - a one-call fix to btleplug to open the Raft service;
+  - the response CCCD written as notify (needed for older firmware, and harmless on firmware with the RaftSysMods
+    fix);
+  - `bledisconnect` sent on every exit.
+
+  Details are in [fs-over-serial-ws-ble-plan.md](fs-over-serial-ws-ble-plan.md) §6.5.
+- **WSL2:** `serial:` and `ble:` devices hand the command to `raft.exe`, as `raft flash` does.
 
 ## 6. Risks and things to check first
 
@@ -150,3 +159,5 @@ platform differences stay inside it. Still to handle:
 
 - RaftCore `devdocs/device-type-record-management-plan.md`: `raft devtypes` (phase 4 of that plan, HTTP only). Its
   serial transport is delivered by this plan.
+- [fs-over-serial-ws-ble-plan.md](fs-over-serial-ws-ble-plan.md): the detailed plan for `raft fs` over serial,
+  WebSocket and BLE, with the device behaviour checked against the firmware source.

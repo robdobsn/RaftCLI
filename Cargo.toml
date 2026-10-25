@@ -34,12 +34,29 @@ bytes = "1.5.0"
 remove_dir_all = "1.0.0"
 chrono = "0.4.33"
 crossbeam = "0.8.4"
+tungstenite = "0.30.0"
 wildmatch = "2.3.4"
 which = "8.0.0"
 evalexpr = "13.1.0"
 dirs = "7.0.0"
 nix = { version = "0.31", features = ["user", "term", "poll"] }
+# BLE (the ble feature): btleplug is async, run on its own tokio runtime thread (src/link/ble.rs)
+btleplug = { version = "0.13.5", optional = true }
+tokio = { version = "1", features = ["rt", "time", "sync", "macros"], optional = true }
+futures = { version = "0.3", optional = true }
+uuid = { version = "1", optional = true }
+ctrlc = { version = "3.4", optional = true }
+
+[features]
+default = ["ble"]
+# BLE devices (ble:<name>) and raft ble scan. On Linux it needs libdbus-1-dev and pkg-config to build
+ble = ["dep:btleplug", "dep:tokio", "dep:futures", "dep:uuid", "dep:ctrlc"]
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_System_Console", "Win32_Foundation", "Win32_System_Threading"] }
 junction = "1"
+
+# btleplug's WinRT backend can't discover the characteristics of a Raft device's service without opening it first
+# (devdocs/fs-over-serial-ws-ble-plan.md §6.5, finding 1). Until that fix is released upstream, use the fork with it
+[patch.crates-io]
+btleplug = { git = "https://github.com/robdobsn/btleplug", rev = "541e6080d6e939230dead1a2bfc13208b298ccb7" }
