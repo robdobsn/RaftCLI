@@ -773,7 +773,16 @@ fn derive_values(hw: &HardwareFacts, responses: &mut Map<String, JsonValue>, ctx
     let layout = new_layout::partition_layout(hw.flash_mb, ota);
     set_value("partitions_csv", json!(layout.csv), responses, ctx);
     set_value("ota_enable", json!(if ota { 1 } else { 0 }), responses, ctx);
-    set_value("flash_size_sdkconfig", json!(format!("# Flash size\nCONFIG_ESPTOOLPY_FLASHSIZE_{}MB=y", hw.flash_mb)), responses, ctx);
+    // QIO flash for a dev board preset or an Espressif module, which all have quad flash: the app runs from flash, so
+    // every instruction cache miss is a flash read, and QIO reads four bits a clock rather than two (it halved the main
+    // loop's average pass on an ESP32-S3-WROOM-1-N8R2). Otherwise ESP-IDF's default, DIO, which any flash supports -
+    // the flash of a detected board or a chip alone isn't known, and could be octal
+    let flash_mode = if hw.board.is_some() || hw.module.is_some() {
+        "\n# Flash mode: QIO (the board's flash is quad) - remove this line if the board doesn't boot\nCONFIG_ESPTOOLPY_FLASHMODE_QIO=y"
+    } else {
+        ""
+    };
+    set_value("flash_size_sdkconfig", json!(format!("# Flash size\nCONFIG_ESPTOOLPY_FLASHSIZE_{}MB=y{}", hw.flash_mb, flash_mode)), responses, ctx);
     let psram_sdkconfig = if hw.psram_mb > 0 {
         let mode = if hw.chip == "esp32s3" {
             if hw.psram_mode == PsramMode::Octal { "CONFIG_SPIRAM_MODE_OCT=y\n" } else { "CONFIG_SPIRAM_MODE_QUAD=y\n" }

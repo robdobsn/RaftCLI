@@ -210,19 +210,24 @@ mod tests {
         assert!(partitions.contains("app1,     app,  ota_1,   0x320000,  0x300000,"), "{}", partitions);
         let sdkconfig = read(&folder, "systypes/MyApp/sdkconfig.defaults");
         assert!(sdkconfig.contains("CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y"));
+        assert!(sdkconfig.contains("CONFIG_ESPTOOLPY_FLASHMODE_QIO=y"), "a board preset's flash is quad");
         assert!(sdkconfig.contains("CONFIG_SPIRAM=y") && sdkconfig.contains("CONFIG_SPIRAM_MODE_QUAD=y"));
         assert!(read(&folder, "systypes/MyApp/SysTypes.json").contains("\"sdaPin\": 8"));
         fs::remove_dir_all(&folder).unwrap();
         // A module with octal PSRAM, no OTA
         let folder = generate("hw_module", &[("module", "ESP32-S3-WROOM-1-N8R8"), ("ota", "false")]);
-        assert!(read(&folder, "systypes/MyApp/sdkconfig.defaults").contains("CONFIG_SPIRAM_MODE_OCT=y"));
+        let sdkconfig = read(&folder, "systypes/MyApp/sdkconfig.defaults");
+        assert!(sdkconfig.contains("CONFIG_SPIRAM_MODE_OCT=y"));
+        assert!(sdkconfig.contains("CONFIG_ESPTOOLPY_FLASHMODE_QIO=y"), "a module's flash is quad");
         let partitions = read(&folder, "systypes/MyApp/partitions.csv");
         assert!(partitions.contains("factory") && !partitions.contains("ota_0"));
         assert!(read(&folder, "systypes/MyApp/SysTypes.json").contains("\"enable\": 0"));
         fs::remove_dir_all(&folder).unwrap();
         // No PSRAM, the default
         let folder = generate("hw_default", &[]);
-        assert!(!read(&folder, "systypes/MyApp/sdkconfig.defaults").contains("SPIRAM"));
+        let sdkconfig = read(&folder, "systypes/MyApp/sdkconfig.defaults");
+        assert!(!sdkconfig.contains("SPIRAM"));
+        assert!(!sdkconfig.contains("FLASHMODE"), "only the chip is known, so the flash mode is left as the default (DIO)");
         assert!(read(&folder, "systypes/MyApp/partitions.csv").contains("0x1b0000"));
         fs::remove_dir_all(&folder).unwrap();
     }
