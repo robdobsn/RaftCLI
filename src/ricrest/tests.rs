@@ -1,5 +1,6 @@
 // RaftCLI: RICREST tests against the simulated device (src/link/sim.rs)
 
+use crate::app_fs::crc16_ccitt;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -61,12 +62,24 @@ fn uploads_use_the_devices_block_size() {
         let sizes: Vec<usize> = blocks.iter().map(|b| b.rsplit(' ').next().unwrap().parse().unwrap()).collect();
         assert_eq!(sizes.iter().max(), Some(&max_block), "{:?}", kind);
         assert_eq!(sizes.iter().sum::<usize>(), 5000, "each block sent once: {:?}", blocks);
-        // The file system is named in the upload, and the result is checked
+        // The file system is named in the upload, with the file's CRC, which the device checks (so no filehash)
         let start = &received(&conn, r#"{"cmdName":"ufStart""#)[0];
         assert!(start.contains(r#""fileName":"/local/web/app.js""#), "{}", start);
-        assert_eq!(received(&conn, "filehash/local/web~app.js").len(), 1);
+        assert!(start.contains(&format!(r#""CRC16":"0x{:04x}""#, crc16_ccitt(&bytes))), "{}", start);
+        assert_eq!(received(&conn, "filehash/").len(), 0);
         assert!(!conn.session().link().device.uploading());
     }
+}
+
+#[test]
+fn uploads_to_older_firmware_are_checked_with_filehash() {
+    // Firmware before 2026-10-25 ignores the CRC in ufStart (no crc16 in the ufEnd reply)
+    let conn = sim(LinkKind::WebSocket);
+    conn.session_mut().link_mut().device.check_crc = false;
+    let bytes = data(5000);
+    put(&conn, "web/app.js", &bytes).unwrap();
+    assert_eq!(stored(&conn, "local/web/app.js").unwrap(), bytes);
+    assert_eq!(received(&conn, "filehash/local/web~app.js").len(), 1);
 }
 
 // Upload 200 blocks (WebSocket: 800-byte blocks, batches of 10) with blocks at these positions (in 100s of bytes)
@@ -140,7 +153,16 @@ fn a_silent_device_is_given_up_on_and_the_upload_cancelled() {
 
 #[test]
 fn a_damaged_upload_is_removed() {
+    // Firmware that checks the CRC cancels the upload (failCRC) and doesn't keep the file
     let conn = sim(LinkKind::Serial);
+    conn.session_mut().link_mut().device.faults.damage_uploads = true;
+    let err = put(&conn, "x.bin", &data(1000)).unwrap_err().to_string();
+    assert!(err.contains("didn't match"), "{}", err);
+    assert!(stored(&conn, "local/x.bin").is_none());
+
+    // Older firmware keeps it: filehash finds the damage and the file is deleted
+    let conn = sim(LinkKind::Serial);
+    conn.session_mut().link_mut().device.check_crc = false;
     conn.session_mut().link_mut().device.faults.damage_uploads = true;
     let err = put(&conn, "x.bin", &data(1000)).unwrap_err().to_string();
     assert!(err.contains("arrived damaged"), "{}", err);
