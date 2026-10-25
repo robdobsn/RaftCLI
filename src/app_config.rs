@@ -122,6 +122,12 @@ fn get_schema(base_folder: &str) -> serde_json::Value {
             "condition": "(target_chip == \"esp32\" || target_chip == \"esp32s3\" || target_chip == \"esp32p4\") && main_task_core == 1",
             "generator": "\n\n# Run the main task (which runs loop() for every SysMod) on core 1 - away from the WiFi, BLE and\n# other system tasks which run on core 0. Remove the following line to run the main task on core 0.\nCONFIG_ESP_MAIN_TASK_AFFINITY_CPU1=y"
         },
+        {
+            // The ESP-IDF default CPU speed is 160 MHz; the esp32 and esp32s3 run at up to 240 MHz
+            "key": "cpu_freq_sdkconfig",
+            "condition": "target_chip == \"esp32\" || target_chip == \"esp32s3\"",
+            "generator": "\n\n# CPU speed (the ESP-IDF default is 160 MHz) - main loop work such as receiving and decoding messages\n# is about a third faster at 240 MHz\nCONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y"
+        },
         // {
         //     "key": "use_spiram",
         //     "prompt": "Use SPIRAM (PSRAM)",
@@ -337,7 +343,7 @@ fn get_schema(base_folder: &str) -> serde_json::Value {
         {
             "key": "inc_bleman_in_systypes",
             "condition": "use_raft_ble",
-            "generator": "\"BLEMan\": { \"enable\": 1, \"peripheral\": {{{use_raft_ble_peripheral}}}, \"advIntervalMs\": 100, \"connIntvPrefMs\": 15, \"uuidCmdRespService\": \"bb76677e-9cfd-4626-a510-0d305be57c8d\", \"uuidCmdRespCommand\": \"bb76677e-9cfd-4626-a510-0d305be57c8e\", \"uuidCmdRespResponse\": \"bb76677e-9cfd-4626-a510-0d305be57c8f\", \"central\": {{{use_raft_ble_central}}}, \"scanBTHome\": 0, \"busConnName\": \"BusBLE\", \"nimLogLev\": \"E\" },"
+            "generator": "\"BLEMan\": { \"enable\": 1, \"peripheral\": {{{use_raft_ble_peripheral}}}, \"advIntervalMs\": 100, \"connIntvPrefMs\": 15, \"uuidCmdRespService\": \"aa76677e-9cfd-4626-a510-0d305be57c8d\", \"uuidCmdRespCommand\": \"aa76677e-9cfd-4626-a510-0d305be57c8e\", \"uuidCmdRespResponse\": \"aa76677e-9cfd-4626-a510-0d305be57c8f\", \"central\": {{{use_raft_ble_central}}}, \"scanBTHome\": 0, \"busConnName\": \"BusBLE\", \"nimLogLev\": \"E\" },"
         },
         {
             "key": "use_raft_ble_central_yn",
