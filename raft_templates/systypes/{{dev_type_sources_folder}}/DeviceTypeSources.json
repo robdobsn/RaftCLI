@@ -4,6 +4,6 @@
         "raftcore": { "bundled": true }
     },
     "builtin": {
-        "include": ["raftcore:*"]
+        "include": {{{dev_type_includes}}}
     }
 }

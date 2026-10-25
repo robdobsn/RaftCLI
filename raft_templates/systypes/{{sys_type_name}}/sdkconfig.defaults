@@ -4,7 +4,7 @@
 # Default log level
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 
-{{{flash_size_4MB_sdkconfig}}}{{{flash_size_8MB_sdkconfig}}}{{{flash_size_16MB_sdkconfig}}}{{{flash_size_32MB_sdkconfig}}}
+{{{flash_size_sdkconfig}}}{{{psram_sdkconfig}}}
 
 {{{console_uart_sdkconfig}}}{{{console_usb_jtag_sdkconfig}}}
 

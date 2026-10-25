@@ -5,9 +5,10 @@
 
 use clap::Parser;
 mod app_new;
-use app_new::generate_new_app;
 mod app_config;
-use app_config::get_user_input;
+use app_config::get_new_app_config;
+mod new_hardware;
+mod new_layout;
 mod serial_monitor;
 mod native_terminal;
 mod line_editor;
@@ -67,6 +68,8 @@ enum Action {
     DevTypes(DevTypesCmd),
     #[clap(name = "ports", about = "Manage serial ports", alias = "p")]
     Ports(PortsCmd),
+    #[clap(name = "detect", about = "Detect the chip, flash size and PSRAM of a connected board (esptool)")]
+    Detect(DetectCmd),
     #[clap(name = "ble", about = "Raft devices over BLE (scan for them; tested on Windows only)")]
     Ble(BleCmd),
     #[clap(name = "libs", about = "Manage local Raft development libraries (status, fetch, pull, link, unlink, remove)", alias = "l")]
@@ -84,6 +87,10 @@ enum Action {
 struct UpdateProjectCmd {
     #[clap(help = "Path to the application folder", value_name = "APPLICATION_FOLDER")]
     app_folder: Option<String>,
+    // Change answers raft new was given (saved in .raftnew.json) and update the files made from them
+    #[clap(long, value_name = "KEY=VALUE", help = "Change one of raft new's answers (saved in .raftnew.json) and update the files made from it, \
+e.g. --set flash_size=8 (can be repeated)")]
+    set: Vec<String>,
 }
 
 // Define arguments specific to the `new` subcommand
@@ -100,6 +107,25 @@ struct NewCmd {
     // Option to provide answers to questions
     #[clap(long, value_name = "KEY=VALUE", help = "Answer a question without prompting e.g. --set target_chip=esp32c6 (can be repeated)")]
     set: Vec<String>,
+    // Option to ask the advanced questions too
+    #[clap(long, help = "Also ask the advanced questions (SysType name, SysMod name, main task core, ESP-IDF version)")]
+    advanced: bool,
+    // Option to use saved answers
+    #[clap(long, value_name = "FILE", help = "Use the answers saved in another app's .raftnew.json (--set overrides them)")]
+    answers: Option<String>,
+}
+
+// Define arguments for the `detect` subcommand
+#[derive(Clone, Parser, Debug)]
+struct DetectCmd {
+    #[clap(short = 'p', long, help = "Serial port (default: the most likely one)")]
+    port: Option<String>,
+    #[clap(short = 'n', long, help = "Native serial port when in WSL")]
+    native_serial_port: bool,
+    #[clap(short = 't', long, help = "Flash tool (default: esptool)")]
+    flash_tool: Option<String>,
+    #[clap(long, help = "Output as JSON")]
+    json: bool,
 }
 
 // Define arguments specific to the `build` subcommand
@@ -367,19 +393,39 @@ fn main() {
                 }
             }
 
+            // Saved answers (from another app's .raftnew.json): used without prompting, --set overrides them
+            let mut use_defaults = cmd.defaults;
+            if let Some(answers_file) = &cmd.answers {
+                match app_new::read_saved_answers(answers_file) {
+                    Ok((saved, _)) => {
+                        for (key, value) in saved {
+                            if key != "project_name" {
+                                overrides.entry(key).or_insert(value);
+                            }
+                        }
+                        use_defaults = true;
+                    }
+                    Err(e) => {
+                        println!("Error: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+            }
+
             // Get configuration
-            let json_config_str = match get_user_input(&base_folder, cmd.defaults, &overrides) {
-                Ok(json_config_str) => json_config_str,
+            let new_config = match get_new_app_config(&base_folder, use_defaults, &overrides, cmd.advanced) {
+                Ok(config) => config,
                 Err(e) => {
                     println!("Error: {}", e);
                     std::process::exit(1);
                 }
             };
-            let json_config = serde_json::from_str(&json_config_str).unwrap();
 
-            // Generate a new app
-            let _result = generate_new_app(&base_folder, json_config).unwrap();
-            // println!("{:?}", _result);
+            // Generate a new app (and save the answers in it)
+            if let Err(e) = app_new::generate_new_app_with_answers(&base_folder, new_config.config, Some(&new_config.answers)) {
+                println!("Error: {}", e);
+                std::process::exit(1);
+            }
 
             // A child process can't change the parent shell's directory, so tell the user how to get there
             let in_cwd = match (std::fs::canonicalize(&base_folder), std::env::current_dir()) {
@@ -624,6 +670,36 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        Action::Detect(cmd) => {
+            match new_hardware::detect_hardware(cmd.port, cmd.native_serial_port, cmd.flash_tool) {
+                Ok(found) => {
+                    if cmd.json {
+                        println!("{}", serde_json::to_string(&found).unwrap_or_default());
+                    } else {
+                        println!("Port:   {}", found.port);
+                        println!("Chip:   {} ({})", found.chip, found.chip_description);
+                        println!("Flash:  {}", found.flash_mb.map(|f| format!("{} MB", f)).unwrap_or("not reported".to_string()));
+                        println!("PSRAM:  {}", if found.psram_mb > 0 { format!("{} MB in the chip", found.psram_mb) }
+                                                else { "none in the chip (a module or board may add PSRAM, which esptool can't see)".to_string() });
+                        if !found.features.is_empty() {
+                            println!("Features: {}", found.features);
+                        }
+                        println!("\nFor raft new or raft update-project: --set target_chip={} --set flash_size={}{}", found.chip,
+                                 found.flash_mb.unwrap_or(new_hardware::DEFAULT_FLASH_MB),
+                                 if found.psram_mb > 0 { format!(" --set psram={}", found.psram_mb) } else { String::new() });
+                    }
+                }
+                Err(e) => {
+                    if cmd.json {
+                        println!("{}", serde_json::json!({ "error": e }));
+                    } else {
+                        println!("Error: {}", e);
+                    }
+                    std::process::exit(1);
+                }
+            }
+        }
+
         Action::Ports(cmd) => {
             manage_ports(&cmd);
         }
@@ -643,6 +719,23 @@ fn main() {
 
         Action::UpdateProject(cmd) => {
             let app_folder = cmd.app_folder.unwrap_or(".".to_string());
+            if !cmd.set.is_empty() {
+                let mut settings = std::collections::HashMap::new();
+                for setting in &cmd.set {
+                    match setting.split_once('=') {
+                        Some((key, value)) => { settings.insert(key.trim().to_string(), value.trim().to_string()); }
+                        None => {
+                            eprintln!("Error: --set requires KEY=VALUE but got {}", setting);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                if let Err(e) = project_update::rerender_project(&app_folder, &settings) {
+                    eprintln!("Error: {}", e);
+                    std::process::exit(1);
+                }
+                return;
+            }
             if let Err(e) = project_update::update_project(&app_folder) {
                 eprintln!("Error: {}", e);
                 std::process::exit(1);

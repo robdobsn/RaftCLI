@@ -12,35 +12,10 @@
         "pauseWiFiforBLE": 1
     },
     {{{inc_bleman_in_systypes}}}
-    "NetMan": {
-        "wifiSTAEn": 1,
-        "wifiAPEn": 1,
-        "wifiAPSSID": "RaftAP",
-        "wifiAPPW": "raftpassword"
-    },
+    {{{inc_netman_in_systypes}}}
     "ESPOTAUpdate": {
-        "enable": 1,
+        "enable": {{{ota_enable}}},
         "OTADirect": 1
-    },
-    "MQTTMan": {
-        "enable": 0,
-        "brokerHostname": "mqttbroker",
-        "brokerPort": 1883,
-        "clientID": "",
-        "topics": [
-            {
-                "name": "examplein",
-                "inbound": 1,
-                "path": "example/in",
-                "qos": 1
-            },
-            {
-                "name": "exampleout",
-                "inbound": 0,
-                "path": "example/out",
-                "qos": 1
-            }
-        ]
     },
     "LogManager": {
         "enable": 0,
@@ -55,15 +30,7 @@
     "SerialConsole": {
         "enable": 1
     },
-    "WebServer": {
-        "enable": 1,
-        "websockets": [
-            {
-                "pfix": "ws",
-                "pcol": "RICSerial"
-            }
-        ]
-    },
+    {{{inc_webserver_in_systypes}}}
     "FileManager": {
         "enable": 1
     },

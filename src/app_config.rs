@@ -7,9 +7,18 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value as JsonValue};
 use regex::Regex;
 use std::collections::HashMap;
-use dialoguer::Input;
+use dialoguer::{Confirm, Input, Select};
 
+use crate::new_hardware::{self, HardwareFacts, PsramMode};
+use crate::new_layout::{self, AppFeatures};
 use crate::raft_cli_utils::default_esp_idf_version;
+
+// A choice in a "choice" question
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct ConfigChoice {
+    value: String,
+    label: String,
+}
 
 // Define the schema for the user input
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -17,19 +26,21 @@ struct ConfigQuestion {
     key: String,
     prompt: Option<String>,
     default: Option<String>,
-    datatype: Option<String>,
+    datatype: Option<String>,       // boolean, int, string, choice (with choices) or hardware (the hardware routes)
     description: Option<String>,
     pattern: Option<String>,
     message: Option<String>,
     error: Option<String>,
     condition: Option<String>,
     generator: Option<String>,
+    choices: Option<Vec<ConfigChoice>>,
+    advanced: Option<bool>,         // only asked with --advanced (otherwise the default is used, and shown in the summary)
 }
 
 // Extract project name from folder path and sanitize it
 fn extract_project_name_from_folder(base_folder: &str) -> String {
     let path = std::path::Path::new(base_folder);
-    
+
     // If it's current directory, get the actual current directory name
     let folder_name = if base_folder == "." {
         std::env::current_dir()
@@ -41,13 +52,13 @@ fn extract_project_name_from_folder(base_folder: &str) -> String {
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| "NewRaftProject".to_string())
     };
-    
+
     // Sanitize the folder name to match the pattern ^[a-zA-Z0-9_]+$
     let sanitized = folder_name
         .chars()
         .filter(|c| c.is_alphanumeric() || *c == '_')
         .collect::<String>();
-    
+
     // Ensure it starts with a letter and isn't empty
     if sanitized.is_empty() || !sanitized.chars().next().unwrap().is_alphabetic() {
         "NewRaftProject".to_string()
@@ -56,18 +67,20 @@ fn extract_project_name_from_folder(base_folder: &str) -> String {
     }
 }
 
+const BOOL_PATTERN: &str = "^(true|false|t|f|yes|no|y|n)$";
+const WIFI: &str = "(connectivity == \"wifi_ble\" || connectivity == \"wifi\")";
+const BLE: &str = "(connectivity == \"wifi_ble\" || connectivity == \"ble\")";
+
 // Get the populated schema for the user input
 fn get_schema(base_folder: &str) -> serde_json::Value {
     let default_project_name = extract_project_name_from_folder(base_folder);
-    
-    // Populate schema for the user input
     let schema = json!([
         {
             "key": "project_name",
             "prompt": "Project Name",
             "default": default_project_name,
             "datatype": "string",
-            "description": "The name of the project to create",
+            "description": "The name of the project",
             "pattern": "^[a-zA-Z0-9_]+$",
             "message": "Project name must be alphanumeric with underscores only (no spaces or other punctuation)",
             "error": "Invalid project name"
@@ -77,20 +90,19 @@ fn get_schema(base_folder: &str) -> serde_json::Value {
             "prompt": "System Type Name",
             "default": "{{project_name}}",
             "datatype": "string",
-            "description": "The name of the system type to create",
+            "description": "The name of the system type",
             "pattern": "^[a-zA-Z0-9_]+$",
             "message": "System type name must be alphanumeric with underscores only (no spaces or other punctuation)",
-            "error": "Invalid system type name"
+            "error": "Invalid system type name",
+            "advanced": true
         },
         {
-            "key": "target_chip",
-            "prompt": "Target Chip (e.g. esp32, esp32s3, esp32c3, esp32c5, esp32c6, esp32p4)",
-            "default": "esp32s3",
-            "datatype": "string",
-            "description": "The target chip for the project",
-            "pattern": "^(esp32|esp32s3|esp32c3|esp32c5|esp32c6|esp32p4)$",
-            "message": "Target chip must be one of esp32, esp32s3, esp32c3, esp32c5, esp32c6, esp32p4",
-            "error": "Invalid target chip"
+            // The chip, flash, PSRAM and I2C pins: detected from a connected board, a dev board, a module's ordering
+            // code, or the chip (new_hardware.rs). Sets target_chip, flash_size, psram, psram_mode, hw_pins_known
+            // and raft_i2c_sda_pin / raft_i2c_scl_pin
+            "key": "hardware",
+            "prompt": "Hardware",
+            "datatype": "hardware"
         },
         {
             // The esp32 has no USB Serial/JTAG peripheral so the console must be on a UART
@@ -115,7 +127,8 @@ fn get_schema(base_folder: &str) -> serde_json::Value {
             "pattern": "^(0|1)$",
             "message": "Main task core must be 0 or 1",
             "error": "Invalid main task core",
-            "condition": "target_chip == \"esp32\" || target_chip == \"esp32s3\" || target_chip == \"esp32p4\""
+            "condition": "target_chip == \"esp32\" || target_chip == \"esp32s3\" || target_chip == \"esp32p4\"",
+            "advanced": true
         },
         {
             "key": "main_task_core_sdkconfig",
@@ -128,71 +141,6 @@ fn get_schema(base_folder: &str) -> serde_json::Value {
             "condition": "target_chip == \"esp32\" || target_chip == \"esp32s3\"",
             "generator": "\n\n# CPU speed (the ESP-IDF default is 160 MHz) - main loop work such as receiving and decoding messages\n# is about a third faster at 240 MHz\nCONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y"
         },
-        // {
-        //     "key": "use_spiram",
-        //     "prompt": "Use SPIRAM (PSRAM)",
-        //     "default": "false",
-        //     "datatype": "boolean",
-        //     "description": "Specify whether SPIRAM (PSRAM) should be used",
-        //     "pattern": "^(true|false|t|f|yes|no|y|n)$",
-        //     "message": "Input must be true or false",
-        //     "error": "Invalid SPIRAM choice"
-        // },
-        // {
-        //     "key": "add_use_spiram_to_sdkconfig",
-        //     "condition": "use_spiram",
-        //     "generator": "\n# SPIRAM\nCONFIG_SPIRAM=y\n"
-        // },
-        {
-            "key": "flash_size_for_partition_table",
-            "prompt": "Flash Size in MB (e.g. 4, 8, 16, 32)",
-            "default": "4",
-            "datatype": "int",
-            "description": "The flash size in MB",
-            "pattern": "^(4|8|16|32)$",
-            "message": "Flash size must be one of 4, 8, 16, 32",
-            "error": "Invalid flash size"
-        },
-        {
-            "key": "flash_size_4MB",
-            "condition": "{{flash_size_for_partition_table}}==4",
-            "generator": "# Name,   Type, SubType, Offset,  Size, Flags\nnvs,      data, nvs,     0x009000,  0x015000,\notametadata,  data, ota,     0x01e000,  0x002000,\napp0,     app,  ota_0,   0x020000,  0x1b0000,\napp1,     app,  ota_1,   0x1d0000,  0x1b0000,\nfs,       data, 0x83,    0x380000,  0x080000,"
-        },
-        {
-            "key": "flash_size_4MB_sdkconfig",
-            "condition": "{{flash_size_for_partition_table}}==4",
-            "generator": "# Flash size\nCONFIG_ESPTOOLPY_FLASHSIZE_4MB=y"
-        },
-        {
-            "key": "flash_size_8MB",
-            "condition": "{{flash_size_for_partition_table}}==8",
-            "generator": "# Name,   Type, SubType, Offset,  Size, Flags\nnvs,      data, nvs,     0x009000,  0x015000,\notametadata,  data, ota,     0x01e000,  0x002000,\napp0,     app,  ota_0,   0x020000,  0x200000,\napp1,     app,  ota_1,   0x220000,  0x200000,\nfs,       data, 0x83,    0x420000,  0x3E0000,"
-        },
-        {
-            "key": "flash_size_8MB_sdkconfig",
-            "condition": "{{flash_size_for_partition_table}}==8",
-            "generator": "# Flash size\nCONFIG_ESPTOOLPY_FLASHSIZE_8MB=y"
-        },
-        {
-            "key": "flash_size_8MB",
-            "condition": "{{flash_size_for_partition_table}}==16",
-            "generator": "# Name,   Type, SubType, Offset,  Size, Flags\nnvs,      data, nvs,     0x009000,  0x015000,\notametadata,  data, ota,     0x01e000,  0x002000,\napp0,     app,  ota_0,   0x020000,  0x200000,\napp1,     app,  ota_1,   0x220000,  0x200000,\nfs,       data, 0x83,    0x420000,  0xBE0000,"
-        },
-        {
-            "key": "flash_size_16MB_sdkconfig",
-            "condition": "{{flash_size_for_partition_table}}==16",
-            "generator": "# Flash size\nCONFIG_ESPTOOLPY_FLASHSIZE_16MB=y"
-        },
-        {
-            "key": "flash_size_32MB",
-            "condition": "{{flash_size_for_partition_table}}==32",
-            "generator": "# Name,   Type, SubType, Offset,  Size, Flags\nnvs,      data, nvs,     0x009000,  0x015000,\notametadata,  data, ota,     0x01e000,  0x002000,\napp0,     app,  ota_0,   0x020000,  0x200000,\napp1,     app,  ota_1,   0x220000,  0x200000,\nfs,       data, 0x83,    0x420000,  0x1BE0000,"
-        },
-        {
-            "key": "flash_size_32MB_sdkconfig",
-            "condition": "{{flash_size_for_partition_table}}==32",
-            "generator": "# Flash size\nCONFIG_ESPTOOLPY_FLASHSIZE_32MB=y"
-        },
         {
             "key": "esp_idf_version",
             "prompt": "ESP-IDF Version",
@@ -201,7 +149,100 @@ fn get_schema(base_folder: &str) -> serde_json::Value {
             "description": "The version of the ESP-IDF to use",
             "pattern": r"^\d+\.\d+(\.\d+)?(-[\da-zA-Z-]+(\.[\da-zA-Z-]+)*)?$",
             "message": "ESP-IDF version must be in the form x.y.z",
-            "error": "Invalid ESP-IDF version"
+            "error": "Invalid ESP-IDF version",
+            "advanced": true
+        },
+        {
+            "key": "connectivity",
+            "prompt": "Wireless connectivity",
+            "default": "wifi_ble",
+            "datatype": "choice",
+            "choices": [
+                { "value": "wifi_ble", "label": "WiFi and BLE" },
+                { "value": "wifi", "label": "WiFi only (about 240 KB smaller)" },
+                { "value": "ble", "label": "BLE only (about 680 KB smaller)" },
+                { "value": "none", "label": "None - USB serial only (about 970 KB smaller)" }
+            ]
+        },
+        {
+            "key": "ble_roles",
+            "prompt": "BLE role",
+            "default": "peripheral",
+            "datatype": "choice",
+            "choices": [
+                { "value": "peripheral", "label": "Peripheral - apps and the raft CLI connect to the device" },
+                { "value": "central", "label": "Central - the device connects to BLE sensors (BTHome)" },
+                { "value": "both", "label": "Both" }
+            ],
+            "condition": BLE
+        },
+        {
+            "key": "use_raft_webserver",
+            "prompt": "Include the web server",
+            "default": "true",
+            "datatype": "boolean",
+            "description": "Use the Raft WebServer library",
+            "pattern": BOOL_PATTERN,
+            "message": "Must be true or false",
+            "error": "Invalid web server choice",
+            "condition": WIFI
+        },
+        {
+            "key": "ota",
+            "prompt": "OTA updates (two app slots, so the app can be updated over WiFi or BLE)",
+            "default": "true",
+            "datatype": "boolean",
+            "description": "Two app partitions for over-the-air updates, or one larger one",
+            "pattern": BOOL_PATTERN,
+            "message": "Must be true or false",
+            "error": "Invalid OTA choice"
+        },
+        {
+            "key": "i2c_sensors",
+            "prompt": "I2C and sensors",
+            "default": "common",
+            "datatype": "choice",
+            "choices": [
+                { "value": "common", "label": "I2C with about 10 common sensors" },
+                { "value": "extended", "label": "I2C with about 25 sensors (about 20 KB more)" },
+                { "value": "all", "label": "I2C with all of RaftCore's sensors (about 60 KB more)" },
+                { "value": "i2c", "label": "I2C, no sensors built in - add them later with a device type file (about 20 KB smaller)" },
+                { "value": "none", "label": "No I2C (about 110 KB smaller)" }
+            ]
+        },
+        {
+            "key": "raft_i2c_sda_pin",
+            "prompt": "I2C SDA pin",
+            "default": "{{hw_i2c_sda}}",
+            "datatype": "int",
+            "description": "The pin number for the I2C SDA line",
+            "pattern": "^[0-9]+$",
+            "message": "A GPIO number",
+            "error": "Invalid pin number",
+            "condition": "i2c_sensors != \"none\" && !hw_pins_known"
+        },
+        {
+            "key": "raft_i2c_scl_pin",
+            "prompt": "I2C SCL pin",
+            "default": "{{hw_i2c_scl}}",
+            "datatype": "int",
+            "description": "The pin number for the I2C SCL line",
+            "pattern": "^[0-9]+$",
+            "message": "A GPIO number",
+            "error": "Invalid pin number",
+            "condition": "i2c_sensors != \"none\" && !hw_pins_known"
+        },
+        {
+            "key": "runtime_decode",
+            "prompt": "Decoding, on the device, of sensors added later (from a device type file)",
+            "default": "attrs",
+            "datatype": "choice",
+            "choices": [
+                { "value": "attrs", "label": "From their attributes" },
+                { "value": "code", "label": "From their attributes and custom decode code (about 26 KB more)" },
+                { "value": "none", "label": "None - only apps decode their data (about 17 KB smaller)" }
+            ],
+            "condition": "i2c_sensors != \"none\""
         },
         {
             "key": "create_user_sysmod",
@@ -209,7 +250,7 @@ fn get_schema(base_folder: &str) -> serde_json::Value {
             "default": "true",
             "datatype": "boolean",
             "description": "Create a user SysMod",
-            "pattern": "^(true|false|t|f|yes|no|y|n)$",
+            "pattern": BOOL_PATTERN,
             "message": "Create user SysMod must be true or false",
             "error": "Invalid user SysMod choice"
         },
@@ -233,7 +274,8 @@ fn get_schema(base_folder: &str) -> serde_json::Value {
             "pattern": "^[a-zA-Z0-9_]+$",
             "message": "User SysMod name must be alphanumeric with underscores only (no spaces or other punctuation)",
             "error": "Invalid user SysMod name",
-            "condition": "create_user_sysmod"
+            "condition": "create_user_sysmod",
+            "advanced": true
         },
         {
             "key": "depends_user_sysmod",
@@ -253,9 +295,10 @@ fn get_schema(base_folder: &str) -> serde_json::Value {
             "default": "true",
             "datatype": "boolean",
             "description": "Use the Raft SysMods library",
-            "pattern": "^(true|false|t|f|yes|no|y|n)$",
+            "pattern": BOOL_PATTERN,
             "message": "Use Raft SysMods must be true or false",
-            "error": "Invalid Raft SysMods choice"
+            "error": "Invalid Raft SysMods choice",
+            "advanced": true
         },
         {
             // Git tag for the Raft SysMods library. No prompt: edit
@@ -269,16 +312,6 @@ fn get_schema(base_folder: &str) -> serde_json::Value {
             "key": "depends_raft_sysmods",
             "condition": "use_raft_sysmods",
             "generator": "\n        RaftSysMods"
-        },
-        {
-            "key": "use_raft_webserver",
-            "prompt": "Use Raft Web Server",
-            "default": "true",
-            "datatype": "boolean",
-            "description": "Use the Raft WebServer library",
-            "pattern": "^(true|false|t|f|yes|no|y|n)$",
-            "message": "Use Raft WebServer must be true or false",
-            "error": "Invalid Raft WebServer choice"
         },
         {
             // Git tag for the Raft Web Server library. No prompt: edit
@@ -309,38 +342,6 @@ fn get_schema(base_folder: &str) -> serde_json::Value {
             "generator": "\n        RaftWebServer"
         },
         {
-            "key": "use_raft_ble",
-            "prompt": "Add support for Raft BLE",
-            "default": "true",
-            "datatype": "boolean",
-            "description": "Specify whether Raft BLE support should be added",
-            "pattern": "^(true|false|t|f|yes|no|y|n)$",
-            "message": "Input must be true or false",
-            "error": "Invalid BLE support choice"
-        },
-        {
-            "key": "use_raft_ble_peripheral",
-            "condition": "use_raft_ble",
-            "prompt": "Add support for Raft BLE Peripheral",
-            "default": "true",
-            "datatype": "boolean",
-            "description": "Specify whether Raft BLE Peripheral support should be added",
-            "pattern": "^(true|false|t|f|yes|no|y|n)$",
-            "message": "Input must be true or false",
-            "error": "Invalid BLE peripheral support choice"
-        },
-        {
-            "key": "use_raft_ble_central",
-            "condition": "use_raft_ble",
-            "prompt": "Add support for Raft BLE Central (for BTHome support)",
-            "default": "false",
-            "datatype": "boolean",
-            "description": "Specify whether Raft BLE Central support should be added",
-            "pattern": "^(true|false|t|f|yes|no|y|n)$",
-            "message": "Input must be true or false",
-            "error": "Invalid BLE central support choice"
-        },
-        {
             "key": "inc_bleman_in_systypes",
             "condition": "use_raft_ble",
             "generator": "\"BLEMan\": { \"enable\": 1, \"peripheral\": {{{use_raft_ble_peripheral}}}, \"advIntervalMs\": 100, \"connIntvPrefMs\": 15, \"uuidCmdRespService\": \"aa76677e-9cfd-4626-a510-0d305be57c8d\", \"uuidCmdRespCommand\": \"aa76677e-9cfd-4626-a510-0d305be57c8e\", \"uuidCmdRespResponse\": \"aa76677e-9cfd-4626-a510-0d305be57c8f\", \"central\": {{{use_raft_ble_central}}}, \"scanBTHome\": 0, \"busConnName\": \"BusBLE\", \"nimLogLev\": \"E\" },"
@@ -356,14 +357,14 @@ fn get_schema(base_folder: &str) -> serde_json::Value {
             "generator": "\n# Bluetooth\nCONFIG_BT_ENABLED=y\nCONFIG_BT_NIMBLE_ENABLED=y\n{{{use_raft_ble_central_yn}}}CONFIG_BT_NIMBLE_ROLE_OBSERVER=n\nCONFIG_BT_NIMBLE_CRYPTO_STACK_MBEDTLS=n\nCONFIG_BT_NIMBLE_LOG_LEVEL_WARNING=y\nCONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE=6144\nCONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL=y\n"
         },
         {
-            "key": "use_raft_i2c",
-            "prompt": "Add support for I2C",
-            "default": "true",
-            "datatype": "boolean",
-            "description": "Specify whether Raft I2C bus support should be added",
-            "pattern": "^(true|false|t|f|yes|no|y|n)$",
-            "message": "Input must be true or false",
-            "error": "Invalid I2C support choice"
+            "key": "inc_netman_in_systypes",
+            "condition": "use_wifi",
+            "generator": "\"NetMan\": { \"wifiSTAEn\": 1, \"wifiAPEn\": 1, \"wifiAPSSID\": \"{{{project_name}}}\", \"wifiAPPW\": \"{{{ap_password}}}\" }, \"MQTTMan\": { \"enable\": 0, \"brokerHostname\": \"mqttbroker\", \"brokerPort\": 1883, \"clientID\": \"\", \"topics\": [ { \"name\": \"examplein\", \"inbound\": 1, \"path\": \"example/in\", \"qos\": 1 }, { \"name\": \"exampleout\", \"inbound\": 0, \"path\": \"example/out\", \"qos\": 1 } ] },"
+        },
+        {
+            "key": "inc_webserver_in_systypes",
+            "condition": "use_raft_webserver",
+            "generator": "\"WebServer\": { \"enable\": 1, \"websockets\": [ { \"pfix\": \"ws\", \"pcol\": \"RICSerial\" } ] },"
         },
         {
             // Git tag for the Raft I2C library. No prompt: edit
@@ -372,38 +373,6 @@ fn get_schema(base_folder: &str) -> serde_json::Value {
             "default": "main",
             "datatype": "string",
             "condition": "use_raft_i2c"
-        },
-        {
-            "key": "raft_i2c_sda_pin",
-            "prompt": "I2C SDA Pin number",
-            "default": "5",
-            "datatype": "int",
-            "description": "The pin number for the I2C SDA line",
-            "pattern": "^[0-9]*$",
-            "message": "",
-            "error": "Invalid pin number",
-            "condition": "use_raft_i2c"
-        },
-        {
-            "key": "raft_i2c_scl_pin",
-            "prompt": "I2C SCL Pin number",
-            "default": "6",
-            "datatype": "int",
-            "description": "The pin number for the I2C SCL line",
-            "pattern": "^[0-9]*$",
-            "message": "",
-            "error": "Invalid pin number",
-            "condition": "use_raft_i2c"
-        },
-        {
-            "key": "use_raft_core_dev_types",
-            "prompt": "Include Raft Core Device Types",
-            "default": "true",
-            "datatype": "boolean",
-            "description": "Specify whether RaftCore's device type records should be compiled in (selected in systypes/Common/DeviceTypeSources.json)",
-            "pattern": "^(true|false|t|f|yes|no|y|n)$",
-            "message": "Input must be true or false",
-            "error": "Invalid device types include choice"
         },
         {
             // Folder of the DeviceTypeSources.json template - empty (so the file isn't generated) without device types
@@ -420,7 +389,7 @@ fn get_schema(base_folder: &str) -> serde_json::Value {
             "key": "inc_raft_i2c_sysmod",
             "condition": "use_raft_i2c",
             "generator": "RaftI2C@{{raft_i2c_git_tag}}",
-        },        
+        },
         {
             "key": "inc_i2c_in_devman",
             "condition": "use_raft_i2c",
@@ -478,14 +447,36 @@ fn evaluate_condition(condition: &str, context: &HashMapContext) -> bool {
     }
 }
 
+// Set a value in both the responses and the condition context
+fn set_value(key: &str, value: JsonValue, responses: &mut Map<String, JsonValue>, eval_context: &mut HashMapContext) {
+    let ctx_value = match &value {
+        JsonValue::Bool(b) => Value::from(*b),
+        JsonValue::Number(n) => Value::Int(n.as_i64().unwrap_or(0)),
+        JsonValue::String(s) => Value::from(s.clone()),
+        other => Value::from(other.to_string()),
+    };
+    eval_context.set_value(key.to_string(), ctx_value).unwrap();
+    responses.insert(key.to_string(), value);
+}
+
+// The value of an answer (as text) for a question's datatype
+fn typed_value(question: &ConfigQuestion, text: &str) -> JsonValue {
+    match question.datatype.as_deref() {
+        Some("boolean") => {
+            let value = text.to_lowercase();
+            JsonValue::Bool(value == "true" || value == "t" || value == "yes" || value == "y")
+        }
+        Some("number") | Some("int") => JsonValue::Number(serde_json::Number::from(text.trim().parse::<i64>().unwrap_or(0))),
+        _ => JsonValue::String(text.to_string()),
+    }
+}
+
 // Add a default value for a variable to both responses and eval_context
 fn add_default_value_to_context(
-    question: &ConfigQuestion, 
-    responses: &mut Map<String, JsonValue>, 
+    question: &ConfigQuestion,
+    responses: &mut Map<String, JsonValue>,
     eval_context: &mut HashMapContext
 ) {
-    let key = &question.key;
-    
     // Use the question's default if available, otherwise use type-appropriate defaults
     let default_value = question.default.as_deref().unwrap_or_else(|| {
         match question.datatype.as_deref() {
@@ -494,43 +485,75 @@ fn add_default_value_to_context(
             _ => ""
         }
     });
-    
-    match question.datatype.as_deref() {
-        Some("boolean") => {
-            let bool_value = default_value.to_lowercase();
-            let is_true = bool_value == "true" || bool_value == "t" || bool_value == "yes" || bool_value == "y";
-            responses.insert(key.clone(), JsonValue::Bool(is_true));
-            eval_context.set_value(key.clone(), Value::from(is_true)).unwrap();
-        },
-        Some("number") | Some("int") => {
-            if let Ok(num) = default_value.parse::<i64>() {
-                responses.insert(key.clone(), JsonValue::Number(serde_json::Number::from(num)));
-                eval_context.set_value(key.clone(), evalexpr::Value::Int(num)).unwrap();
-            } else {
-                responses.insert(key.clone(), JsonValue::Number(serde_json::Number::from(0)));
-                eval_context.set_value(key.clone(), evalexpr::Value::Int(0)).unwrap();
-            }
-        },
-        _ => {
-            responses.insert(key.clone(), JsonValue::String(default_value.to_string()));
-            eval_context.set_value(key.clone(), Value::from(default_value)).unwrap();
-        }
+    set_value(&question.key, typed_value(question, default_value), responses, eval_context);
+}
+
+// The pattern answers to a question must match (a choice's values)
+fn question_pattern(question: &ConfigQuestion) -> String {
+    if let Some(choices) = &question.choices {
+        return format!("^({})$", choices.iter().map(|c| regex::escape(&c.value)).collect::<Vec<_>>().join("|"));
     }
+    question.pattern.clone().unwrap_or(".*".to_string())
+}
+
+// Settings from older RaftCLI versions (scripts and saved answers): translated to the questions that replace them
+fn translate_legacy_settings(overrides: &HashMap<String, String>) -> Result<HashMap<String, String>, String> {
+    let mut out = overrides.clone();
+    let is_true = |v: &str| matches!(v.to_lowercase().as_str(), "true" | "t" | "yes" | "y");
+    if let Some(v) = out.remove("flash_size_for_partition_table") {
+        out.entry("flash_size".to_string()).or_insert(v);
+    }
+    if let Some(v) = out.remove("use_raft_ble") {
+        out.entry("connectivity".to_string()).or_insert(if is_true(&v) { "wifi_ble" } else { "wifi" }.to_string());
+    }
+    let peripheral = out.remove("use_raft_ble_peripheral").map(|v| is_true(&v));
+    let central = out.remove("use_raft_ble_central").map(|v| is_true(&v));
+    if peripheral.is_some() || central.is_some() {
+        let roles = match (peripheral.unwrap_or(true), central.unwrap_or(false)) {
+            (_, false) => "peripheral",
+            (false, true) => "central",
+            (true, true) => "both",
+        };
+        out.entry("ble_roles".to_string()).or_insert(roles.to_string());
+    }
+    let i2c = out.remove("use_raft_i2c").map(|v| is_true(&v));
+    let dev_types = out.remove("use_raft_core_dev_types").map(|v| is_true(&v));
+    if i2c.is_some() || dev_types.is_some() {
+        let sensors = match (i2c.unwrap_or(true), dev_types.unwrap_or(true)) {
+            (false, _) => "none",
+            (true, false) => "i2c",
+            (true, true) => "all",
+        };
+        out.entry("i2c_sensors".to_string()).or_insert(sensors.to_string());
+    }
+    Ok(out)
+}
+
+// A new app's configuration: the values the templates are rendered with, and the answers (saved in the project as
+// .raftnew.json so the project can be made again, or its hardware changed, by raft update-project)
+pub struct NewAppConfig {
+    pub config: JsonValue,
+    pub answers: Map<String, JsonValue>,
 }
 
 // Get the configuration for a new app
 // use_defaults: don't prompt - use the default answer for every question (for scripts and automated tests)
-// overrides: answers given on the command line (key=value) which are used instead of prompting
-pub fn get_user_input(base_folder: &str, use_defaults: bool, overrides: &HashMap<String, String>)
-            -> Result<String, Box<dyn std::error::Error>> {
+// overrides: answers given on the command line (key=value) or from saved answers, used instead of prompting
+// advanced: ask the advanced questions too (otherwise their defaults are used)
+pub fn get_new_app_config(base_folder: &str, use_defaults: bool, overrides: &HashMap<String, String>, advanced: bool)
+            -> Result<NewAppConfig, Box<dyn std::error::Error>> {
     // Load and deserialize the schema
     let schema = get_schema(base_folder);
     let questions = serde_json::from_value::<Vec<ConfigQuestion>>(schema)?;
+    let overrides = translate_legacy_settings(overrides)?;
 
-    // Check that the overrides are all answers to questions
+    // Check that the overrides are all answers to questions (or hardware settings)
     for key in overrides.keys() {
-        if !questions.iter().any(|q| q.prompt.is_some() && &q.key == key) {
-            let valid_keys: Vec<&str> = questions.iter().filter(|q| q.prompt.is_some()).map(|q| q.key.as_str()).collect();
+        let is_question = questions.iter().any(|q| q.prompt.is_some() && q.datatype.as_deref() != Some("hardware") && &q.key == key);
+        if !is_question && !new_hardware::HARDWARE_ALL_KEYS.contains(&key.as_str()) && key != "port" && key != "ap_password" {
+            let mut valid_keys: Vec<&str> = questions.iter()
+                .filter(|q| q.prompt.is_some() && q.datatype.as_deref() != Some("hardware")).map(|q| q.key.as_str()).collect();
+            valid_keys.extend(new_hardware::HARDWARE_ALL_KEYS.iter());
             return Err(format!("Unknown setting \"{}\" - valid settings are: {}", key, valid_keys.join(", ")).into());
         }
     }
@@ -538,12 +561,17 @@ pub fn get_user_input(base_folder: &str, use_defaults: bool, overrides: &HashMap
     let mut responses = Map::new();
     let handlebars = Handlebars::new();
     let mut eval_context = HashMapContext::new();
+    let mut answers = Map::new();
+    let mut hardware: Option<HardwareFacts> = None;
 
     // PRE-PASS: Initialize all variables with defaults
     // This ensures every variable exists in the context before any condition evaluation.
     // Includes prompt-driven questions AND non-prompt questions that have a default
     // (used for values like git tags that are no longer asked for interactively).
     for question in &questions {
+        if question.datatype.as_deref() == Some("hardware") {
+            continue;
+        }
         if question.prompt.is_some()
             || (question.default.is_some() && question.generator.is_none())
         {
@@ -564,6 +592,15 @@ pub fn get_user_input(base_folder: &str, use_defaults: bool, overrides: &HashMap
                 }
             }
 
+            // The hardware: its own routes (new_hardware.rs)
+            if question.datatype.as_deref() == Some("hardware") {
+                let facts = new_hardware::choose_hardware(use_defaults, &overrides)?;
+                println!("{}: {}", prompt, describe_hardware(&facts));
+                set_hardware(&facts, &mut responses, &mut eval_context, &mut answers);
+                hardware = Some(facts);
+                continue;
+            }
+
             // Process the default value with Handlebars
             let default_value = if let Some(default) = &question.default {
                 handlebars.render_template(default, &responses)?
@@ -572,20 +609,29 @@ pub fn get_user_input(base_folder: &str, use_defaults: bool, overrides: &HashMap
             };
 
             // Validate input using regex
-            let pattern = question.pattern.clone().unwrap_or(".*".to_string());
+            let pattern = question_pattern(question);
             let re = Regex::new(&pattern)?;
             let message = question.message.clone().unwrap_or("Invalid input".to_string());
+            let ask = !use_defaults && (advanced || !question.advanced.unwrap_or(false));
 
             // Use the answer from the command line, the default (if not prompting) or prompt the user for input
             let response = if let Some(override_value) = overrides.get(&question.key) {
                 if !re.is_match(override_value) {
+                    let message = if question.choices.is_some() { format!("must be one of {}", pattern.trim_matches(|c| c == '^' || c == '$')) } else { message };
                     return Err(format!("Invalid value \"{}\" for {}: {}", override_value, question.key, message).into());
                 }
                 println!("{}: {}", prompt, override_value);
                 override_value.clone()
-            } else if use_defaults {
-                println!("{}: {}", prompt, default_value);
+            } else if !ask {
+                if !question.advanced.unwrap_or(false) || use_defaults {
+                    println!("{}: {}", prompt, choice_label(question, &default_value));
+                }
                 default_value
+            } else if let Some(choices) = &question.choices {
+                let labels: Vec<&str> = choices.iter().map(|c| c.label.as_str()).collect();
+                let default_idx = choices.iter().position(|c| c.value == default_value).unwrap_or(0);
+                let idx = Select::new().with_prompt(prompt.as_str()).items(&labels).default(default_idx).interact()?;
+                choices[idx].value.clone()
             } else {
                 Input::new()
                     .with_prompt(prompt)
@@ -606,34 +652,195 @@ pub fn get_user_input(base_folder: &str, use_defaults: bool, overrides: &HashMap
             };
 
             // Save response (overwriting the default)
-            let key = question.key.clone();
-            match question.datatype.as_deref() {
-                Some("boolean") => {
-                    let value = response.to_lowercase();
-                    let is_true = value == "true" || value == "t" || value == "yes" || value == "y";
-                    responses.insert(key.clone(), JsonValue::Bool(is_true));
-                    eval_context.set_value(key.clone(), Value::from(is_true)).unwrap();
-                }
-                Some("number") | Some("int") => {
-                    if let Ok(num) = response.parse::<i64>() {
-                        responses.insert(key.clone(), JsonValue::Number(serde_json::Number::from(num)));
-                        eval_context.set_value(key.clone(), evalexpr::Value::Int(num)).unwrap();
-                    }
-                }
-                _ => {
-                    responses.insert(key.clone(), JsonValue::String(response.clone()));
-                    eval_context.set_value(key.clone(), Value::from(response)).unwrap();
-                }
-            }
+            let value = typed_value(question, &response);
+            answers.insert(question.key.clone(), value.clone());
+            set_value(&question.key, value, &mut responses, &mut eval_context);
         }
+    }
+    let hardware = hardware.ok_or("no hardware question")?;
+    if let Some(pw) = overrides.get("ap_password") {
+        set_value("ap_password", json!(pw), &mut responses, &mut eval_context);
+    }
+
+    // Values worked out from the answers (connectivity, sensors, partition table, size estimate...)
+    let features = derive_values(&hardware, &mut responses, &mut eval_context)?;
+    if features.wifi {
+        answers.insert("ap_password".to_string(), json!(get_str(&responses, "ap_password")));
+    }
+
+    // Summary, and (interactively) a last chance not to generate
+    print_summary(&hardware, &responses, &features);
+    if !use_defaults && !Confirm::new().with_prompt("Generate the app?").default(true).interact()? {
+        return Err("Not generated".into());
     }
 
     // PASS 2: Process all generators (all variables now exist in context)
     process_generators(&questions, &handlebars, &mut responses, &eval_context)?;
 
-    // Convert the map to a JSON string
-    let config_json = serde_json::to_string_pretty(&responses)?;
-    Ok(config_json)
+    Ok(NewAppConfig { config: JsonValue::Object(responses), answers })
+}
+
+// The configuration for a new app, as JSON (tests)
+#[cfg(test)]
+pub fn get_user_input(base_folder: &str, use_defaults: bool, overrides: &HashMap<String, String>)
+            -> Result<String, Box<dyn std::error::Error>> {
+    let config = get_new_app_config(base_folder, use_defaults, overrides, false)?;
+    Ok(serde_json::to_string_pretty(&config.config)?)
+}
+
+fn choice_label(question: &ConfigQuestion, value: &str) -> String {
+    question.choices.as_ref().and_then(|cs| cs.iter().find(|c| c.value == value)).map(|c| c.label.clone()).unwrap_or(value.to_string())
+}
+
+fn describe_hardware(f: &HardwareFacts) -> String {
+    let psram = if f.psram_mb > 0 { format!("{} MB PSRAM ({})", f.psram_mb, f.psram_mode.as_str()) } else { "no PSRAM".to_string() };
+    format!("{} - {}, {} MB flash, {}", f.description, f.chip, f.flash_mb, psram)
+}
+
+// The hardware's values for the templates and conditions, and as answers (so saved answers make the same app)
+fn set_hardware(f: &HardwareFacts, responses: &mut Map<String, JsonValue>, ctx: &mut HashMapContext, answers: &mut Map<String, JsonValue>) {
+    set_value("target_chip", json!(f.chip), responses, ctx);
+    set_value("flash_size", json!(f.flash_mb), responses, ctx);
+    set_value("psram", json!(f.psram_mb), responses, ctx);
+    set_value("psram_mode", json!(f.psram_mode.as_str()), responses, ctx);
+    set_value("hw_pins_known", json!(f.pins_known), responses, ctx);
+    set_value("hw_i2c_sda", json!(f.sda), responses, ctx);
+    set_value("hw_i2c_scl", json!(f.scl), responses, ctx);
+    set_value("hw_description", json!(f.description), responses, ctx);
+    // The pins, unless asked for later (a board preset gives them)
+    set_value("raft_i2c_sda_pin", json!(f.sda), responses, ctx);
+    set_value("raft_i2c_scl_pin", json!(f.scl), responses, ctx);
+    answers.insert("hardware".to_string(), json!(if f.route == "detect" { "chip" } else { f.route.as_str() }));
+    if let Some(b) = &f.board {
+        answers.insert("board".to_string(), json!(b));
+    }
+    if let Some(m) = &f.module {
+        answers.insert("module".to_string(), json!(m));
+    }
+    answers.insert("target_chip".to_string(), json!(f.chip));
+    answers.insert("flash_size".to_string(), json!(f.flash_mb.to_string()));
+    answers.insert("psram".to_string(), json!(f.psram_mb.to_string()));
+    answers.insert("psram_mode".to_string(), json!(f.psram_mode.as_str()));
+}
+
+fn get_str(responses: &Map<String, JsonValue>, key: &str) -> String {
+    responses.get(key).and_then(|v| v.as_str()).unwrap_or("").to_string()
+}
+
+fn get_bool(responses: &Map<String, JsonValue>, key: &str) -> bool {
+    responses.get(key).and_then(|v| v.as_bool()).unwrap_or(false)
+}
+
+// Values the templates use, worked out from the answers
+fn derive_values(hw: &HardwareFacts, responses: &mut Map<String, JsonValue>, ctx: &mut HashMapContext)
+            -> Result<AppFeatures, Box<dyn std::error::Error>> {
+    let connectivity = get_str(responses, "connectivity");
+    let wifi = connectivity == "wifi_ble" || connectivity == "wifi";
+    let ble = connectivity == "wifi_ble" || connectivity == "ble";
+    let roles = get_str(responses, "ble_roles");
+    let webserver = wifi && get_bool(responses, "use_raft_webserver");
+    let sensors = get_str(responses, "i2c_sensors");
+    let i2c = sensors != "none";
+    let device_types = if i2c && sensors != "i2c" { sensors.clone() } else { "none".to_string() };
+    let runtime_decode = if i2c { get_str(responses, "runtime_decode") } else { "attrs".to_string() };
+    let ota = get_bool(responses, "ota");
+
+    set_value("use_wifi", json!(wifi), responses, ctx);
+    set_value("use_raft_ble", json!(ble), responses, ctx);
+    set_value("use_raft_ble_peripheral", json!(ble && (roles == "peripheral" || roles == "both")), responses, ctx);
+    set_value("use_raft_ble_central", json!(ble && (roles == "central" || roles == "both")), responses, ctx);
+    set_value("use_raft_webserver", json!(webserver), responses, ctx);
+    set_value("use_raft_i2c", json!(i2c), responses, ctx);
+    set_value("use_raft_core_dev_types", json!(device_types != "none"), responses, ctx);
+    let includes = match device_types.as_str() {
+        "common" => json!(["raftcore:@common"]),
+        "extended" => json!(["raftcore:@extended"]),
+        _ => json!(["raftcore:*"]),
+    };
+    set_value("dev_type_includes", json!(includes.to_string()), responses, ctx);
+
+    // I2C pins: not ones the module uses itself
+    if i2c {
+        for key in ["raft_i2c_sda_pin", "raft_i2c_scl_pin"] {
+            let pin = responses.get(key).and_then(|v| v.as_i64()).unwrap_or(-1);
+            if pin < 0 || hw.reserved_pins.contains(&(pin as u32)) {
+                return Err(format!("{} GPIO{} can't be used - the {} uses it", key, pin, hw.description).into());
+            }
+        }
+    }
+
+    // Partition table, flash and PSRAM settings
+    let layout = new_layout::partition_layout(hw.flash_mb, ota);
+    set_value("partitions_csv", json!(layout.csv), responses, ctx);
+    set_value("ota_enable", json!(if ota { 1 } else { 0 }), responses, ctx);
+    set_value("flash_size_sdkconfig", json!(format!("# Flash size\nCONFIG_ESPTOOLPY_FLASHSIZE_{}MB=y", hw.flash_mb)), responses, ctx);
+    let psram_sdkconfig = if hw.psram_mb > 0 {
+        let mode = if hw.chip == "esp32s3" {
+            if hw.psram_mode == PsramMode::Octal { "CONFIG_SPIRAM_MODE_OCT=y\n" } else { "CONFIG_SPIRAM_MODE_QUAD=y\n" }
+        } else { "" };
+        format!("\n\n# PSRAM ({} MB {}) - boot continues without it if it isn't found\nCONFIG_SPIRAM=y\n{}CONFIG_SPIRAM_IGNORE_NOTFOUND=y",
+                hw.psram_mb, hw.psram_mode.as_str(), mode)
+    } else {
+        String::new()
+    };
+    set_value("psram_sdkconfig", json!(psram_sdkconfig), responses, ctx);
+
+    // features.cmake: no networking, runtime decoding
+    let networking_cmake = if wifi { String::new() } else {
+        "\n# No WiFi or IP networking: the networking SysMods, WiFi driver and IP stack aren't built in (raft new's\n\
+         # \"Wireless connectivity\" answer). Remove this line to add them back\nadd_compile_definitions(RAFT_NO_NETWORKING)\n".to_string()
+    };
+    set_value("networking_cmake", json!(networking_cmake), responses, ctx);
+    let runtime_decode_cmake = match runtime_decode.as_str() {
+        "none" => "\n# Device types added at runtime (a device type file) aren't decoded on the device - only apps decode their data\nset(RAFT_RUNTIME_DECODE OFF)\n",
+        "code" => "\n# Device types added at runtime are decoded on the device from their attributes and custom decode code\nset(RAFT_RUNTIME_DECODE_CODE ON)\n",
+        _ => "",
+    };
+    set_value("runtime_decode_cmake", json!(runtime_decode_cmake), responses, ctx);
+
+    // A password for the WiFi access point, so no two apps share one (kept when the app is made again from its answers)
+    if get_str(responses, "ap_password").is_empty() {
+        set_value("ap_password", json!(new_layout::random_password(12)), responses, ctx);
+    }
+
+    let features = AppFeatures { chip: hw.chip.clone(), wifi, ble, webserver, i2c, device_types, runtime_decode };
+    let estimate = new_layout::estimate_app_bytes(&features);
+    set_value("estimated_app_bytes", json!(estimate), responses, ctx);
+    set_value("app_slot_bytes", json!(layout.app_slot), responses, ctx);
+    Ok(features)
+}
+
+fn print_summary(hw: &HardwareFacts, responses: &Map<String, JsonValue>, features: &AppFeatures) {
+    let estimate = responses.get("estimated_app_bytes").and_then(|v| v.as_u64()).unwrap_or(0);
+    let slot = responses.get("app_slot_bytes").and_then(|v| v.as_u64()).unwrap_or(1);
+    let free = 100.0 * (slot as f64 - estimate as f64) / slot as f64;
+    let ota = get_bool(responses, "ota");
+    let layout = new_layout::partition_layout(hw.flash_mb, ota);
+    println!("\nSummary");
+    println!("  Hardware:      {}", describe_hardware(hw));
+    for a in &hw.assumed {
+        println!("                 (assumed: {})", a);
+    }
+    println!("  Connectivity:  {}{}", match (features.wifi, features.ble) {
+        (true, true) => "WiFi and BLE", (true, false) => "WiFi", (false, true) => "BLE", _ => "none (USB serial)" },
+        if features.webserver { ", web server" } else { "" });
+    println!("  Sensors:       {}", if !features.i2c { "no I2C".to_string() } else { format!("I2C on SDA {} / SCL {}, device types: {}",
+        responses.get("raft_i2c_sda_pin").unwrap_or(&json!("?")), responses.get("raft_i2c_scl_pin").unwrap_or(&json!("?")), features.device_types) });
+    println!("  Partitions:    {} app slot{} of {}, file system {}", if ota { 2 } else { 1 }, if ota { "s" } else { "" },
+             new_layout::human_bytes(layout.app_slot), new_layout::human_bytes(layout.fs_size));
+    println!("  ESP-IDF:       {}   SysType: {}", get_str(responses, "esp_idf_version"), get_str(responses, "sys_type_name"));
+    println!("  App size:      about {} ({:.0}% of the app slot free - an estimate from measured builds)", new_layout::human_bytes(estimate), free);
+    if free < 10.0 {
+        let mut ideas = Vec::new();
+        if ota { ideas.push("no OTA updates (one larger app slot)"); }
+        if features.device_types == "all" || features.device_types == "extended" { ideas.push("fewer device types"); }
+        if features.ble { ideas.push("no BLE"); }
+        println!("  Warning: little room for your own code{}", if ideas.is_empty() { String::new() } else { format!(" - consider {}", ideas.join(", or ")) });
+    }
+    if hw.route == "chip" && !hw.assumed.is_empty() {
+        println!("  The hardware can be changed later: raft update-project --set flash_size=8 (for example), or plug the board in and run raft detect");
+    }
+    println!();
 }
 
 // Process all generators - adds the generated values to responses
