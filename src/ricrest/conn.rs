@@ -91,9 +91,12 @@ impl<L: Link> DeviceConn for RicrestConn<L> {
         let remote = remote.trim_start_matches('/');
         // The file system is always named, so --fs is honoured (the device prepends its default FS otherwise)
         let file_name = format!("/{}/{}", fs, remote);
-        upload(&mut self.session.borrow_mut(), &file_name, &data, upload_sizes(self.kind), request_policy(self.kind), progress)?;
+        let checked = upload(&mut self.session.borrow_mut(), &file_name, &data, upload_sizes(self.kind), request_policy(self.kind), progress)?;
 
-        // Check it arrived intact
+        // Check it arrived intact, unless the device has (against the CRC given in ufStart)
+        if checked {
+            return Ok(());
+        }
         check_uploaded(self, &data, remote, fs)
     }
 

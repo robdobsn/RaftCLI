@@ -6,13 +6,16 @@
 //              arriving); each batch is sent from the latest ack (go-back-N)
 //   ufEnd   -> done (the device has usually closed the session after the last block)
 // On an error after ufStart, ufCancel is sent so the next upload doesn't find the transfer still in progress.
-// The device doesn't check a CRC, so RicrestConn checks the file with filehash afterwards.
+// ufStart gives the file's CRC16. Firmware from 2026-10-25 checks the file against it once written: a mismatch
+// cancels the upload (failCRC, the file deleted) and a match is confirmed in the ufEnd reply (crc16). Older firmware
+// ignores it, so without that confirmation RicrestConn checks the file with filehash afterwards.
 // Rob Dobson 2026
 
 use std::time::{Duration, Instant};
 
 use super::frame::{file_block, ElemCode, Frame, MsgType};
 use super::session::{RequestPolicy, Session};
+use crate::app_fs::crc16_ccitt;
 use crate::device_conn::CmdResult;
 use crate::http_client::ProgressFn;
 use crate::link::Link;
@@ -33,6 +36,7 @@ pub struct UploadSizes {
     pub max_wire_len: Option<usize>,
 }
 
+// Upload a file; returns true if the device checked it against its CRC (so it needn't be checked again)
 pub fn upload<L: Link>(
     session: &mut Session<L>,
     file_name: &str,
@@ -40,17 +44,19 @@ pub fn upload<L: Link>(
     sizes: UploadSizes,
     policy: RequestPolicy,
     progress: &mut ProgressFn,
-) -> CmdResult<()> {
+) -> CmdResult<bool> {
     if data.len() >= MAX_FILE_LEN {
         return Err(format!("{} is too big to upload this way (16 MB or more)", file_name).into());
     }
     let name_json = serde_json::to_string(file_name)?;
+    let crc = crc16_ccitt(data);
     let start = format!(
-        r#"{{"cmdName":"ufStart","reqStr":"fileupload","fileType":"fs","fileName":{},"fileLen":{},"batchMsgSize":{},"batchAckSize":{}}}"#,
+        r#"{{"cmdName":"ufStart","reqStr":"fileupload","fileType":"fs","fileName":{},"fileLen":{},"batchMsgSize":{},"batchAckSize":{},"CRC16":"0x{:04x}"}}"#,
         name_json,
         data.len(),
         sizes.block,
-        sizes.batch
+        sizes.batch,
+        crc
     );
     let mut reply = command(session, &start, policy)?;
     // An earlier upload of this file was interrupted (Ctrl-C, a lost link) and the device is still waiting for it
@@ -85,7 +91,20 @@ pub fn upload<L: Link>(
     if reply["rslt"].as_str() != Some("ok") {
         return Err(format!("the device didn't finish the upload of {}: {}", file_name, reply).into());
     }
-    Ok(())
+    // The device checked the file against the CRC given (firmware from 2026-10-25)
+    let checked = reply["crc16"].as_str().and_then(|c| u16::from_str_radix(c, 16).ok()) == Some(crc);
+    Ok(checked)
+}
+
+// The error for a reason the device gave for cancelling or failing an upload
+fn upload_failed(reason: &str, cancelled: bool) -> String {
+    match reason {
+        "failCRC" | "CRCMismatch" => {
+            "the file the device wrote didn't match what was sent (CRC check), so it deleted it - try again".to_string()
+        }
+        _ if cancelled => format!("the device cancelled the upload ({})", reason),
+        _ => format!("the device failed to write the file ({})", reason),
+    }
 }
 
 // A JSON command frame and its JSON reply
@@ -154,10 +173,10 @@ fn send_blocks<L: Link>(
         while let Some(frame) = session.wait_for(|f| upload_status(f).is_some(), timeout)? {
             let json = upload_status(&frame).unwrap_or_default();
             if json["cmdName"].as_str() == Some("ufCancel") {
-                return Err(format!("the device cancelled the upload ({})", json["reason"].as_str().unwrap_or("no reason")).into());
+                return Err(upload_failed(json["reason"].as_str().unwrap_or("no reason"), true).into());
             }
             if json["rslt"].as_str() == Some("fail") {
-                return Err(format!("the device failed to write the file ({})", json["reason"].as_str().unwrap_or("no reason")).into());
+                return Err(upload_failed(json["reason"].as_str().unwrap_or("no reason"), false).into());
             }
             if let Some(pos) = json["okto"].as_u64() {
                 let pos = (pos as usize).min(data.len());

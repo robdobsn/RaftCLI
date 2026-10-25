@@ -14,6 +14,7 @@ use std::collections::VecDeque;
 use std::time::Duration;
 
 use super::{encode_wire, Link, WireDecoder, WireFormat};
+use crate::app_fs::crc16_ccitt;
 use crate::device_conn::fake::FakeConn;
 use crate::device_conn::{CmdResult, LinkKind};
 use crate::ricrest::frame::{text_frame, ElemCode, Frame, MsgType};
@@ -30,6 +31,8 @@ struct Upload {
     block_count: u32,
     stream_id: u8,
     timer_acks: u32,
+    // The CRC16 given in ufStart
+    crc: Option<u16>,
 }
 
 #[derive(Default)]
@@ -63,6 +66,11 @@ pub(crate) struct SimDevice {
     // block after it)
     pub(crate) ack_out_of_sequence: bool,
     out_of_sequence_acked: bool,
+    // RaftCore from 2026-10-25: an upload is checked against the CRC16 given in ufStart (a mismatch cancels it with
+    // failCRC; a match is confirmed in the ufEnd reply). Earlier versions ignore the CRC
+    pub(crate) check_crc: bool,
+    // The last upload checked against its CRC (file, CRC), for the ufEnd reply
+    checked_crc: Option<(String, u16)>,
     // Timer acks sent (each one is 1s, or 5s before the second block, that a device would have waited)
     pub(crate) timer_acks: u32,
     // The link's inbound block size (1200 on serial and WebSocket, 500 on BLE); uploads clamp blocks to 2/3 of it
@@ -88,6 +96,8 @@ impl SimDevice {
             faults: Faults::default(),
             ack_out_of_sequence: true,
             out_of_sequence_acked: false,
+            check_crc: true,
+            checked_crc: None,
             timer_acks: 0,
             chan_block_max: if kind == LinkKind::Ble { 500 } else { 1200 },
             upload: None,
@@ -113,6 +123,7 @@ impl SimDevice {
             block_count: 1,
             stream_id: self.next_stream_id,
             timer_acks: 0,
+            crc: None,
         });
         self.next_stream_id += 1;
     }
@@ -167,6 +178,11 @@ impl SimDevice {
                 let name = json["fileName"].as_str().unwrap_or("").trim_start_matches('/');
                 let key = if name.starts_with("local/") || name.starts_with("sd/") { name.to_string() } else { format!("local/{}", name) };
                 self.out_of_sequence_acked = false;
+                // As strtoul(..., 0): hex with 0x, otherwise decimal
+                let crc = json["CRC16"].as_str().and_then(|c| match c.strip_prefix("0x").or_else(|| c.strip_prefix("0X")) {
+                    Some(hex) => u16::from_str_radix(hex, 16).ok(),
+                    None => c.parse::<u16>().ok(),
+                });
                 let stream_id = self.next_stream_id;
                 self.next_stream_id = self.next_stream_id.wrapping_add(1).max(1);
                 self.upload = Some(Upload {
@@ -178,6 +194,7 @@ impl SimDevice {
                     block_count: 0,
                     stream_id,
                     timer_acks: 0,
+                    crc,
                 });
                 vec![reply(msg_num, serde_json::json!({"rslt": "ok", "batchMsgSize": block, "batchAckSize": batch, "streamID": stream_id}))]
             }
@@ -188,7 +205,14 @@ impl SimDevice {
                         self.store.add(&upload.key, &[]);
                     }
                 }
-                vec![reply(msg_num, serde_json::json!({"rslt": "ok"}))]
+                // The CRC the file was checked against, as ProtocolExchange gives it
+                let name = json["fileName"].as_str().unwrap_or("").trim_start_matches('/').to_string();
+                match self.checked_crc.take() {
+                    Some((key, crc)) if key == name => {
+                        vec![reply(msg_num, serde_json::json!({"rslt": "ok", "crc16": format!("{:04x}", crc)}))]
+                    }
+                    _ => vec![reply(msg_num, serde_json::json!({"rslt": "ok"}))],
+                }
             }
             "ufCancel" => {
                 // Found by stream ID, or by file name if there isn't one (as ProtocolExchange does)
@@ -259,16 +283,26 @@ impl SimDevice {
         }
         let okto = upload.data.len();
         let mut out = Vec::new();
-        if ack {
-            out.push(reply(0, serde_json::json!({"req": "ufBlock", "rslt": "ok", "okto": okto})));
-        }
         if is_final {
             let mut upload = self.upload.take().unwrap();
             if self.faults.damage_uploads {
                 upload.data[0] ^= 0xFF;
             }
+            // Checked against the CRC given once written: a mismatch is cancelled (in place of the final ack) and
+            // the file isn't kept
+            if let (true, Some(crc)) = (self.check_crc, upload.crc) {
+                if crc16_ccitt(&upload.data) != crc {
+                    out.push(reply(0, serde_json::json!({"req": "", "rslt": "ok", "cmdName": "ufCancel", "reason": "failCRC"})));
+                    return out;
+                }
+                self.checked_crc = Some((upload.key.clone(), crc));
+            }
             self.store.add(&upload.key, &upload.data);
-        } else if Some(blocks_in) == self.faults.cancel_after_blocks {
+        }
+        if ack {
+            out.push(reply(0, serde_json::json!({"req": "ufBlock", "rslt": "ok", "okto": okto})));
+        }
+        if !is_final && Some(blocks_in) == self.faults.cancel_after_blocks {
             self.upload = None;
             out.push(reply(0, serde_json::json!({"req": "", "rslt": "ok", "cmdName": "ufCancel", "reason": "failRetries"})));
         }
