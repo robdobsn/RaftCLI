@@ -1,5 +1,7 @@
 # RaftCLI ToDo list
 
+- add support for device type records which are now individual and need to be compiled into a file before sending to raft firmware
+
 - Add to systype webserver ,
       {
         "pfix": "devjson",
