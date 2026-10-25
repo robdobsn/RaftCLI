@@ -4,7 +4,8 @@
 
 Raft is an opinionated framework for developing embedded apps for the Espressif ESP32 family - see [further information on Raft](https://github.com/robdobsn/RaftCore)
 
-This command-line application is used to scaffold, build, flash and monitor raft apps.
+This command-line application is used to scaffold, build, flash and monitor raft apps, and to manage the files and
+device type records on a running device over HTTP, WebSocket, USB serial or BLE.
 
 - [Raft CLI (command-line interface)](#raft-cli-command-line-interface)
   - [Installation](#installation)
@@ -23,6 +24,7 @@ This command-line application is used to scaffold, build, flash and monitor raft
   - [Flash firmware to a development board (without rebuilding)](#flash-firmware-to-a-development-board-without-rebuilding)
   - [Run esptool directly](#run-esptool-directly)
   - [OTA (Over-the-air) Update Firmware (using WiFi/Ethernet connection)](#ota-over-the-air-update-firmware-using-wifiethernet-connection)
+  - [Managing files on a device](#managing-files-on-a-device)
   - [Device type records](#device-type-records)
   - [Remote Debug Console](#remote-debug-console)
   - [Persistent Settings](#persistent-settings)
@@ -376,10 +378,13 @@ raft fs put ble:Axiom018 config.json
 - The first connection scans for the device (up to 10 s, usually 1-3 s). On Windows the address is remembered, so
   later connections skip the scan.
 - Uploads run at about 15-25 KB/s and downloads at about 5-8 KB/s.
-- **A connected device doesn't advertise, and Windows can keep the link up after a program exits.** RaftCLI tells the
-  device to release the link (`bledisconnect`) whenever it finishes, including on Ctrl-C. If a device that is in
-  range can't be found, it is probably still held: type `bledisconnect` in `raft monitor`, open
-  `http://<device>/api/bledisconnect` over WiFi, or restart it.
+- **RaftCLI always releases the link when it finishes** (by sending the device `bledisconnect`), including on errors
+  and Ctrl-C, because Windows otherwise keeps the BLE link up after a program exits.
+- If RaftCLI is killed without the chance to do that, Windows ends the link itself about 25 s later, and a new
+  RaftCLI run in the meantime reuses the held link. Devices with RaftSysMods 1.26 or later keep advertising while a
+  link is held (they allow two connections), so other computers can still find them. Older firmware stops
+  advertising while connected: if such a device that is in range can't be found, it is probably still held - type
+  `bledisconnect` in `raft monitor`, open `http://<device>/api/bledisconnect` over WiFi, or restart it.
 - Devices advertising other UUIDs can be reached with `--ble-service`, `--ble-cmd` and `--ble-resp`; `--ble-mtu`
   overrides the MTU if the one reported is wrong.
 - WSL has no Bluetooth, so in WSL BLE commands (including `raft ble scan`) are handed to the Windows `raft.exe`, as
@@ -538,6 +543,51 @@ Options:
   -h, --help                 Print help
 ```
 
+## Managing files on a device
+
+`raft fs` manages the files on a running device: list, download, upload, print, delete, mirror a folder, and the
+file system's size. It works over any of the device's connections:
+
+| Device | Connection |
+| -- | -- |
+| `192.168.86.52`, `MyDevice.local`, `http://host[:port]` | HTTP (the device's REST API) |
+| `ws://host[:port][/path]` | The device's WebSocket (path default `/ws`), using RICREST |
+| `serial:<port>[@baud]`, e.g. `serial:COM4`, `serial:/dev/ttyACM0` | The device's USB serial console, using RICREST alongside the log output. `serial:` on its own picks the port as `raft monitor` does |
+| `ble:<name>` | BLE (see [BLE devices](#ble-devices)). `ble:` on its own uses the only Raft device in range |
+
+The device is the first argument, or can be given with `-d/--device` or in the `RAFT_DEVICE` environment variable
+(then leave it out of the arguments):
+
+```
+raft fs ls 192.168.86.52 -r                     # list every file
+raft fs get serial:COM4 config.json             # download (to ./config.json; '-' for stdout)
+raft fs put ws://MyDevice.local settings.json   # upload
+RAFT_DEVICE=ble:Axiom018 raft fs cat config.json
+```
+
+| Command | Use |
+| -- | -- |
+| `raft fs list [FOLDER]` (`ls`) | List a folder (`-r` recursive, `--json` the device's raw reply) |
+| `raft fs df` | Size, used and free space |
+| `raft fs get <REMOTE> [LOCAL]` | Download a file (binary-safe on every connection) |
+| `raft fs put <LOCAL> [REMOTE]` | Upload a file. The result is checked against the device's CRC of the file, and a damaged upload is deleted |
+| `raft fs cat <REMOTE>` | Print a file |
+| `raft fs delete <REMOTE>` (`rm`) | Delete a file (`-y` skips the confirmation) |
+| `raft fs sync <LOCALDIR> [REMOTEDIR]` | Mirror a local folder onto the device: uploads new and changed files (`--hash` compares content, otherwise sizes), `--delete` removes files that aren't in the folder, `--dry-run` shows the plan |
+| `raft fs format` | Reformat the file system (`-y` required; the device restarts) |
+| `raft fs <DEVICE>` | Mirror the project's built FSImage (`build/<SysType>/raft/FSImage`) onto the device: changed files by content hash, and files not in the image deleted (`--no-delete`, `--no-hash`, `--exclude`, `--dry-run`, `-s <SysType>`) |
+
+Every command takes `--fs sd` for a device's SD card (default `local`).
+
+- Over serial the console port is shared with the device's log output: `--show-log` shows the log, and the port
+  can't be open in `raft monitor` at the same time. `-v` shows link statistics at the end (frames dropped for a bad
+  CRC, requests sent again).
+- In WSL, serial and BLE devices are handed to the Windows `raft.exe` (as `raft flash` does), since WSL has no USB
+  serial ports or Bluetooth; `-n` uses this system's ports instead.
+- Rough speeds with an ESP32-S3 (they depend on the device's storage and firmware): HTTP and WebSocket upload at
+  20-50 KB/s and download at 25-50 KB/s (the WebSocket is the faster for downloads); USB serial uploads at 10-16 KB/s
+  and downloads at about 40 KB/s; BLE uploads at 15-25 KB/s and downloads at 5-8 KB/s.
+
 ## Device type records
 
 `raft devtypes` (or `raft dt`) manages a project's device type records: the records compiled into the firmware and the records in a device type file loaded by a running device. Both are chosen in `systypes/Common/DeviceTypeSources.json` and `systypes/<SysType>/DeviceTypeSources.json` (see RaftCore's wiki page [Selecting Device Types](https://github.com/robdobsn/RaftCore/wiki/DeviceTypeSources)).
@@ -566,7 +616,7 @@ raft devtypes status <DEVICE>               # what the device loaded, and whethe
 - Type files are built against the records the last build compiled (`build/<SysType>/raft/DeviceTypeRecords.compiled.json`, which includes `DevTypes.json` and `DEV_TYPE_JSON_FILES` records), or the `builtin` selection if the project hasn't been built; `--compiled <file>` chooses another.
 - `--config <file>` uses a `DeviceTypeSources.json` on its own instead of a project's, e.g. to make type files for devices running firmware built elsewhere.
 - `push` uploads the file as `devlib.new.json`, has the device check it (the device's own rules decide, and its report is shown), then asks before applying it (`--yes` doesn't ask; `--dry-run` stops after the check and removes the upload). After the restart it confirms the device loaded the file. It warns if the device's file has changed since the last push from this project, and does nothing if the device already has the file (`--force` pushes anyway).
-- Device commands use HTTP (`-p` for a port other than 80).
+- Device commands work over every kind of device connection (see [Managing files on a device](#managing-files-on-a-device)); `-p` gives an HTTP port other than 80.
 
 ## Remote Debug Console
 
@@ -639,19 +689,24 @@ The following questions are asked to complete the scaffolding from template file
 | Question | Explanation |
 | -- | -- |
 | Project Name | name for your project |
-| Target Chip | e.g. esp32, esp32s3 or esp32c3 |
+| System Type Name | the name of the main SysType (or system type) - SysTypes, for instance, allow a project to target different hardware - set the name for the main SysType that you want to create here - additional SysTypes are added manually |
+| Target Chip | e.g. esp32, esp32s3, esp32c3, esp32c5, esp32c6 or esp32p4 |
 | CPU core for the main task | Only asked for chips with more than one core (esp32, esp32s3, esp32p4). The main task runs the loop() function of every SysMod. WiFi, BLE and other system tasks run on core 0, so the default of 1 keeps the main loop from being held up by them. With 1, `CONFIG_ESP_MAIN_TASK_AFFINITY_CPU1=y` is added to the SysType's sdkconfig.defaults - remove that line to move the main task back to core 0. The main loop then runs truly in parallel with tasks on core 0, so use versions of the Raft libraries that include the September 2026 concurrency-hardening changes (the default, main, does) |
-| SysType | the name of the main SysType (or system type) - SysTypes, for instance, allow a project to target different hardware - set the name for the main SysType that you want to create here - additional SysTypes are added manually |
-| ESP IDF Version | the version of the ESP IDF to use to build the app - this is written to systypes/Common/features.cmake as `set(ESP_IDF_VERSION ...)` and can be changed there later, or overridden for a single SysType - see [Which ESP IDF version is used](#which-esp-idf-version-is-used) |
+| Flash Size in MB | the board's flash size (e.g. 4, 8, 16, 32), used for the partition table |
+| ESP-IDF Version | the version of the ESP IDF to use to build the app - this is written to systypes/Common/features.cmake as `set(ESP_IDF_VERSION ...)` and can be changed there later, or overridden for a single SysType - see [Which ESP IDF version is used](#which-esp-idf-version-is-used) |
 | Create User SysMod | Select true to create a SysMod for the main part of your application's code - SysMods are a key concept in raft apps as they allow user code to be managed like an Arduino app with setup() and loop() functions |
 | User SysMod Class | If you answered true above then you will be asked for the name you want to give to your app's main SysMod |
 | User SysMod Name | A SysMod can be given a different name from its class - so either enter the same name used for the Class here or give it a different name |
-| Raft Core git tag | RaftCore is the core element of the raft framework. Specify which version of RaftCore to use here. The default will be the latest version - which is called main. This tag also determines the RaftBootstrap.cmake used to configure the build: a specific tag downloads that release's bootstrap (fully pinned build) while main uses the latest release's bootstrap. The tag can be changed after generation by editing RaftCore@\<tag\> in systypes/Common/features.cmake |
-| Use RaftSysMods | RaftSysMods are building blocks that help build a raft application. For instance WiFi, MQTT, etc. Select true to enable these in your application |
-| RaftSysMods git tag | The git tag of the RaftSysMods to use - defaults to main which is the latest version |
-| Use RaftWebServer | Select true to enable the raft Web Server |
-| RaftWebServer git tag | Git tag of the RaftWebServer - main is the latest version |
+| Use Raft SysMods | RaftSysMods are building blocks that help build a raft application. For instance WiFi, MQTT, etc. Select true to enable these in your application |
+| Use Raft Web Server | Select true to enable the raft Web Server |
+| Add support for Raft BLE | Select true to include BLEMan; then whether the device is a BLE peripheral (so apps and `ble:` devices in RaftCLI can connect to it) and/or a BLE central (to receive BTHome sensor advertisements) |
+| Add support for I2C | Select true to include RaftI2C, then the I2C SDA and SCL pin numbers |
+| Include Raft Core Device Types | Select true to compile RaftCore's device type records into the firmware (selected in `systypes/Common/DeviceTypeSources.json`) |
 
+The Raft libraries are fetched at `main` (the latest version); the tag can be changed later by editing, for example,
+`RaftCore@<tag>` in `systypes/Common/features.cmake`. The tag of RaftCore also determines the `RaftBootstrap.cmake`
+used to configure the build: a specific tag downloads that release's bootstrap (fully pinned build) while main uses
+the latest release's bootstrap.
 
 ## Template App Details
 
@@ -666,6 +721,11 @@ The `CMakeLists.txt` of a raft app downloads `RaftBootstrap.cmake` from a RaftCo
 Apps created with older versions of RaftCLI have the URL of one specific release written into `CMakeLists.txt` (e.g. `.../releases/download/v1.37.1/RaftBootstrap.cmake`). If such an app uses a RaftCore which is not a fixed release (`RaftCore@main`, a branch, or no tag) then the bootstrap gets further and further behind the RaftCore it is used with, and `raft build` prints a warning. To fix it run `raft update-project` and do a clean build (`raft build -c`). `raft update-project` only replaces a `CMakeLists.txt` which hasn't been changed since it was generated; otherwise replace its bootstrap section by hand with the one from a newly generated app. An app which pins RaftCore to a release is assumed to be locked down deliberately and is not warned about.
 
 `raft update-project [APPLICATION_FOLDER]` brings the `CMakeLists.txt` of an older app up to date. It adds the broken `raftdevlibs/RaftCore` link check (see [Building with local libraries](#building-with-local-libraries)) and replaces an unchanged old template as described above. It doesn't change anything it can't change safely.
+
+The SysType's `sdkconfig.defaults` builds for size (`-Os`, assertions off) and, on the esp32 and esp32s3, runs the
+CPU at 240 MHz (the ESP IDF default is 160 MHz). With BLE peripheral support the device advertises the RICREST BLE
+service `aa76677e-9cfd-4626-a510-0d305be57c8d` (the RaftSysMods default, which raftjs looks for first; apps made
+before October 2026 used `bb76677e-...`, which RaftCLI also finds).
 
 In addition to generating source code, build files are generated for various build scenarios including:
 
