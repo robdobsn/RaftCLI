@@ -13,6 +13,7 @@
 //   all have the RaftBootstrap.cmake asset which the current template downloads.
 
 use std::io::IsTerminal;
+use std::collections::HashMap;
 use std::path::Path;
 use crate::bootstrap_check::{hardcoded_bootstrap_tag, raft_core_tag};
 
@@ -200,6 +201,79 @@ pub fn update_project(app_folder: &str) -> Result<(), String> {
     Ok(())
 }
 
+// Make a project's files again from the answers raft new saved in it (.raftnew.json), with some answers changed
+// (e.g. flash_size=8 after finding the board has 8 MB): files that haven't been edited since they were generated are
+// updated, edited ones are left as they are with the new version beside them (<file>.raftnew)
+pub fn rerender_project(app_folder: &str, settings: &HashMap<String, String>) -> Result<(), String> {
+    use crate::app_new::{answers_file_content, read_saved_answers, render_new_app, write_rendered_file, ANSWERS_FILE};
+    use crate::new_layout::content_hash;
+    let answers_path = Path::new(app_folder).join(ANSWERS_FILE);
+    if !answers_path.exists() {
+        return Err(format!("{} has no {} (it was made by an earlier raft new, which didn't save its answers) - \
+                            change the files by hand", app_folder, ANSWERS_FILE));
+    }
+    let (mut answers, saved) = read_saved_answers(answers_path.to_str().unwrap_or(ANSWERS_FILE))?;
+    // A different hardware route replaces the old one's settings (e.g. a board after a chip)
+    if settings.keys().any(|k| k == "board" || k == "module") {
+        for key in ["hardware", "board", "module", "target_chip", "flash_size", "psram", "psram_mode"] {
+            answers.remove(key);
+        }
+    }
+    for (key, value) in settings {
+        answers.insert(key.clone(), value.clone());
+    }
+    let config = crate::app_config::get_new_app_config(app_folder, true, &answers, false).map_err(|e| e.to_string())?;
+    let files = render_new_app(&config.config).map_err(|e| e.to_string())?;
+    let old_hashes = saved.get("files").and_then(|f| f.as_object()).cloned().unwrap_or_default();
+
+    let mut changed = Vec::new();
+    let mut kept = Vec::new();
+    let mut rebuild = false;
+    for file in &files {
+        let path = Path::new(app_folder).join(&file.path);
+        let current = std::fs::read_to_string(&path).ok();
+        if current.as_deref() == Some(file.content.as_str()) {
+            continue;
+        }
+        let unedited = match (&current, old_hashes.get(&file.path).and_then(|h| h.as_str())) {
+            (None, _) => true,
+            (Some(text), Some(hash)) => content_hash(text.as_bytes()) == hash,
+            (Some(_), None) => false,
+        };
+        if unedited {
+            write_rendered_file(app_folder, file).map_err(|e| format!("{}: {}", file.path, e))?;
+            changed.push(file.path.clone());
+            if file.path.ends_with("partitions.csv") || file.path.ends_with("sdkconfig.defaults") || file.path.ends_with("features.cmake") {
+                rebuild = true;
+            }
+        } else {
+            let side = crate::app_new::RenderedFile { path: format!("{}.raftnew", file.path), content: file.content.clone() };
+            write_rendered_file(app_folder, &side).map_err(|e| format!("{}: {}", side.path, e))?;
+            kept.push(file.path.clone());
+        }
+    }
+    let no_longer: Vec<String> = old_hashes.keys().filter(|p| !files.iter().any(|f| &f.path == *p))
+        .filter(|p| Path::new(app_folder).join(p).exists()).cloned().collect();
+    std::fs::write(&answers_path, answers_file_content(&config.answers, &files)).map_err(|e| e.to_string())?;
+
+    if changed.is_empty() && kept.is_empty() {
+        println!("No files change");
+    }
+    for p in &changed {
+        println!("Updated: {}", p);
+    }
+    for p in &kept {
+        println!("Edited since it was generated, so left as it is: {} (the new version is {}.raftnew - merge it by hand)", p, p);
+    }
+    for p in &no_longer {
+        println!("No longer generated (left in place - delete it if it isn't needed): {}", p);
+    }
+    if rebuild {
+        println!("Do a clean build (raft build -c): the partition table, sdkconfig or features changed");
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -263,5 +337,35 @@ mod tests {
     fn local_bootstrap_project_is_left_alone() {
         let local = "include(\"${CMAKE_SOURCE_DIR}/../scripts/RaftBootstrap.cmake\")\n";
         assert!(cmake_update(local, Some("main")).is_none());
+    }
+
+    #[test]
+    fn rerender_changes_unedited_files_and_keeps_edited_ones() {
+        use crate::app_new::{generate_new_app_with_answers, ANSWERS_FILE};
+        let folder = std::env::temp_dir().join(format!("raftcli_test_rerender_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        let app = folder.to_str().unwrap();
+        let config = crate::app_config::get_new_app_config("MyApp", true, &HashMap::new(), false).unwrap();
+        generate_new_app_with_answers(app, config.config, Some(&config.answers)).unwrap();
+        let sdkconfig = folder.join("systypes/MyApp/sdkconfig.defaults");
+        let edited = std::fs::read_to_string(&sdkconfig).unwrap() + "\n# my own setting\nCONFIG_FOO=y\n";
+        std::fs::write(&sdkconfig, &edited).unwrap();
+        let password_before = std::fs::read_to_string(folder.join("systypes/MyApp/SysTypes.json")).unwrap();
+
+        let settings: HashMap<String, String> = [("flash_size".to_string(), "8".to_string())].into_iter().collect();
+        rerender_project(app, &settings).unwrap();
+        // Not edited: updated (8 MB layout)
+        assert!(std::fs::read_to_string(folder.join("systypes/MyApp/partitions.csv")).unwrap().contains("0x300000"));
+        // Edited: left as it is, the new version beside it
+        assert_eq!(std::fs::read_to_string(&sdkconfig).unwrap(), edited);
+        assert!(std::fs::read_to_string(folder.join("systypes/MyApp/sdkconfig.defaults.raftnew")).unwrap()
+                    .contains("CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y"));
+        // Unchanged: the same AP password, and the new answer saved
+        assert_eq!(std::fs::read_to_string(folder.join("systypes/MyApp/SysTypes.json")).unwrap(), password_before);
+        assert!(std::fs::read_to_string(folder.join(ANSWERS_FILE)).unwrap().contains("\"flash_size\": \"8\""));
+        // Unknown settings are refused
+        let bad: HashMap<String, String> = [("no_such".to_string(), "1".to_string())].into_iter().collect();
+        assert!(rerender_project(app, &bad).is_err());
+        std::fs::remove_dir_all(&folder).unwrap();
     }
 }

@@ -164,6 +164,10 @@ On completion you will have a folder structure like this:
     └───RaftSys
 ```
 
+At the end a summary shows what will be made: the hardware, the partition table, and an estimate of the app's size
+and how much of its app slot is left for your own code (with suggestions if there's little room). The answers are
+saved in the app as `.raftnew.json`.
+
 Additional options are available ...
 
 ```
@@ -178,14 +182,47 @@ Options:
   -c, --clean            Clean the target folder
   -d, --defaults         Don't prompt - use the default answer for every question (see also --set)
       --set <KEY=VALUE>  Answer a question without prompting e.g. --set target_chip=esp32c6 (can be repeated)
+      --advanced         Also ask the advanced questions (SysType name, SysMod name, main task core, ESP-IDF version)
+      --answers <FILE>   Use the answers saved in another app's .raftnew.json (--set overrides them)
   -h, --help             Print help
 ```
 
-To create an app without being asked any questions (for instance from a script) use `--defaults`, optionally with `--set` to answer specific questions. The keys are: project_name, sys_type_name, target_chip, main_task_core, flash_size_for_partition_table, esp_idf_version, create_user_sysmod, user_sys_mod_class, user_sys_mod_name, use_raft_sysmods, use_raft_webserver, use_raft_ble, use_raft_ble_peripheral, use_raft_ble_central, use_raft_i2c, raft_i2c_sda_pin, raft_i2c_scl_pin, use_raft_core_dev_types. For example:
+To create an app without being asked any questions (for instance from a script) use `--defaults`, optionally with
+`--set` to answer specific questions. The keys are in [Scaffolding Questions](#scaffolding-questions). For example:
 
 ```
-raft new MyApp --defaults --set target_chip=esp32c6 --set use_raft_ble=false
+raft new MyApp --defaults --set board=um-feathers3 --set connectivity=ble
+raft new MyApp --defaults --set module=ESP32-S3-WROOM-1-N8R2 --set i2c_sensors=extended
+raft new MyApp --defaults --set target_chip=esp32c6 --set connectivity=wifi
 ```
+
+The keys of earlier RaftCLI versions still work: `use_raft_ble`, `use_raft_ble_peripheral`, `use_raft_ble_central`,
+`use_raft_i2c`, `use_raft_core_dev_types` and `flash_size_for_partition_table` are translated to the questions that
+replace them.
+
+### The hardware
+
+The first question after the project name is the hardware, which sets the chip, flash size, PSRAM and I2C pins:
+
+- **Detect it from a connected board.** Offered when a serial port with an Espressif chip is found. `esptool flash-id`
+  reports the chip, its flash size and any PSRAM in the chip's package (PSRAM a module or board adds is asked for).
+  Under WSL this uses Windows `raft.exe`, or the Windows esptool on the COM port. `raft detect` does the same on its
+  own (`--json` for scripts).
+- **A dev board** from a list (`--set board=<id>`): the preset gives everything, including the board's I2C
+  connector pins. The boards are in `src/new_data/boards.json` - add one with a PR.
+- **An Espressif module** by its ordering code (`--set module=ESP32-S3-WROOM-1-N8R2`): `N<flash MB>R<PSRAM MB>` gives
+  the flash and PSRAM, the family gives the chip, the PSRAM mode (octal for R8 on the ESP32-S3) and pins the module
+  uses itself, which can't be used for I2C. The families are in `src/new_data/modules.json`.
+- **A chip, or "I don't know"** (`--set target_chip=..., flash_size=..., psram=...`): safe defaults (4 MB flash, no
+  PSRAM) that run on almost any board with that chip. The summary says what was assumed.
+
+### Changing answers later
+
+`raft update-project --set <key=value>` changes one of raft new's answers (saved in `.raftnew.json`) and makes the
+files that depend on it again - for example `raft update-project --set flash_size=8` after finding the board has 8 MB
+of flash. Files that haven't been edited since they were generated are updated; an edited file is left as it is and
+the new version is written beside it (`<file>.raftnew`) to merge by hand. Do a clean build afterwards (`raft build -c`)
+when the partition table or sdkconfig changes.
 
 ## Building a raft app
 
@@ -684,24 +721,32 @@ This will build and install the app into the binary executables folder that carg
 
 ## Scaffolding Questions
 
-The following questions are asked to complete the scaffolding from template files:
+The questions, in order, with their `--set` keys. Advanced ones are only asked with `--advanced` (otherwise their
+defaults are used and shown in the summary). Sizes are measured on an ESP32-S3 with ESP-IDF 6.1 (RaftCLI
+`devdocs/raft-new-questions-and-defaults-review.md`).
 
-| Question | Explanation |
-| -- | -- |
-| Project Name | name for your project |
-| System Type Name | the name of the main SysType (or system type) - SysTypes, for instance, allow a project to target different hardware - set the name for the main SysType that you want to create here - additional SysTypes are added manually |
-| Target Chip | e.g. esp32, esp32s3, esp32c3, esp32c5, esp32c6 or esp32p4 |
-| CPU core for the main task | Only asked for chips with more than one core (esp32, esp32s3, esp32p4). The main task runs the loop() function of every SysMod. WiFi, BLE and other system tasks run on core 0, so the default of 1 keeps the main loop from being held up by them. With 1, `CONFIG_ESP_MAIN_TASK_AFFINITY_CPU1=y` is added to the SysType's sdkconfig.defaults - remove that line to move the main task back to core 0. The main loop then runs truly in parallel with tasks on core 0, so use versions of the Raft libraries that include the September 2026 concurrency-hardening changes (the default, main, does) |
-| Flash Size in MB | the board's flash size (e.g. 4, 8, 16, 32), used for the partition table |
-| ESP-IDF Version | the version of the ESP IDF to use to build the app - this is written to systypes/Common/features.cmake as `set(ESP_IDF_VERSION ...)` and can be changed there later, or overridden for a single SysType - see [Which ESP IDF version is used](#which-esp-idf-version-is-used) |
-| Create User SysMod | Select true to create a SysMod for the main part of your application's code - SysMods are a key concept in raft apps as they allow user code to be managed like an Arduino app with setup() and loop() functions |
-| User SysMod Class | If you answered true above then you will be asked for the name you want to give to your app's main SysMod |
-| User SysMod Name | A SysMod can be given a different name from its class - so either enter the same name used for the Class here or give it a different name |
-| Use Raft SysMods | RaftSysMods are building blocks that help build a raft application. For instance WiFi, MQTT, etc. Select true to enable these in your application |
-| Use Raft Web Server | Select true to enable the raft Web Server |
-| Add support for Raft BLE | Select true to include BLEMan; then whether the device is a BLE peripheral (so apps and `ble:` devices in RaftCLI can connect to it) and/or a BLE central (to receive BTHome sensor advertisements) |
-| Add support for I2C | Select true to include RaftI2C, then the I2C SDA and SCL pin numbers |
-| Include Raft Core Device Types | Select true to compile RaftCore's device type records into the firmware (selected in `systypes/Common/DeviceTypeSources.json`) |
+| Question | Key(s) | Explanation |
+| -- | -- | -- |
+| Project Name | `project_name` | name for your project |
+| Hardware | `hardware`, `board`, `module`, `target_chip`, `flash_size`, `psram`, `psram_mode` | the chip, flash size, PSRAM and I2C pins - see [The hardware](#the-hardware) |
+| Wireless connectivity | `connectivity` | `wifi_ble` (default), `wifi` (about 240 KB smaller), `ble` (about 680 KB smaller) or `none` (USB serial only, about 970 KB smaller). Without WiFi, `add_compile_definitions(RAFT_NO_NETWORKING)` in `systypes/Common/features.cmake` leaves out the networking SysMods, WiFi driver and IP stack |
+| BLE role | `ble_roles` | `peripheral` (apps and the raft CLI connect to the device), `central` (it receives BTHome sensor advertisements) or `both` - asked with BLE |
+| Include the web server | `use_raft_webserver` | asked with WiFi |
+| OTA updates | `ota` | `true`: two app slots, so the app can be updated over WiFi or BLE. `false`: one larger app slot (3 MB on 4 MB flash instead of 1.69 MB), updated only over USB |
+| I2C and sensors | `i2c_sensors` | `common` (default: about 10 popular sensors), `extended` (about 25), `all` (all of RaftCore's), `i2c` (I2C with no sensors built in - add them later with a device type file) or `none` (no I2C). The sets are RaftCore's (`raftcore:@common`, `raftcore:@extended` in `systypes/Common/DeviceTypeSources.json`) |
+| I2C SDA / SCL pin | `raft_i2c_sda_pin`, `raft_i2c_scl_pin` | asked unless a board preset gives them; the chip's usual pins are the default |
+| Decoding of sensors added later | `runtime_decode` | how a device added later from a device type file is decoded on the device: `attrs` (from its attributes, the default), `code` (attributes and custom decode code, about 26 KB more) or `none` (only apps decode it, about 17 KB smaller) |
+| Create User SysMod | `create_user_sysmod` | a SysMod for the main part of your application's code - SysMods allow user code to be managed like an Arduino app with setup() and loop() functions |
+| User SysMod Class | `user_sys_mod_class` | the class name of that SysMod |
+| System Type Name (advanced) | `sys_type_name` | the name of the main SysType (default: the project name) - SysTypes allow a project to target different hardware; additional SysTypes are added manually |
+| User SysMod Name (advanced) | `user_sys_mod_name` | the SysMod's name (default: its class) |
+| CPU core for the main task (advanced) | `main_task_core` | only for chips with more than one core (esp32, esp32s3, esp32p4). The main task runs the loop() function of every SysMod; WiFi, BLE and other system tasks run on core 0, so the default of 1 keeps the main loop from being held up by them (`CONFIG_ESP_MAIN_TASK_AFFINITY_CPU1=y` in the SysType's sdkconfig.defaults) |
+| ESP-IDF Version (advanced) | `esp_idf_version` | written to systypes/Common/features.cmake as `set(ESP_IDF_VERSION ...)` - see [Which ESP IDF version is used](#which-esp-idf-version-is-used) |
+| Use Raft SysMods (advanced) | `use_raft_sysmods` | RaftSysMods are building blocks (WiFi, BLE, file manager, serial console, ...) - almost every app uses them |
+
+The partition table follows from the flash size and OTA answer: app slots as large as possible up to 3 MB, leaving
+at least 512 KB for the file system. With WiFi, the device's access point gets a random password, saved in the app's
+`SysTypes.json`.
 
 The Raft libraries are fetched at `main` (the latest version); the tag can be changed later by editing, for example,
 `RaftCore@<tag>` in `systypes/Common/features.cmake`. The tag of RaftCore also determines the `RaftBootstrap.cmake`

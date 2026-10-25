@@ -1,0 +1,14 @@
+{
+    "_notes": "Dev boards for raft new: chip, flash, PSRAM and the I2C pins of the board's I2C connector (STEMMA QT / Qwiic / Grove) or its usual I2C pins. Add a board with a PR. Check new entries against the board's documentation - entries marked \"verify\" haven't been checked against hardware",
+    "boards": [
+        { "id": "um-feathers3", "name": "Unexpected Maker FeatherS3", "chip": "esp32s3", "flash": 16, "psram": 8, "psramMode": "quad", "sda": 8, "scl": 9, "verify": true },
+        { "id": "um-tinys3", "name": "Unexpected Maker TinyS3", "chip": "esp32s3", "flash": 8, "psram": 8, "psramMode": "quad", "sda": 8, "scl": 9, "verify": true },
+        { "id": "xiao-esp32s3", "name": "Seeed XIAO ESP32-S3", "chip": "esp32s3", "flash": 8, "psram": 8, "psramMode": "octal", "sda": 5, "scl": 6, "verify": true },
+        { "id": "xiao-esp32c3", "name": "Seeed XIAO ESP32-C3", "chip": "esp32c3", "flash": 4, "psram": 0, "sda": 6, "scl": 7, "verify": true },
+        { "id": "xiao-esp32c6", "name": "Seeed XIAO ESP32-C6", "chip": "esp32c6", "flash": 4, "psram": 0, "sda": 22, "scl": 23, "verify": true },
+        { "id": "m5-atoms3", "name": "M5Stack AtomS3 / AtomS3 Lite", "chip": "esp32s3", "flash": 8, "psram": 0, "sda": 2, "scl": 1, "verify": true },
+        { "id": "adafruit-qtpy-esp32s3-n4r2", "name": "Adafruit QT Py ESP32-S3 (4MB flash, 2MB PSRAM)", "chip": "esp32s3", "flash": 4, "psram": 2, "psramMode": "quad", "sda": 41, "scl": 40, "verify": true },
+        { "id": "adafruit-feather-esp32s3-n4r2", "name": "Adafruit Feather ESP32-S3 (4MB flash, 2MB PSRAM)", "chip": "esp32s3", "flash": 4, "psram": 2, "psramMode": "quad", "sda": 3, "scl": 4, "verify": true },
+        { "id": "esp32-devkitc-wroom32e", "name": "Espressif ESP32-DevKitC (ESP32-WROOM-32E, 4MB)", "chip": "esp32", "flash": 4, "psram": 0, "sda": 21, "scl": 22, "verify": true }
+    ]
+}
