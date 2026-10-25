@@ -391,6 +391,16 @@ The Windows findings below were measured with a spike (btleplug 0.11.8 and 0.13.
     - with `cmdUseInd=0` (notifications), replies of 4 KB or more lost a packet (an HDLC CRC failure), and the
       request timed out;
     - for 1 KB replies, notifications were no faster (7.4 against 6.1 KB/s).
+  - **Update (2026-10-25):** the lost packet wasn't Windows. It was a firmware bug, fixed in RaftSysMods after
+    1.27.0 (PR #12). Notifications sent faster than the link takes them use up NimBLE's packet buffers; the
+    firmware then passed NimBLE a null buffer, which NimBLE takes to mean "send the characteristic's value" (empty
+    here) while reporting success, so a packet was dropped from the message. The packet is now sent again later
+    (counted as `txNoBuf` in the BLEMan stats). Indications never ran out of buffers, as only one is in flight.
+    - So RaftCLI needs indications only for firmware up to RaftSysMods 1.27.0.
+    - With fixed firmware, notifications reached 20-30 KB/s for publishes (camera frames, 7.5 ms connection
+      interval), against about 8 KB/s for downloads by indication. Switching replies to notifications for
+      downloads (`bleconfig/cmdUseInd=0` at the start, restored at the end) might be worth measuring. It would
+      also need the firmware version checked, as older firmware loses packets.
 - **Disconnect: always send `bledisconnect`, on every exit path, including errors and Ctrl-C** (§6.5, finding 3).
   - Windows keeps the BLE link up after btleplug's `disconnect()` and after the process exits. It was still up after
     more than 3 minutes.
