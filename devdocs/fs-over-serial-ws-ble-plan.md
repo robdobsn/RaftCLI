@@ -912,14 +912,10 @@ As built:
 | `ble:Marty` (absent), `ble:Axiom` (two match) | Errors listing the devices seen / matched, with the release hint |
 | WSL hand-off (`raft fs ... ble:`, `raft ble scan`) | Works |
 | Plant growth board (`ble:AxiomPlant`) | Works |
+| Ctrl-C at 19% of a 1 MB upload (Windows Terminal, by hand) | "Releasing the BLE device...", exit; the Axiom advertised again at once |
 
 **Not yet verified:**
 
-- **Ctrl-C mid-transfer.** It couldn't be sent from the test harness: SIGINT from WSL ends `raft.exe` without a
-  console Ctrl-C event, and `Start-Process` puts it in a new process group, which ignores Ctrl-C. In both cases
-  the device still advertised a few seconds later, so Windows released the link when the process ended. Check by
-  hand: start a 1 MB `raft fs put ble:...` in a Windows terminal, press Ctrl-C, and expect "Releasing the BLE
-  device..." and the device in `raft ble scan` straight away.
 - **Firmware without the §8 fixes** (the CCCD write is meant to cover it).
 - **macOS and Linux** (BlueZ may refuse the CCCD write, which is ignored), and the FeatherS3.
 
