@@ -351,7 +351,8 @@ When using WSL, the ports command automatically delegates to the Windows version
 ## BLE devices
 
 `raft fs` and `raft devtypes` can reach a Raft device over BLE, through its RICREST BLE service (RaftSysMods
-`BLEMan`). Name the device as `ble:<name>`, where the name is the one it advertises, the start of it (if only one
+`BLEMan`). **BLE has been tested on Windows (including from WSL) only so far;** it builds on macOS and Linux but
+hasn't been tried there. Name the device as `ble:<name>`, where the name is the one it advertises, the start of it (if only one
 device matches), or its address. `ble:` on its own uses the only Raft device in range.
 
 To see the Raft devices in range:

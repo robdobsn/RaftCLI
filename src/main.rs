@@ -67,7 +67,7 @@ enum Action {
     DevTypes(DevTypesCmd),
     #[clap(name = "ports", about = "Manage serial ports", alias = "p")]
     Ports(PortsCmd),
-    #[clap(name = "ble", about = "Raft devices over BLE (scan for them)")]
+    #[clap(name = "ble", about = "Raft devices over BLE (scan for them; tested on Windows only)")]
     Ble(BleCmd),
     #[clap(name = "libs", about = "Manage local Raft development libraries (status, fetch, pull, link, unlink, remove)", alias = "l")]
     Libs(LibsCmd),
