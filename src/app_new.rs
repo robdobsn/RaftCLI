@@ -223,6 +223,11 @@ mod tests {
         assert!(partitions.contains("factory") && !partitions.contains("ota_0"));
         assert!(read(&folder, "systypes/MyApp/SysTypes.json").contains("\"enable\": 0"));
         fs::remove_dir_all(&folder).unwrap();
+        // No wireless: no OTA (one app slot), even if it is asked for
+        let folder = generate("hw_serial", &[("connectivity", "none"), ("ota", "true")]);
+        let partitions = read(&folder, "systypes/MyApp/partitions.csv");
+        assert!(partitions.contains("factory") && !partitions.contains("ota_0"), "{}", partitions);
+        fs::remove_dir_all(&folder).unwrap();
         // No PSRAM, the default
         let folder = generate("hw_default", &[]);
         let sdkconfig = read(&folder, "systypes/MyApp/sdkconfig.defaults");
