@@ -550,7 +550,7 @@ pub fn get_new_app_config(base_folder: &str, use_defaults: bool, overrides: &Has
     // Check that the overrides are all answers to questions (or hardware settings)
     for key in overrides.keys() {
         let is_question = questions.iter().any(|q| q.prompt.is_some() && q.datatype.as_deref() != Some("hardware") && &q.key == key);
-        if !is_question && !new_hardware::HARDWARE_ALL_KEYS.contains(&key.as_str()) && key != "port" && key != "ap_password" {
+        if !is_question && !new_hardware::HARDWARE_ALL_KEYS.contains(&key.as_str()) && key != "port" && key != "native_serial_port" && key != "ap_password" {
             let mut valid_keys: Vec<&str> = questions.iter()
                 .filter(|q| q.prompt.is_some() && q.datatype.as_deref() != Some("hardware")).map(|q| q.key.as_str()).collect();
             valid_keys.extend(new_hardware::HARDWARE_ALL_KEYS.iter());

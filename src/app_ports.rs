@@ -341,13 +341,7 @@ fn list_ports_via_windows_raft(cmd: &PortsCmd) -> Result<(), Box<dyn Error>> {
         }
         Err(e) => {
             if e.kind() == std::io::ErrorKind::NotFound {
-                Err("Could not find raft.exe (Windows version of raftcli).\n\n\
-                    When using WSL, raftcli needs the Windows version (raft.exe) to access USB serial ports.\n\n\
-                    Please ensure:\n\
-                    1. raftcli is installed on Windows: cargo install raftcli\n\
-                    2. raft.exe is in your Windows PATH\n\
-                    3. You can access Windows executables from WSL (try: raft.exe --version)\n\n\
-                    Alternative: Use the -n flag to attempt listing ports with native Linux tools (requires USBIPD or similar)".into())
+                Err(crate::raft_cli_utils::raft_exe_not_found_help("listing ports").into())
             } else {
                 Err(Box::new(e))
             }

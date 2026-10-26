@@ -116,6 +116,9 @@ struct NewCmd {
     // Option to give the serial port of the board to detect the hardware from
     #[clap(short = 'p', long, help = "Serial port of the board to detect the hardware from (default: the most likely one)")]
     port: Option<String>,
+    // Option to use a serial port attached to WSL rather than reaching Windows ones through raft.exe
+    #[clap(short = 'n', long, help = "Native serial port when in WSL (e.g. attached with usbipd) rather than a Windows one through raft.exe")]
+    native_serial_port: bool,
 }
 
 // Define arguments for the `detect` subcommand
@@ -399,6 +402,9 @@ fn main() {
             // The serial port to detect the hardware from (the same as --set port=PORT)
             if let Some(port) = &cmd.port {
                 overrides.insert("port".to_string(), port.clone());
+            }
+            if cmd.native_serial_port {
+                overrides.insert("native_serial_port".to_string(), "true".to_string());
             }
 
             // Saved answers (from another app's .raftnew.json): used without prompting, --set overrides them

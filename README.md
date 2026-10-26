@@ -179,13 +179,14 @@ Arguments:
   [APPLICATION_FOLDER]  Path to the application folder
 
 Options:
-  -c, --clean            Clean the target folder
-  -d, --defaults         Don't prompt - use the default answer for every question (see also --set)
-      --set <KEY=VALUE>  Answer a question without prompting e.g. --set target_chip=esp32c6 (can be repeated)
-      --advanced         Also ask the advanced questions (SysType name, SysMod name, main task core, ESP-IDF version)
-      --answers <FILE>   Use the answers saved in another app's .raftnew.json (--set overrides them)
-  -p, --port <PORT>      Serial port of the board to detect the hardware from (default: the most likely one)
-  -h, --help             Print help
+  -c, --clean               Clean the target folder
+  -d, --defaults            Don't prompt - use the default answer for every question (see also --set)
+      --set <KEY=VALUE>     Answer a question without prompting e.g. --set target_chip=esp32c6 (can be repeated)
+      --advanced            Also ask the advanced questions (SysType name, SysMod name, main task core, ESP-IDF version)
+      --answers <FILE>      Use the answers saved in another app's .raftnew.json (--set overrides them)
+  -p, --port <PORT>         Serial port of the board to detect the hardware from (default: the most likely one)
+  -n, --native-serial-port  Native serial port when in WSL (e.g. attached with usbipd) rather than a Windows one through raft.exe
+  -h, --help                Print help
 ```
 
 To create an app without being asked any questions (for instance from a script) use `--defaults`, optionally with
@@ -212,7 +213,8 @@ The first question after the project name is the hardware, which sets the chip, 
 - **Detect it from a connected board.** Offered for the port given with `-p/--port`, or when a serial port with an
   Espressif chip is found (the most likely one, if there are several). `esptool flash-id`
   reports the chip, its flash size and any PSRAM in the chip's package (PSRAM a module or board adds is asked for).
-  Under WSL this uses Windows `raft.exe`, or the Windows esptool on the COM port. `raft detect` does the same on its
+  Under WSL this uses Windows `raft.exe`, or the Windows esptool on the COM port; with `-n`, a port attached to WSL
+  (e.g. with usbipd) and the Linux esptool. `raft detect` does the same on its
   own (`--json` for scripts).
 - **A dev board** from a list (`--set board=<id>`): the preset gives everything, including the board's I2C
   connector pins. The boards are in `src/new_data/boards.json` - add one with a PR.

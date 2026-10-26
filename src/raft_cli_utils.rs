@@ -348,6 +348,18 @@ fn get_systypes_folder_name() -> &'static str {
 }
 
 // Check if running a linux binary under WSL
+// The help when Windows raft.exe, which raft uses under WSL to reach USB serial ports, can't be run (action: what -n
+// tries instead, e.g. "monitoring")
+pub fn raft_exe_not_found_help(action: &str) -> String {
+    format!("Could not find raft.exe (Windows version of raftcli).\n\n\
+        When using WSL, raftcli needs the Windows version (raft.exe) to access USB serial ports.\n\n\
+        Please ensure:\n\
+        1. raftcli is installed on Windows: cargo install raftcli\n\
+        2. raft.exe is in your Windows PATH\n\
+        3. You can access Windows executables from WSL (try: raft.exe --version)\n\n\
+        Alternative: Use the -n flag to attempt {} with native Linux serial ports (requires USBIPD or similar)", action)
+}
+
 pub fn is_wsl() -> bool {
     // If this is a windows binary then return false
     #[cfg(target_os = "windows")]
