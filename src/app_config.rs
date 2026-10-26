@@ -70,6 +70,7 @@ fn extract_project_name_from_folder(base_folder: &str) -> String {
 const BOOL_PATTERN: &str = "^(true|false|t|f|yes|no|y|n)$";
 const WIFI: &str = "(connectivity == \"wifi_ble\" || connectivity == \"wifi\")";
 const BLE: &str = "(connectivity == \"wifi_ble\" || connectivity == \"ble\")";
+const WIRELESS: &str = "(connectivity != \"none\")";
 
 // Get the populated schema for the user input
 fn get_schema(base_folder: &str) -> serde_json::Value {
@@ -195,7 +196,8 @@ fn get_schema(base_folder: &str) -> serde_json::Value {
             "description": "Two app partitions for over-the-air updates, or one larger one",
             "pattern": BOOL_PATTERN,
             "message": "Must be true or false",
-            "error": "Invalid OTA choice"
+            "error": "Invalid OTA choice",
+            "condition": WIRELESS
         },
         {
             "key": "i2c_sensors",
@@ -743,7 +745,9 @@ fn derive_values(hw: &HardwareFacts, responses: &mut Map<String, JsonValue>, ctx
     let i2c = sensors != "none";
     let device_types = if i2c && sensors != "i2c" { sensors.clone() } else { "none".to_string() };
     let runtime_decode = if i2c { get_str(responses, "runtime_decode") } else { "attrs".to_string() };
-    let ota = get_bool(responses, "ota");
+    // No OTA without WiFi or BLE to update over (a single app slot, which leaves more room for the app)
+    let ota = (wifi || ble) && get_bool(responses, "ota");
+    set_value("ota", json!(ota), responses, ctx);
 
     set_value("use_wifi", json!(wifi), responses, ctx);
     set_value("use_raft_ble", json!(ble), responses, ctx);
