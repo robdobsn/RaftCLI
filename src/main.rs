@@ -113,6 +113,9 @@ struct NewCmd {
     // Option to use saved answers
     #[clap(long, value_name = "FILE", help = "Use the answers saved in another app's .raftnew.json (--set overrides them)")]
     answers: Option<String>,
+    // Option to give the serial port of the board to detect the hardware from
+    #[clap(short = 'p', long, help = "Serial port of the board to detect the hardware from (default: the most likely one)")]
+    port: Option<String>,
 }
 
 // Define arguments for the `detect` subcommand
@@ -391,6 +394,11 @@ fn main() {
                         std::process::exit(1);
                     }
                 }
+            }
+
+            // The serial port to detect the hardware from (the same as --set port=PORT)
+            if let Some(port) = &cmd.port {
+                overrides.insert("port".to_string(), port.clone());
             }
 
             // Saved answers (from another app's .raftnew.json): used without prompting, --set overrides them

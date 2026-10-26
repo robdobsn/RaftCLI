@@ -471,19 +471,27 @@ fn ask_module_route() -> Result<HardwareFacts, String> {
     facts_for_module(family, code)
 }
 
-// The hardware, from settings or by asking (use_defaults: the chip route's safe defaults without asking)
+// The hardware, from settings or by asking (use_defaults: without asking - detected from the board on the port given
+// (port), or otherwise the chip route's safe defaults)
 pub fn choose_hardware(use_defaults: bool, settings: &HashMap<String, String>) -> Result<HardwareFacts, String> {
     if let Some(facts) = hardware_from_settings(settings)? {
         return Ok(facts);
+    }
+    let given_port = settings.get("port").cloned();
+    if use_defaults && given_port.is_some() {
+        let found = detect_hardware(given_port, false, None)?;
+        return Ok(facts_from_detected(&found));
     }
     if use_defaults {
         let mut facts = facts_for_chip(DEFAULT_CHIP, DEFAULT_FLASH_MB, 0, None);
         facts.assumed.push(format!("chip {}, {} MB flash, no PSRAM (the defaults)", DEFAULT_CHIP, DEFAULT_FLASH_MB));
         return Ok(facts);
     }
-    // A board to detect from (under WSL only if Windows raft.exe is there to reach the USB serial ports - finding a port
-    // must never stop raft new)
-    let mut port = if is_wsl() && which::which("raft.exe").is_err() {
+    // A board to detect from: on the port given, or the most likely one (under WSL only if Windows raft.exe is there to
+    // reach the USB serial ports - finding a port must never stop raft new)
+    let mut port = if given_port.is_some() {
+        given_port
+    } else if is_wsl() && which::which("raft.exe").is_err() {
         None
     } else {
         std::panic::catch_unwind(|| select_most_likely_port(&PortsCmd::new_with_vid(None), false)).ok().flatten().map(|p| p.port_name)
