@@ -797,13 +797,7 @@ pub fn start_non_native(
             if e.kind() == std::io::ErrorKind::NotFound {
                 return Err(Box::new(std::io::Error::new(
                     std::io::ErrorKind::NotFound,
-                    "Could not find raft.exe (Windows version of raftcli).\n\n\
-                    When using WSL, raftcli needs the Windows version (raft.exe) to access USB serial ports.\n\n\
-                    Please ensure:\n\
-                    1. raftcli is installed on Windows: cargo install raftcli\n\
-                    2. raft.exe is in your Windows PATH\n\
-                    3. You can access Windows executables from WSL (try: raft.exe --version)\n\n\
-                    Alternative: Use the -n flag to attempt monitoring with native Linux serial ports (requires USBIPD or similar)",
+                    crate::raft_cli_utils::raft_exe_not_found_help("monitoring"),
                 )));
             }
             return Err(Box::new(e));

@@ -8,7 +8,7 @@ use serde::Deserialize;
 use std::collections::HashMap;
 
 use crate::app_ports::{select_most_likely_port, PortsCmd};
-use crate::raft_cli_utils::{get_flash_tool_cmd, is_wsl};
+use crate::raft_cli_utils::{get_flash_tool_cmd, is_wsl, raft_exe_not_found_help};
 
 pub const CHIPS: [&str; 6] = ["esp32", "esp32s3", "esp32c3", "esp32c5", "esp32c6", "esp32p4"];
 pub const FLASH_SIZES: [u32; 4] = [4, 8, 16, 32];
@@ -291,8 +291,13 @@ pub fn detect_hardware(port: Option<String>, native_serial_port: bool, flash_too
             args.push("-p".to_string());
             args.push(p.clone());
         }
-        let output = std::process::Command::new("raft.exe").args(&args).output()
-            .map_err(|e| format!("couldn't run Windows raft.exe ({}) - under WSL raft uses it for USB serial ports", e))?;
+        let output = std::process::Command::new("raft.exe").args(&args).output().map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                raft_exe_not_found_help("detecting the hardware")
+            } else {
+                format!("couldn't run Windows raft.exe ({}) - under WSL raft uses it for USB serial ports", e)
+            }
+        })?;
         let stdout = String::from_utf8_lossy(&output.stdout);
         if let Some(json) = stdout.lines().rev().find(|l| l.trim_start().starts_with('{')) {
             let value: serde_json::Value = serde_json::from_str(json).map_err(|e| format!("raft.exe detect: {}", e))?;
@@ -333,6 +338,10 @@ fn detect_with_esptool(port: Option<String>, native_serial_port: bool, flash_too
                 }
                 last = text;
             }
+            // Not installed: no point trying again, and holding BOOT won't help
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Err(format!("couldn't run {} - is esptool installed (pip install esptool)?", cmd));
+            }
             Err(e) => last = format!("couldn't run {}: {}", cmd, e),
         }
     }
@@ -354,6 +363,11 @@ pub fn facts_from_detected(found: &DetectedHardware) -> HardwareFacts {
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Choosing the hardware
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Under WSL, use a serial port attached to WSL (e.g. with usbipd) rather than a Windows one through raft.exe (-n)
+fn native_serial_port(settings: &HashMap<String, String>) -> bool {
+    settings.get("native_serial_port").is_some_and(|v| v == "true")
+}
 
 // Settings that choose the hardware without prompting
 pub const HARDWARE_ALL_KEYS: [&str; 7] = ["hardware", "board", "module", "target_chip", "flash_size", "psram", "psram_mode"];
@@ -382,7 +396,7 @@ pub fn hardware_from_settings(settings: &HashMap<String, String>) -> Result<Opti
         let (family, code) = find_module(name)?;
         facts_for_module(&family, &code)?
     } else if route.as_deref() == Some("detect") {
-        let found = detect_hardware(settings.get("port").cloned(), false, None)?;
+        let found = detect_hardware(settings.get("port").cloned(), native_serial_port(settings), None)?;
         facts_from_detected(&found)
     } else {
         let chip = settings.get("target_chip").map(|s| s.to_lowercase()).unwrap_or_else(|| DEFAULT_CHIP.to_string());
@@ -471,22 +485,31 @@ fn ask_module_route() -> Result<HardwareFacts, String> {
     facts_for_module(family, code)
 }
 
-// The hardware, from settings or by asking (use_defaults: the chip route's safe defaults without asking)
+// The hardware, from settings or by asking (use_defaults: without asking - detected from the board on the port given
+// (port), or otherwise the chip route's safe defaults)
 pub fn choose_hardware(use_defaults: bool, settings: &HashMap<String, String>) -> Result<HardwareFacts, String> {
     if let Some(facts) = hardware_from_settings(settings)? {
         return Ok(facts);
+    }
+    let given_port = settings.get("port").cloned();
+    let native = native_serial_port(settings);
+    if use_defaults && given_port.is_some() {
+        let found = detect_hardware(given_port, native, None)?;
+        return Ok(facts_from_detected(&found));
     }
     if use_defaults {
         let mut facts = facts_for_chip(DEFAULT_CHIP, DEFAULT_FLASH_MB, 0, None);
         facts.assumed.push(format!("chip {}, {} MB flash, no PSRAM (the defaults)", DEFAULT_CHIP, DEFAULT_FLASH_MB));
         return Ok(facts);
     }
-    // A board to detect from (under WSL only if Windows raft.exe is there to reach the USB serial ports - finding a port
-    // must never stop raft new)
-    let mut port = if is_wsl() && which::which("raft.exe").is_err() {
+    // A board to detect from: on the port given, or the most likely one (under WSL only if Windows raft.exe is there to
+    // reach the USB serial ports - finding a port must never stop raft new)
+    let mut port = if given_port.is_some() {
+        given_port
+    } else if is_wsl() && !native && which::which("raft.exe").is_err() {
         None
     } else {
-        std::panic::catch_unwind(|| select_most_likely_port(&PortsCmd::new_with_vid(None), false)).ok().flatten().map(|p| p.port_name)
+        std::panic::catch_unwind(|| select_most_likely_port(&PortsCmd::new_with_vid(None), native)).ok().flatten().map(|p| p.port_name)
     };
     loop {
         let mut routes: Vec<(&str, String)> = Vec::new();
@@ -499,7 +522,7 @@ pub fn choose_hardware(use_defaults: bool, settings: &HashMap<String, String>) -
         let items: Vec<String> = routes.iter().map(|r| r.1.clone()).collect();
         let route = routes[select("Hardware", &items, 0)?].0;
         let facts = match route {
-            "detect" => match detect_hardware(port.clone(), false, None) {
+            "detect" => match detect_hardware(port.clone(), native, None) {
                 Ok(found) => {
                     println!("Found {}{}{}", found.chip_description,
                              found.flash_mb.map(|f| format!(", {} MB flash", f)).unwrap_or_default(),
