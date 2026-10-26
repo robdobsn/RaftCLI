@@ -28,12 +28,13 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      # --locked: fail if Cargo.lock isn't up to date with Cargo.toml (e.g. a version bump without its Cargo.lock)
       - name: Run tests
-        run: cargo test --all-targets
+        run: cargo test --all-targets --locked
 
       - name: Scaffold an app without prompting
         shell: bash
         run: |
-          cargo run -- new "$RUNNER_TEMP/ScaffoldTest" --defaults --set target_chip=esp32c6
+          cargo run --locked -- new "$RUNNER_TEMP/ScaffoldTest" --defaults --set target_chip=esp32c6
           grep -q 'set(ESP_IDF_VERSION' "$RUNNER_TEMP/ScaffoldTest/systypes/Common/features.cmake"
           grep -q '^ARG ESP_IDF_VERSION' "$RUNNER_TEMP/ScaffoldTest/Dockerfile"
