@@ -220,7 +220,7 @@ fn get_schema(base_folder: &str) -> serde_json::Value {
             "choices": [
                 { "value": "common", "label": "I2C with about 10 common sensors" },
                 { "value": "extended", "label": "I2C with about 25 sensors (about 20 KB more)" },
-                { "value": "all", "label": "I2C with all of RaftCore's sensors (about 60 KB more)" },
+                { "value": "all", "label": "I2C with all of RaftCore's sensors (about 60 KB more; ones with a warning, e.g. that send an I2C general call, only if added by name)" },
                 { "value": "i2c", "label": "I2C, no sensors built in - add them later with a device type file (about 20 KB smaller)" },
                 { "value": "none", "label": "No I2C (about 110 KB smaller)" }
             ]

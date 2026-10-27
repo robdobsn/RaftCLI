@@ -68,6 +68,12 @@ pub enum DevTypesSub {
         #[clap(long)]
         typefile: bool,
     },
+    /// Accept the warning of records (what selecting them entails): a wildcard then selects them and the build
+    /// doesn't report them
+    Acknowledge {
+        #[clap(required = true, value_name = "KEY")]
+        keys: Vec<String>,
+    },
     /// Create a new record file in a path source, ready to fill in
     New {
         /// Device type key (the record's file name)
@@ -479,6 +485,17 @@ fn push(project: &Project, device: &DeviceArgs, compiled: &Option<String>, yes: 
     let crc = str_of(&report, "crc").to_string();
     println!("Type file {} ({} bytes, CRC {})", out.display(), num_of(&report, "bytes"), crc);
 
+    // Records whose _warning (what selecting them entails) isn't acknowledged in DeviceTypeSources.json
+    let warnings: Vec<&str> = report["warnings"].as_array().map(|w| w.iter().filter_map(|v| v.as_str()).collect())
+        .unwrap_or_default();
+    for warning in &warnings {
+        println!("WARNING {}", warning);
+    }
+    if !warnings.is_empty() && !dry_run && !yes && !confirm("Push a type file with these records?")? {
+        println!("Aborted.");
+        return Ok(());
+    }
+
     // The status CRC is of the file applied at startup; the file there now (changed since, if a restart is due) is
     // what a check of the device's own file reports
     let applied_crc = str_of(&status, "crc").to_string();
@@ -667,6 +684,11 @@ pub fn dev_types_app(cmd: DevTypesCmd) -> CmdResult<()> {
             if *typefile {
                 args.push(s("--typefile"));
             }
+            project.run_tool(false, &args)
+        }
+        DevTypesSub::Acknowledge { keys } => {
+            let mut args = vec![s("acknowledge")];
+            args.extend(keys.iter().cloned());
             project.run_tool(false, &args)
         }
         DevTypesSub::New { key, source, address } => {
