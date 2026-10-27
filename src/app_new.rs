@@ -238,6 +238,70 @@ mod tests {
     }
 
     #[test]
+    fn app_type_sets_defaults_which_set_answers_override() {
+        // Battery: WiFi only, no web server, no I2C - unless answered
+        let folder = generate("type_battery", &[("app_type", "battery"), ("board", "um-feathers3")]);
+        let systypes = read(&folder, "systypes/MyApp/SysTypes.json");
+        assert!(systypes.contains("\"NetMan\": {") && !systypes.contains("\"BLEMan\": {") && !systypes.contains("\"WebServer\": {"), "{}", systypes);
+        assert!(!read(&folder, "systypes/Common/features.cmake").contains("RaftI2C"));
+        fs::remove_dir_all(&folder).unwrap();
+        let folder = generate("type_battery_web", &[("app_type", "battery"), ("use_raft_webserver", "true"), ("i2c_sensors", "common")]);
+        let systypes = read(&folder, "systypes/MyApp/SysTypes.json");
+        assert!(systypes.contains("\"WebServer\": {"), "the answer wins over the type's default");
+        assert!(read(&folder, "systypes/Common/features.cmake").contains("RaftI2C"));
+        fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn battery_wifi_settings() {
+        let folder = generate("type_battery_c5", &[("app_type", "battery"), ("target_chip", "esp32c5")]);
+        let systypes = read(&folder, "systypes/MyApp/SysTypes.json");
+        for s in ["\"startMode\": \"onDemand\"", "\"wifiSTAFastReconnect\": 1", "\"wifiSTAFastReconnectMaxUses\": 30",
+                  "\"wifiAPEn\": 0", "\"enableMDNS\": 0", "\"wifiBand\": \"2g\"", "MQTTMan"] {
+            assert!(systypes.contains(s), "{} in {}", s, systypes);
+        }
+        let features = read(&folder, "systypes/Common/features.cmake");
+        assert!(features.contains("set(RAFT_SDKCONFIG_FRAGMENTS wifi-fast-connect)"), "{}", features);
+        assert!(features.contains("set(RAFT_DEVICE_MANAGER OFF)"), "no I2C: {}", features);
+        assert!(read(&folder, "README.md").contains("## Battery powered app"));
+        fs::remove_dir_all(&folder).unwrap();
+        // 2.4 GHz only is for chips with 5 GHz
+        let folder = generate("type_battery_s3", &[("app_type", "battery"), ("target_chip", "esp32s3")]);
+        assert!(!read(&folder, "systypes/MyApp/SysTypes.json").contains("wifiBand"));
+        fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn battery_ble_settings() {
+        let folder = generate("type_battery_ble", &[("app_type", "battery"), ("connectivity", "ble")]);
+        let systypes = read(&folder, "systypes/MyApp/SysTypes.json");
+        assert!(!systypes.contains("\"NetMan\": {") && systypes.contains("\"advIntervalMs\": 1000"), "{}", systypes);
+        let features = read(&folder, "systypes/Common/features.cmake");
+        // deep-sleep-fast-wake is suggested in a comment, not selected
+        assert!(!features.lines().any(|l| l.starts_with("set(RAFT_SDKCONFIG_FRAGMENTS")), "{}", features);
+        assert!(features.contains("RAFT_NO_NETWORKING"), "{}", features);
+        fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn general_type_writes_the_usual_blocks() {
+        let folder = generate("type_general", &[("board", "um-feathers3"), ("ap_password", "pw")]);
+        let systypes = read(&folder, "systypes/MyApp/SysTypes.json");
+        // The SysTypes.json written to disk is pretty-printed, so check the keys the type can change
+        for s in ["\"wifiAPEn\": 1", "\"wifiAPPW\": \"pw\"", "\"MQTTMan\": {", "\"advIntervalMs\": 100", "\"connIntvPrefMs\": 15",
+                  "\"WebServer\": {", "\"pcol\": \"RICSerial\""] {
+            assert!(systypes.contains(s), "{} in {}", s, systypes);
+        }
+        for s in ["startMode", "wifiSTAFastReconnect", "enableMDNS", "wifiBand"] {
+            assert!(!systypes.contains(s), "{} in {}", s, systypes);
+        }
+        let features = read(&folder, "systypes/Common/features.cmake");
+        assert!(!features.contains("RAFT_SDKCONFIG_FRAGMENTS") && !features.contains("RAFT_DEVICE_MANAGER"));
+        assert!(!read(&folder, "README.md").contains("Battery powered app"));
+        fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
     fn reserved_pins_are_refused() {
         let overrides: HashMap<String, String> = [("module", "ESP32-S3-WROOM-1-N8R8"), ("raft_i2c_sda_pin", "35")]
             .iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();

@@ -14,7 +14,7 @@ set(RAFT_COMPONENTS
     {{{inc_raft_i2c_sysmod}}}
 )
 
-{{{networking_cmake}}}{{{runtime_decode_cmake}}}
+{{{networking_cmake}}}{{{runtime_decode_cmake}}}{{{sdkconfig_fragments_cmake}}}{{{device_manager_cmake}}}
 # Console logging timeout (only applies when the console is on the USB Serial/JTAG peripheral)
 # When the USB transmit buffer is full (e.g. no USB host is connected or the host isn't reading) a
 # log write can block the calling task for up to this time - which can include the main loop task.

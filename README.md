@@ -224,6 +224,27 @@ The first question after the project name is the hardware, which sets the chip, 
 - **A chip, or "I don't know"** (`--set target_chip=..., flash_size=..., psram=...`): safe defaults (4 MB flash, no
   PSRAM) that run on almost any board with that chip. The summary says what was assumed.
 
+### App types
+
+The **App type** question sets the defaults of the later questions, and some generated settings, for a kind of app.
+Every later question still works as usual, so a type is a starting point: `--set` answers and saved answers win
+over its defaults.
+
+| Type | Defaults it sets | Generated settings |
+|-|-|-|
+| `general` | The questions' own defaults | What `raft new` has always written |
+| `battery` | connectivity `wifi`, no web server, no I2C | With WiFi: NetMan starts WiFi on demand (`"startMode": "onDemand"` - the app starts it with `{"cmd":"wifiStart"}`), connects straight to the remembered access point (`wifiSTAFastReconnect`), no access point or mDNS, and on the esp32c5 2.4 GHz only (`wifiBand`); RaftCore's `wifi-fast-connect` sdkconfig fragment (`RAFT_SDKCONFIG_FRAGMENTS` in `systypes/Common/features.cmake`). With BLE: a 1 s advertising interval. The generated README says how to set the per-device values (`w`, `wifiip`, the MQTT broker) |
+
+Measured on an ESP32-C5 (RaftCore `devdocs/wifi-fast-connect-and-on-demand.md`): a wake from deep sleep to an IP
+address takes 15.3 s with ESP-IDF's defaults and about 0.3 s with the battery settings and a static IP.
+
+`raft update-project --set app_type=battery` on an existing app changes the generated settings (the NetMan block,
+the fragments line) but not answers already saved - pass those too (e.g. `--set use_raft_webserver=false`).
+
+Without I2C (`i2c_sensors` `none`) the device manager isn't built in (`set(RAFT_DEVICE_MANAGER OFF)`, about 100 KB of
+flash), for every type. The plan for further types (high-rate publishing, sensor hub) is in
+`devdocs/raft-new-app-types-proposal.md`.
+
 ### Changing answers later
 
 `raft update-project --set <key=value>` changes one of raft new's answers (saved in `.raftnew.json`) and makes the
@@ -737,6 +758,7 @@ defaults are used and shown in the summary). Sizes are measured on an ESP32-S3 w
 | -- | -- | -- |
 | Project Name | `project_name` | name for your project |
 | Hardware | `hardware`, `board`, `module`, `target_chip`, `flash_size`, `psram`, `psram_mode` | the chip, flash size, PSRAM and I2C pins - see [The hardware](#the-hardware) |
+| App type | `app_type` | `general` (default: a connected device with a web interface) or `battery` (sleeps, wakes to measure and report). The type sets the defaults of the questions below, and with the connectivity answer some generated settings - see [App types](#app-types) |
 | Wireless connectivity | `connectivity` | `wifi_ble` (default), `wifi` (about 240 KB smaller), `ble` (about 680 KB smaller) or `none` (USB serial only, about 970 KB smaller). Without WiFi, `add_compile_definitions(RAFT_NO_NETWORKING)` in `systypes/Common/features.cmake` leaves out the networking SysMods, WiFi driver and IP stack |
 | BLE role | `ble_roles` | `peripheral` (apps and the raft CLI connect to the device), `central` (it receives BTHome sensor advertisements) or `both` - asked with BLE |
 | Include the web server | `use_raft_webserver` | asked with WiFi |

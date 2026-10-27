@@ -154,6 +154,19 @@ fn get_schema(base_folder: &str) -> serde_json::Value {
             "advanced": true
         },
         {
+            // The kind of app: sets the defaults of the questions below (type_defaults) and, with the connectivity
+            // answer and the chip, settings in SysTypes.json, features.cmake and sdkconfig.defaults (derive_values).
+            // Every later question still works as usual - a type is a starting point (devdocs/raft-new-app-types-proposal.md)
+            "key": "app_type",
+            "prompt": "App type",
+            "default": "general",
+            "datatype": "choice",
+            "choices": [
+                { "value": "general", "label": "General - a connected device with a web interface (the usual defaults)" },
+                { "value": "battery", "label": "Battery powered - sleeps, wakes to measure and report (WiFi started on demand)" }
+            ]
+        },
+        {
             "key": "connectivity",
             "prompt": "Wireless connectivity",
             "default": "wifi_ble",
@@ -344,11 +357,6 @@ fn get_schema(base_folder: &str) -> serde_json::Value {
             "generator": "\n        RaftWebServer"
         },
         {
-            "key": "inc_bleman_in_systypes",
-            "condition": "use_raft_ble",
-            "generator": "\"BLEMan\": { \"enable\": 1, \"peripheral\": {{{use_raft_ble_peripheral}}}, \"advIntervalMs\": 100, \"connIntvPrefMs\": 15, \"uuidCmdRespService\": \"aa76677e-9cfd-4626-a510-0d305be57c8d\", \"uuidCmdRespCommand\": \"aa76677e-9cfd-4626-a510-0d305be57c8e\", \"uuidCmdRespResponse\": \"aa76677e-9cfd-4626-a510-0d305be57c8f\", \"central\": {{{use_raft_ble_central}}}, \"scanBTHome\": 0, \"busConnName\": \"BusBLE\", \"nimLogLev\": \"E\" },"
-        },
-        {
             "key": "use_raft_ble_central_yn",
             "condition": "use_raft_ble_central",
             "generator": "CONFIG_BT_NIMBLE_ROLE_CENTRAL=y\n"
@@ -357,16 +365,6 @@ fn get_schema(base_folder: &str) -> serde_json::Value {
             "key": "inc_bleman_in_sdkconfig",
             "condition": "use_raft_ble",
             "generator": "\n# Bluetooth\nCONFIG_BT_ENABLED=y\nCONFIG_BT_NIMBLE_ENABLED=y\n{{{use_raft_ble_central_yn}}}CONFIG_BT_NIMBLE_ROLE_OBSERVER=n\nCONFIG_BT_NIMBLE_CRYPTO_STACK_MBEDTLS=n\nCONFIG_BT_NIMBLE_LOG_LEVEL_WARNING=y\nCONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE=6144\nCONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL=y\n"
-        },
-        {
-            "key": "inc_netman_in_systypes",
-            "condition": "use_wifi",
-            "generator": "\"NetMan\": { \"wifiSTAEn\": 1, \"wifiAPEn\": 1, \"wifiAPSSID\": \"{{{project_name}}}\", \"wifiAPPW\": \"{{{ap_password}}}\" }, \"MQTTMan\": { \"enable\": 0, \"brokerHostname\": \"mqttbroker\", \"brokerPort\": 1883, \"clientID\": \"\", \"topics\": [ { \"name\": \"examplein\", \"inbound\": 1, \"path\": \"example/in\", \"qos\": 1 }, { \"name\": \"exampleout\", \"inbound\": 0, \"path\": \"example/out\", \"qos\": 1 } ] },"
-        },
-        {
-            "key": "inc_webserver_in_systypes",
-            "condition": "use_raft_webserver",
-            "generator": "\"WebServer\": { \"enable\": 1, \"websockets\": [ { \"pfix\": \"ws\", \"pcol\": \"RICSerial\" } ] },"
         },
         {
             // Git tag for the Raft I2C library. No prompt: edit
@@ -439,6 +437,26 @@ fn get_schema(base_folder: &str) -> serde_json::Value {
 }
 
 // Evaluate a condition using evalexpr
+// The defaults an app type gives the later questions (a --set answer or a saved answer still wins). "general" is the
+// questions' own defaults
+fn type_defaults(app_type: &str) -> &'static [(&'static str, &'static str)] {
+    match app_type {
+        // Nothing is awake long enough to browse to; sensors are the app's own, added if wanted
+        "battery" => &[("connectivity", "wifi"), ("use_raft_webserver", "false"), ("i2c_sensors", "none")],
+        _ => &[],
+    }
+}
+
+// A response as the text a question's default or --set value would be (for choices, booleans and numbers)
+fn response_text(responses: &Map<String, JsonValue>, key: &str) -> String {
+    match responses.get(key) {
+        Some(JsonValue::String(s)) => s.clone(),
+        Some(JsonValue::Bool(b)) => b.to_string(),
+        Some(JsonValue::Number(n)) => n.to_string(),
+        _ => String::new(),
+    }
+}
+
 fn evaluate_condition(condition: &str, context: &HashMapContext) -> bool {
     match eval_boolean_with_context(condition, context) {
         Ok(result) => result,
@@ -603,8 +621,12 @@ pub fn get_new_app_config(base_folder: &str, use_defaults: bool, overrides: &Has
                 continue;
             }
 
-            // Process the default value with Handlebars
-            let default_value = if let Some(default) = &question.default {
+            // Process the default value with Handlebars (a question the app type sets a default for takes it from the
+            // responses, where the type's default was put when the type was answered)
+            let app_type = get_str(&responses, "app_type");
+            let default_value = if type_defaults(&app_type).iter().any(|(k, _)| *k == question.key) {
+                response_text(&responses, &question.key)
+            } else if let Some(default) = &question.default {
                 handlebars.render_template(default, &responses)?
             } else {
                 "".to_string()
@@ -657,6 +679,18 @@ pub fn get_new_app_config(base_folder: &str, use_defaults: bool, overrides: &Has
             let value = typed_value(question, &response);
             answers.insert(question.key.clone(), value.clone());
             set_value(&question.key, value, &mut responses, &mut eval_context);
+
+            // The app type's defaults for the later questions (not ones answered on the command line or saved)
+            if question.key == "app_type" {
+                for (key, value) in type_defaults(&response) {
+                    if overrides.contains_key(*key) {
+                        continue;
+                    }
+                    if let Some(q) = questions.iter().find(|q| q.key == *key) {
+                        set_value(key, typed_value(q, value), &mut responses, &mut eval_context);
+                    }
+                }
+            }
         }
     }
     let hardware = hardware.ok_or("no hardware question")?;
@@ -816,11 +850,113 @@ fn derive_values(hw: &HardwareFacts, responses: &mut Map<String, JsonValue>, ctx
         set_value("ap_password", json!(new_layout::random_password(12)), responses, ctx);
     }
 
+    // The app type's settings, with the connectivity and the chip (devdocs/raft-new-app-types-proposal.md §4)
+    let app_type = get_str(responses, "app_type");
+    type_settings(hw, &app_type, wifi, ble, webserver, i2c, responses, ctx);
+
     let features = AppFeatures { chip: hw.chip.clone(), wifi, ble, webserver, i2c, device_types, runtime_decode };
     let estimate = new_layout::estimate_app_bytes(&features);
     set_value("estimated_app_bytes", json!(estimate), responses, ctx);
     set_value("app_slot_bytes", json!(layout.app_slot), responses, ctx);
     Ok(features)
+}
+
+// The SysTypes.json blocks, sdkconfig fragments and other settings that depend on the app type, the connectivity
+// and the chip (devdocs/raft-new-app-types-proposal.md §4). For "general" these are the blocks raft new has
+// always written
+fn type_settings(hw: &HardwareFacts, app_type: &str, wifi: bool, ble: bool, webserver: bool, i2c: bool,
+            responses: &mut Map<String, JsonValue>, ctx: &mut HashMapContext) {
+    let battery = app_type == "battery";
+    let project_name = get_str(responses, "project_name");
+    let ap_password = get_str(responses, "ap_password");
+
+    // NetMan (with MQTTMan, off) - for a battery device WiFi is started on demand by the app, connects straight to the
+    // remembered AP, and there is no access point or mDNS to answer (RaftCore devdocs/wifi-fast-connect-and-on-demand.md)
+    let mqttman = r#""MQTTMan": { "enable": 0, "brokerHostname": "mqttbroker", "brokerPort": 1883, "clientID": "", "topics": [ { "name": "examplein", "inbound": 1, "path": "example/in", "qos": 1 }, { "name": "exampleout", "inbound": 0, "path": "example/out", "qos": 1 } ] },"#;
+    let netman = if !wifi {
+        String::new()
+    } else if battery {
+        // 2.4 GHz only on a chip with 5 GHz: a far shorter scan, and less transmit current
+        let band = if hw.chip == "esp32c5" { r#", "wifiBand": "2g""# } else { "" };
+        format!(r#""NetMan": {{ "wifiSTAEn": 1, "wifiAPEn": 0, "wifiAPSSID": "{}", "wifiAPPW": "{}", "enableMDNS": 0, "startMode": "onDemand", "wifiSTAFastReconnect": 1, "wifiSTAFastReconnectMaxUses": 30{} }}, {}"#,
+                project_name, ap_password, band, mqttman)
+    } else {
+        format!(r#""NetMan": {{ "wifiSTAEn": 1, "wifiAPEn": 1, "wifiAPSSID": "{}", "wifiAPPW": "{}" }}, {}"#, project_name, ap_password, mqttman)
+    };
+    set_value("inc_netman_in_systypes", json!(netman), responses, ctx);
+
+    // BLEMan - a sleeping device advertises less often (advertising is most of its radio time)
+    let bleman = if !ble {
+        String::new()
+    } else {
+        let adv_interval_ms = if battery { 1000 } else { 100 };
+        format!(r#""BLEMan": {{ "enable": 1, "peripheral": {}, "advIntervalMs": {}, "connIntvPrefMs": 15, "uuidCmdRespService": "aa76677e-9cfd-4626-a510-0d305be57c8d", "uuidCmdRespCommand": "aa76677e-9cfd-4626-a510-0d305be57c8e", "uuidCmdRespResponse": "aa76677e-9cfd-4626-a510-0d305be57c8f", "central": {}, "scanBTHome": 0, "busConnName": "BusBLE", "nimLogLev": "E" }},"#,
+                get_bool(responses, "use_raft_ble_peripheral"), adv_interval_ms, get_bool(responses, "use_raft_ble_central"))
+    };
+    set_value("inc_bleman_in_systypes", json!(bleman), responses, ctx);
+
+    // WebServer
+    let webserver_block = if webserver {
+        r#""WebServer": { "enable": 1, "websockets": [ { "pfix": "ws", "pcol": "RICSerial" } ] },"#
+    } else { "" };
+    set_value("inc_webserver_in_systypes", json!(webserver_block), responses, ctx);
+
+    // sdkconfig fragments (RaftCore sdkconfig-fragments/README.md) in systypes/Common/features.cmake
+    let fragments = if battery && wifi {
+        "
+# ESP-IDF settings for a battery device, from RaftCore's sdkconfig-fragments (raft new's \"App type\" answer):
+         # wifi-fast-connect - DHCP restores the last lease without checking it, saving 2-3 s on each connection.
+         # deep-sleep-fast-wake (no app image check on a wake from deep sleep) can be added once its effect is measured
+         set(RAFT_SDKCONFIG_FRAGMENTS wifi-fast-connect)
+"
+    } else if battery {
+        "
+# RaftCore's deep-sleep-fast-wake sdkconfig fragment (no app image check on a wake from deep sleep) can be
+         # selected here once its effect is measured: set(RAFT_SDKCONFIG_FRAGMENTS deep-sleep-fast-wake)
+"
+    } else { "" };
+    set_value("sdkconfig_fragments_cmake", json!(fragments), responses, ctx);
+
+    // No I2C: the device manager isn't built in (about 100 KB of flash)
+    let device_manager = if i2c { "" } else {
+        "
+# No I2C (raft new's \"I2C and sensors\" answer): the device manager isn't built in. Remove this line to add it back
+         set(RAFT_DEVICE_MANAGER OFF)
+"
+    };
+    set_value("device_manager_cmake", json!(device_manager), responses, ctx);
+
+    // Settings in the SysType's sdkconfig.defaults - none for the types so far
+    set_value("type_sdkconfig", json!(""), responses, ctx);
+
+    // The generated README's section for the type
+    let readme = if battery {
+        format!("
+## Battery powered app
+
+            This app was made with `raft new`'s \"Battery powered\" app type, so in `systypes/{}/SysTypes.json`:
+
+            - **WiFi is started on demand** (NetMan `\"startMode\": \"onDemand\"`): it is off until the app asks for it, so a wake that
+                only measures uses no radio. To start it from a SysMod: `sysModSendCmdJSON(\"NetMan\", R\"({{\"cmd\":\"wifiStart\"}})\")`;
+                from the serial console or the REST API: `wifistart`. NetMan's named value `connected` (and `ipAddr`) say when it is up.
+            - **It connects straight to the remembered access point** (`wifiSTAFastReconnect`), scanning for a better one every
+                30 connections (`wifiSTAFastReconnectMaxUses`).{}
+            - **The device's own access point and mDNS are off** (`wifiAPEn`, `enableMDNS`), so nothing answers while it is awake.
+                WiFi is set up over the serial console instead: `w/<SSID>/<password>`.
+
+            Settings that belong to an installation, not the app, are set on each device and kept in NVS:
+
+            - a static IP address, which saves the 2-3 s of DHCP on every connection: `wifiip/<ip>/<gateway>[/<netmask>]`;
+            - the MQTT broker (`MQTTMan` in SysTypes.json is the example; `enable` it and set `brokerHostname`, or use `postsettings`).
+
+            `systypes/Common/features.cmake` selects RaftCore's `wifi-fast-connect` sdkconfig fragment (shorter DHCP). Measured on
+            an ESP32-C5: a wake from deep sleep to an IP address took 15.3 s with ESP-IDF's defaults, and about 0.3 s with these
+            settings and a static IP. Details: RaftCore `devdocs/wifi-fast-connect-and-on-demand.md`.
+",
+            get_str(responses, "sys_type_name"),
+            if hw.chip == "esp32c5" { " `\"wifiBand\": \"2g\"` scans 2.4 GHz only: a far shorter scan, and less transmit current than 5 GHz." } else { "" })
+    } else { String::new() };
+    set_value("readme_type_section", json!(readme), responses, ctx);
 }
 
 fn print_summary(hw: &HardwareFacts, responses: &Map<String, JsonValue>, features: &AppFeatures) {
@@ -831,6 +967,11 @@ fn print_summary(hw: &HardwareFacts, responses: &Map<String, JsonValue>, feature
     let layout = new_layout::partition_layout(hw.flash_mb, ota);
     println!("\nSummary");
     println!("  Hardware:      {}", describe_hardware(hw));
+    let app_type = get_str(responses, "app_type");
+    if app_type != "general" {
+        println!("  App type:      {}{}", app_type, if get_str(responses, "sdkconfig_fragments_cmake").contains("set(RAFT_SDKCONFIG_FRAGMENTS") {
+            " (sdkconfig fragments: wifi-fast-connect)" } else { "" });
+    }
     for a in &hw.assumed {
         println!("                 (assumed: {})", a);
     }
