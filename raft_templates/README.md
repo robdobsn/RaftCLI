@@ -41,3 +41,4 @@ Links to further information:
 - [Raft command line documentation](https://github.com/robdobsn/RaftCLI)
 
 - [Raft Framework documentation](https://github.com/robdobsn/RaftCore/wiki)
+{{{readme_type_section}}}
