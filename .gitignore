@@ -3,3 +3,6 @@
 logs/
 .raftcli_history
 __pycache__/
+
+# Build output and raft state (e.g. build/raft.info: the last port and ESP-IDF) from running raft in this folder
+/build/
