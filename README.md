@@ -269,6 +269,17 @@ If you don't want to use Docker for the build then you can use the no-docker opt
 
 To perform a clean build use the -c option.
 
+### Build variants
+
+`raft build` builds the `dev` variant. Use `--release` for the release variant or `--variant <NAME>` for any other (letters, digits, `_` and `-`); `raft run` takes the same options. A variant adds `sdkconfig.<NAME>.defaults` from `systypes/Common` (after `Common/sdkconfig.defaults`) and from the SysType's folder (after its `sdkconfig.defaults`), if they exist, so a project with no variant files builds the same whatever the variant (RaftCore versions after 1.67.0). A common layout is to keep what is shipped in `sdkconfig.defaults` and only the development differences in `sdkconfig.dev.defaults`, e.g. the console on UART0 so logs survive USB being unplugged:
+
+```
+raft build              # dev
+raft build --release    # release
+```
+
+The variant isn't remembered: each build is `dev` unless `--release` or `--variant` is given. As the sdkconfig depends on the variant, the SysType's build folder is deleted (so the next build is a full one) when the variant differs from the one it was last built as.
+
 ```
 Build a raft app
 
@@ -287,6 +298,8 @@ Options:
   -e, --esp-idf-path <ESP_IDF_PATH>  Path to ESP IDF folder, or name of an EIM installation, for local build (when not using docker)
       --idf-version <VERSION>        ESP IDF version to build with (overrides ESP_IDF_VERSION in features.cmake and the Dockerfile)
       --eim-json <FILE>              Path to the Espressif Installation Manager eim_idf.json (if not in the default location)
+      --release                      Build the release variant (same as --variant release)
+      --variant <NAME>               Build variant: applies sdkconfig.<NAME>.defaults in systypes/Common and the SysType (default dev)
   -h, --help                         Print help
 ```
 
@@ -325,6 +338,8 @@ Options:
   -e, --esp-idf-path <ESP_IDF_PATH>  Path to ESP IDF folder, or name of an EIM installation, for local build (when not using docker)
       --idf-version <VERSION>        ESP IDF version to build with (overrides ESP_IDF_VERSION in features.cmake and the Dockerfile)
       --eim-json <FILE>              Path to the Espressif Installation Manager eim_idf.json (if not in the default location)
+      --release                      Build the release variant (same as --variant release)
+      --variant <NAME>               Build variant: applies sdkconfig.<NAME>.defaults in systypes/Common and the SysType (default dev)
   -p, --port <PORT>                  Serial port
   -o, --ip-addr <IP_ADDR>            IP address or hostname for OTA flashing
   -b, --monitor-baud <MONITOR_BAUD>  Monitor baud rate
@@ -732,7 +747,7 @@ Several command-line settings are automatically saved to `build/raft.info` when 
 
 To override a saved setting, simply specify the option again on the command line. The new value will replace the previously saved one. For example, if `--no-fs` was previously used and saved, use `--fs` to re-enable file system flashing.
 
-Build-related settings (system type, build method, ESP IDF path) are also saved automatically after a successful build. For each SysType the ESP IDF version and the libraries used from `raftdevlibs` are recorded too, so that the build folder is recreated when either changes.
+Build-related settings (system type, build method, ESP IDF path) are also saved automatically after a successful build. For each SysType the ESP IDF version, the libraries used from `raftdevlibs` and the [build variant](#build-variants) are recorded too, so that the build folder is recreated when any of them changes.
 
 ### Build from source
 

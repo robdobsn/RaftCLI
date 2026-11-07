@@ -13,7 +13,7 @@ mod serial_monitor;
 mod native_terminal;
 mod line_editor;
 mod app_build;
-use app_build::{build_raft_app, IdfBuildOptions};
+use app_build::{build_raft_app, resolve_build_variant, IdfBuildOptions};
 mod esp_idf;
 mod bootstrap_check;
 mod app_flash;
@@ -167,6 +167,11 @@ struct BuildCmd {
     // Option to specify the location of the EIM manifest
     #[clap(long, value_name = "FILE", help = "Path to the Espressif Installation Manager eim_idf.json (if not in the default location)")]
     eim_json: Option<String>,
+    // Build variant (selects sdkconfig.<variant>.defaults files)
+    #[clap(long, conflicts_with = "variant", help = "Build the release variant (same as --variant release)")]
+    release: bool,
+    #[clap(long, value_name = "NAME", help = "Build variant: applies sdkconfig.<NAME>.defaults in systypes/Common and the SysType (default dev)")]
+    variant: Option<String>,
 }
 
 // Define arguments specific to the `monitor` subcommand
@@ -232,6 +237,11 @@ struct RunCmd {
     // Option to specify the location of the EIM manifest
     #[clap(long, value_name = "FILE", help = "Path to the Espressif Installation Manager eim_idf.json (if not in the default location)")]
     eim_json: Option<String>,
+    // Build variant (selects sdkconfig.<variant>.defaults files)
+    #[clap(long, conflicts_with = "variant", help = "Build the release variant (same as --variant release)")]
+    release: bool,
+    #[clap(long, value_name = "NAME", help = "Build variant: applies sdkconfig.<NAME>.defaults in systypes/Common and the SysType (default dev)")]
+    variant: Option<String>,
     // Add an option to specify the serial port
     #[clap(short = 'p', long, help = "Serial port")]
     port: Option<String>,
@@ -365,6 +375,17 @@ struct Cli {
 }
 
 // Main function
+// Build variant from the --release and --variant options (exits if the name isn't valid)
+fn resolve_build_variant_or_exit(release: bool, variant: Option<&str>) -> String {
+    match resolve_build_variant(release, variant) {
+        Ok(build_variant) => build_variant,
+        Err(e) => {
+            println!("{}", e);
+            std::process::exit(1);
+        }
+    }
+}
+
 fn main() {
     // Parse the command line arguments
     let args = Cli::parse();
@@ -456,8 +477,9 @@ fn main() {
         Action::Build(cmd) => {
             // Get the app folder (or default to current folder)
             let app_folder = cmd.app_folder.unwrap_or(".".to_string());
+            let build_variant = resolve_build_variant_or_exit(cmd.release, cmd.variant.as_deref());
             let result = build_raft_app(&cmd.sys_type, cmd.clean,
-                        cmd.clean_only, app_folder, cmd.docker, cmd.no_docker,
+                        cmd.clean_only, app_folder, cmd.docker, cmd.no_docker, &build_variant,
                         IdfBuildOptions {
                             use_local_idf: cmd.idf_local_build,
                             idf_path_or_name: cmd.esp_idf_path,
@@ -558,8 +580,9 @@ fn main() {
             }
 
             // Build the app
+            let build_variant = resolve_build_variant_or_exit(cmd.release, cmd.variant.as_deref());
             let result = build_raft_app(&cmd.sys_type, cmd.clean, false,
-                        app_folder.clone(), cmd.docker, cmd.no_docker,
+                        app_folder.clone(), cmd.docker, cmd.no_docker, &build_variant,
                         IdfBuildOptions {
                             use_local_idf: cmd.idf_local_build,
                             idf_path_or_name: cmd.esp_idf_path,

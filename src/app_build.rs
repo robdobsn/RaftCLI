@@ -27,8 +27,29 @@ pub struct IdfBuildOptions {
     pub eim_json: Option<String>,
 }
 
+/// Environment variable which passes the build variant to CMake (RaftCore's RaftBootstrapPhase2.cmake)
+pub const RAFT_BUILD_VARIANT_ENV: &str = "RAFT_BUILD_VARIANT";
+
+/// Build variant used when none is specified
+pub const DEFAULT_BUILD_VARIANT: &str = "dev";
+
+/// Build variant from the --release and --variant options: release for --release, otherwise the --variant name
+/// (letters, digits, _ and - only, as it names files sdkconfig.<variant>.defaults) or dev
+pub fn resolve_build_variant(release: bool, variant: Option<&str>) -> Result<String, String> {
+    let name = match (release, variant) {
+        (true, Some(v)) if v != "release" => return Err(format!("--release can't be used with --variant {}", v)),
+        (true, _) => "release",
+        (false, Some(v)) => v,
+        (false, None) => DEFAULT_BUILD_VARIANT,
+    };
+    if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+        return Err(format!("Build variant \"{}\" is not valid - use letters, digits, _ and - only", name));
+    }
+    Ok(name.to_string())
+}
+
 pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: bool, app_folder: String,
-            force_docker_arg: bool, no_docker_arg: bool,
+            force_docker_arg: bool, no_docker_arg: bool, build_variant: &str,
             idf_options: IdfBuildOptions)
                             -> Result<String, Box<dyn std::error::Error>> {
 
@@ -82,6 +103,16 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: 
     // Projects created by an older "raft new" don't stop on a broken raftdevlibs/RaftCore link - offer to fix
     crate::project_update::check_for_build(&app_folder, &sys_type,
                 dev_libs.links.iter().any(|link| link.name == "RaftCore"));
+    // The sdkconfig depends on the build variant so a change of variant needs a new build folder
+    if let Some(last_variant) = build_info.build_variants.get(&sys_type) {
+        if *last_variant != build_variant && !delete_build_folder {
+            println!("SysType {} was last built as the {} variant and the {} variant is being built so the build folder will be deleted",
+                        sys_type, last_variant, build_variant);
+            delete_build_folder = true;
+        }
+    }
+    println!("Build variant {}", build_variant);
+
     if let Some(last_local_libs) = build_info.local_libs.get(&sys_type) {
         if *last_local_libs != local_libs && !delete_build_folder {
             let describe = |libs: &str| if libs.is_empty() { "none".to_string() } else { libs.to_string() };
@@ -135,7 +166,7 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: 
 
         // Build without docker
         let result = build_without_docker(app_folder.clone(), sys_type.clone(), clean, clean_only,
-                    delete_build_folder, &required_version, &idf_options, saved_explicit.clone());
+                    delete_build_folder, &required_version, build_variant, &idf_options, saved_explicit.clone());
         match result {
             Ok((output, install)) => {
                 // The -e option (or a saved -e option which was used) is remembered for the next build
@@ -153,7 +184,7 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: 
     } else if docker_ok {
         // Build with docker
         let result = build_with_docker(app_folder.clone(), sys_type.clone(), clean, clean_only,
-                    delete_build_folder, &required_version, &dev_libs.links);
+                    delete_build_folder, &required_version, build_variant, &dev_libs.links);
         (result, "docker", None, false)
     } else
     {
@@ -177,9 +208,11 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: 
     // Save complete build info to raft.info file after successful build
     let mut idf_versions = HashMap::new();
     let mut local_libs_built = HashMap::new();
+    let mut build_variants = HashMap::new();
     if !clean_only {
         idf_versions.insert(sys_type.clone(), required_version.for_cmake());
         local_libs_built.insert(sys_type.clone(), local_libs);
+        build_variants.insert(sys_type.clone(), build_variant.to_string());
     }
     let build_updates = BuildInfo {
         last_built_systype: Some(sys_type.clone()),
@@ -188,6 +221,7 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: 
         last_idf_path: actual_idf_path,
         idf_versions,
         local_libs: local_libs_built,
+        build_variants,
         ..BuildInfo::default()
     };
     if let Err(e) = write_build_info(
@@ -202,7 +236,7 @@ pub fn build_raft_app(build_sys_type: &Option<String>, clean: bool, clean_only: 
 
 // Build with docker and return output as a string
 fn build_with_docker(project_dir: String, systype_name: String, clean: bool, clean_only: bool,
-            delete_build_folder: bool, required_version: &RequiredVersion,
+            delete_build_folder: bool, required_version: &RequiredVersion, build_variant: &str,
             dev_lib_links: &[DevLibLink]) -> Result<String, std::io::Error> {
 
     // Build with docker
@@ -299,7 +333,9 @@ fn build_with_docker(project_dir: String, systype_name: String, clean: bool, cle
     #[cfg(unix)]
     docker_run_args.extend(["--user".to_string(), user_group]);
 
-    docker_run_args.extend(["-e".to_string(), version_env, "-v".to_string(), project_dir_full]);
+    let variant_env = format!("{}={}", RAFT_BUILD_VARIANT_ENV, build_variant);
+    docker_run_args.extend(["-e".to_string(), version_env, "-e".to_string(), variant_env,
+                    "-v".to_string(), project_dir_full]);
 
     // ESP-IDF and its submodules are owned by a different user in the container so git reports "dubious ownership"
     // (and IDF version lookups fail) - mark all repos as safe via env vars as this doesn't depend on HOME or the Dockerfile
@@ -397,7 +433,7 @@ fn find_esp_idf(required_version: &RequiredVersion, idf_options: &IdfBuildOption
 
 // Build without docker
 fn build_without_docker(project_dir: String, systype_name: String, clean: bool, clean_only: bool,
-    delete_build_folder: bool, required_version: &RequiredVersion, idf_options: &IdfBuildOptions,
+    delete_build_folder: bool, required_version: &RequiredVersion, build_variant: &str, idf_options: &IdfBuildOptions,
     saved_explicit: Option<String>) -> Result<(String, IdfInstall), std::io::Error> {
 
     // Debug
@@ -444,6 +480,7 @@ fn build_without_docker(project_dir: String, systype_name: String, clean: bool, 
     })?;
     let mut idf_env_vars_to_add = run_setup.env_vars;
     idf_env_vars_to_add.insert(esp_idf::RAFT_ESP_IDF_VERSION_ENV.to_string(), version_for_cmake);
+    idf_env_vars_to_add.insert(RAFT_BUILD_VARIANT_ENV.to_string(), build_variant.to_string());
 
     // IDF args in a vector of Strings
     let mut idf_run_args = run_setup.leading_args;
@@ -485,5 +522,23 @@ fn build_without_docker(project_dir: String, systype_name: String, clean: bool, 
             eprintln!("idf.py build failed: {}", error_message);
             Err(io::Error::new(io::ErrorKind::Other, error_message))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_variant_from_options() {
+        assert_eq!(resolve_build_variant(false, None).unwrap(), "dev");
+        assert_eq!(resolve_build_variant(true, None).unwrap(), "release");
+        assert_eq!(resolve_build_variant(false, Some("release")).unwrap(), "release");
+        assert_eq!(resolve_build_variant(true, Some("release")).unwrap(), "release");
+        assert_eq!(resolve_build_variant(false, Some("bench_2-x")).unwrap(), "bench_2-x");
+        assert!(resolve_build_variant(true, Some("dev")).is_err());
+        assert!(resolve_build_variant(false, Some("")).is_err());
+        assert!(resolve_build_variant(false, Some("../x")).is_err());
+        assert!(resolve_build_variant(false, Some("a b")).is_err());
     }
 }
