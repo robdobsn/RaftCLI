@@ -16,11 +16,13 @@ use std::sync::{
     mpsc, Arc,
 };
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use chrono::Local;
 
 use crate::app_ports::{select_most_likely_port, PortsCmd};
+use crate::baud_detect::{identify_port, remember_baud, remembered_baud, BaudChoice, BaudDetector, DetectAction,
+            MonitorBaud, PortKind};
 use crate::console_log::{open_log_file, write_to_log};
 use crate::line_editor::{LineEditAction, LineEditor};
 use crate::native_terminal::{NativeTerminal, TermEvent};
@@ -92,6 +94,8 @@ enum ReaderEvent {
     Data(Vec<u8>),
     Error(String),
     Reconnected,
+    // A message from the monitor itself (e.g. a change of baud rate), shown in the output
+    Info(String),
 }
 
 // Display state — uses NativeTerminal with DECSTBM scroll region
@@ -465,6 +469,40 @@ fn open_serial_port(
     Ok(port)
 }
 
+/// Baud rate detection in the reader thread
+struct ReaderBaudDetect {
+    detector: BaudDetector,
+    // Key of the adapter, to remember the rate found for it
+    adapter_key: String,
+    // The rate has been changed since the monitor started
+    switched: bool,
+}
+
+impl ReaderBaudDetect {
+    // Act on what the detector asks for: change the port's rate, remember a readable rate, tell the user
+    fn apply(&mut self, action: Option<DetectAction>, port: &mut Box<dyn SerialPort>, baud_rate: &mut u32,
+                tx: &mpsc::Sender<ReaderEvent>) {
+        match action {
+            Some(DetectAction::Switch(baud, reason)) => {
+                if let Err(e) = port.set_baud_rate(baud) {
+                    let _ = tx.send(ReaderEvent::Info(format!("can't change the baud rate to {}: {}", baud, e)));
+                    return;
+                }
+                *baud_rate = baud;
+                self.switched = true;
+                let _ = tx.send(ReaderEvent::Info(format!("{} - trying {} baud", reason, baud)));
+            }
+            Some(DetectAction::Readable(baud)) => {
+                remember_baud(&self.adapter_key, baud);
+                if self.switched {
+                    let _ = tx.send(ReaderEvent::Info(format!("text readable at {} baud (remembered for this adapter)", baud)));
+                }
+            }
+            None => {}
+        }
+    }
+}
+
 /// Spawn the reader thread. Returns the receiver end of the channel.
 fn spawn_reader_thread(
     read_port: Box<dyn SerialPort>,
@@ -472,6 +510,7 @@ fn spawn_reader_thread(
     no_reconnect: bool,
     port_name: String,
     baud_rate: u32,
+    mut baud_detect: Option<ReaderBaudDetect>,
     write_rx: mpsc::Receiver<Vec<u8>>,
 ) -> mpsc::Receiver<ReaderEvent> {
     let (tx, rx) = mpsc::channel();
@@ -481,6 +520,8 @@ fn spawn_reader_thread(
         let mut buf = [0u8; SERIAL_READ_BUF_SIZE];
         let mut backoff_ms: u64 = 100;
         let current_port_name = port_name;
+        // The rate in use (which detection may change)
+        let mut baud_rate = baud_rate;
 
         while running.load(Ordering::SeqCst) {
             let mut write_error = false;
@@ -531,9 +572,18 @@ fn spawn_reader_thread(
                     if tx.send(ReaderEvent::Data(buf[..n].to_vec())).is_err() {
                         break;
                     }
+                    if let Some(bd) = baud_detect.as_mut() {
+                        let action = bd.detector.on_data(&buf[..n], Instant::now());
+                        bd.apply(action, &mut port, &mut baud_rate, &tx);
+                    }
                 }
                 Ok(_) => {}
-                Err(ref e) if e.kind() == io::ErrorKind::TimedOut => {}
+                Err(ref e) if e.kind() == io::ErrorKind::TimedOut => {
+                    if let Some(bd) = baud_detect.as_mut() {
+                        let action = bd.detector.on_tick(Instant::now());
+                        bd.apply(action, &mut port, &mut baud_rate, &tx);
+                    }
+                }
                 Err(_e) => {
                     let _ = tx.send(ReaderEvent::Error("Serial port read error".into()));
                     if no_reconnect {
@@ -567,7 +617,7 @@ fn spawn_reader_thread(
 pub fn start_native(
     app_folder: String,
     serial_port_name: Option<String>,
-    baud_rate: u32,
+    baud_options: MonitorBaud,
     no_reconnect: bool,
     log: bool,
     log_folder: String,
@@ -594,6 +644,29 @@ pub fn start_native(
         }
     };
 
+    // Choose the baud rate: the one given (-b), or the most likely one, checked against the data received on a
+    // UART (the ESP32's native USB ignores it)
+    let identity = identify_port(&port_name);
+    let remembered = if identity.kind == PortKind::NativeUsb { None } else { remembered_baud(&identity.adapter_key) };
+    let choice = BaudChoice::resolve(&baud_options, &identity, remembered);
+    let baud_rate = choice.baud;
+    let start_message = if identity.kind == PortKind::NativeUsb && baud_options.explicit.is_none() {
+        format!("{} (native USB)", port_name)
+    } else if choice.detecting() {
+        format!("{} at {} baud ({}) - the rate is changed if the output is unreadable", port_name, baud_rate, choice.source)
+    } else {
+        format!("{} at {} baud ({})", port_name, baud_rate, choice.source)
+    };
+    let baud_detect = if choice.detecting() {
+        Some(ReaderBaudDetect {
+            detector: BaudDetector::new(choice.candidates.clone()),
+            adapter_key: identity.adapter_key.clone(),
+            switched: false,
+        })
+    } else {
+        None
+    };
+
     // Open the serial port
     let port = open_serial_port(&port_name, baud_rate)?;
 
@@ -609,10 +682,12 @@ pub fn start_native(
         no_reconnect,
         port_name.clone(),
         baud_rate,
+        baud_detect,
         write_rx,
     );
 
     if agent_stream {
+        eprintln!("Monitoring {}", start_message);
         return run_agent_stream(serial_rx, write_tx, running, no_reconnect, log_file, rx_ts_mode);
     }
 
@@ -620,6 +695,7 @@ pub fn start_native(
     let history_file_path = format!("{}/{}", app_folder, history_file_name);
     let mut display = Display::new(&history_file_path, rx_ts_mode);
     display.init()?;
+    display.print_output(&format!("[raft monitor: {}]\r\n", start_message));
     display.draw_prompt();
 
     // Closure to send a command to the serial port
@@ -670,6 +746,12 @@ pub fn start_native(
                     drain_error = true;
                     break;
                 }
+                Ok(ReaderEvent::Info(msg)) => {
+                    let text = format!("\r\n[raft monitor: {}]\r\n", msg);
+                    display.print_output(&text);
+                    write_to_log(&log_file, &text);
+                    had_serial_data = true;
+                }
                 Ok(ReaderEvent::Reconnected) => {
                     display.show_info("Reconnected");
                     thread::sleep(Duration::from_millis(500));
@@ -705,7 +787,7 @@ pub fn start_native(
 pub fn start_non_native(
     app_folder: String,
     port: Option<String>,
-    baud: u32,
+    explicit_baud: Option<u32>,
     no_reconnect: bool,
     log: bool,
     log_folder: String,
@@ -716,9 +798,13 @@ pub fn start_non_native(
     let mut args = vec![
         "monitor".to_string(),
         app_folder.clone(),
-        "-b".to_string(),
-        baud.to_string(),
     ];
+    // The rate is only passed when given on the command line: otherwise raft.exe chooses it (from the project's
+    // build and raft.info, which it reads too, and the adapter, which only it can identify) and checks it
+    if let Some(baud) = explicit_baud {
+        args.push("-b".to_string());
+        args.push(baud.to_string());
+    }
     if let Some(p) = port {
         args.push("-p".to_string());
         args.push(p);
@@ -859,6 +945,10 @@ fn run_agent_stream(
             }
             Ok(ReaderEvent::Reconnected) => {
                 eprintln!("Serial monitor reconnected");
+            }
+            Ok(ReaderEvent::Info(msg)) => {
+                eprintln!("Serial monitor: {}", msg);
+                write_to_log(&log_file, &format!("\r\n[raft monitor: {}]\r\n", msg));
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => {

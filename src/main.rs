@@ -10,6 +10,7 @@ use app_config::get_new_app_config;
 mod new_hardware;
 mod new_layout;
 mod serial_monitor;
+mod baud_detect;
 mod native_terminal;
 mod line_editor;
 mod app_build;
@@ -179,7 +180,7 @@ struct MonitorCmd {
     #[clap(short = 'p', long, help = "Serial port")]
     port: Option<String>,
     // Option to specify the monitor baud rate
-    #[clap(short = 'b', long, help = "Baud rate")]
+    #[clap(short = 'b', long, help = "Baud rate (otherwise chosen, and checked on a UART, automatically)")]
     monitor_baud: Option<u32>,
     // Option to disable serial port reconnection when monitoring
     #[clap(short = 'r', long, help = "Disable serial port reconnection when monitoring")]
@@ -239,7 +240,7 @@ struct RunCmd {
     #[clap(short = 'o', long, help = "IP address or hostname for OTA flashing")]
     ip_addr: Option<String>,    
     // Option to specify the monitor baud rate
-    #[clap(short = 'b', long, help = "Monitor baud rate")]
+    #[clap(short = 'b', long, help = "Monitor baud rate (otherwise chosen, and checked on a UART, automatically)")]
     monitor_baud: Option<u32>,
     // Option to disable serial port reconnection when monitoring
     #[clap(short = 'r', long, help = "Disable serial port reconnection when monitoring")]
@@ -364,6 +365,18 @@ struct Cli {
     action: Action,
 }
 
+// Baud rate options for the serial monitor: the rate given on the command line (used as it is), the firmware's
+// console rate (from the SysType's built sdkconfig) and the rate given last time (raft.info) - see baud_detect
+fn monitor_baud_options(app_folder: &str, explicit: Option<u32>, sys_type: Option<String>, saved: &BuildInfo)
+            -> baud_detect::MonitorBaud {
+    let sys_type = sys_type.or(saved.last_built_systype.clone());
+    baud_detect::MonitorBaud {
+        explicit,
+        firmware: sys_type.and_then(|st| baud_detect::firmware_console_baud(app_folder, &st)),
+        saved: saved.last_monitor_baud,
+    }
+}
+
 // Main function
 fn main() {
     // Parse the command line arguments
@@ -481,7 +494,7 @@ fn main() {
             let saved = read_build_info(&app_folder);
             let port = cmd.port.clone().or(saved.last_port.clone());
             let vid = cmd.vid.clone().or(saved.last_vid.clone());
-            let monitor_baud = cmd.monitor_baud.or(saved.last_monitor_baud).unwrap_or(115200);
+            let monitor_baud = monitor_baud_options(&app_folder, cmd.monitor_baud, None, &saved);
 
             // Save explicitly-provided settings
             let mut updates = BuildInfo::default();
@@ -506,7 +519,7 @@ fn main() {
             // Start the serial monitor
             if !cmd.native_serial_port && is_wsl() {
                 let result = serial_monitor::start_non_native(app_folder, 
-                            port.clone(), monitor_baud, cmd.no_reconnect, log, log_folder, vid.clone(),
+                            port.clone(), monitor_baud.explicit, cmd.no_reconnect, log, log_folder, vid.clone(),
                             cmd.rx_timestamps.clone(), cmd.agent_stream);
                 match result {
                     Ok(()) => std::process::exit(0),
@@ -540,7 +553,6 @@ fn main() {
             let port = cmd.port.clone().or(saved.last_port.clone());
             let vid = cmd.vid.clone().or(saved.last_vid.clone());
             let flash_baud = cmd.flash_baud.or(saved.last_flash_baud).unwrap_or(1000000);
-            let monitor_baud = cmd.monitor_baud.or(saved.last_monitor_baud).unwrap_or(115200);
             let no_fs = if cmd.no_fs { true } else if cmd.fs { false } else { saved.last_no_fs.unwrap_or(false) };
 
             // Save explicitly-provided settings
@@ -591,10 +603,14 @@ fn main() {
             let log = cmd.log;
             let log_folder = cmd.log_folder.unwrap_or("./logs".to_string());
 
+            // Monitor baud rate options (after the build, whose sdkconfig gives the firmware's console rate)
+            let monitor_baud = monitor_baud_options(&app_folder, cmd.monitor_baud, cmd.sys_type.clone(),
+                        &read_build_info(&app_folder));
+
             // Start the serial monitor
             if !cmd.native_serial_port && is_wsl() {
                 let result = serial_monitor::start_non_native(app_folder, 
-                            port.clone(), monitor_baud, cmd.no_reconnect, log, log_folder, vid.clone(),
+                            port.clone(), monitor_baud.explicit, cmd.no_reconnect, log, log_folder, vid.clone(),
                             cmd.rx_timestamps.clone(), cmd.agent_stream);
                 match result {
                     Ok(()) => std::process::exit(0),
