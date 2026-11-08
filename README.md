@@ -342,7 +342,7 @@ Options:
       --variant <NAME>               Build variant: applies sdkconfig.<NAME>.defaults in systypes/Common and the SysType (default dev)
   -p, --port <PORT>                  Serial port
   -o, --ip-addr <IP_ADDR>            IP address or hostname for OTA flashing
-  -b, --monitor-baud <MONITOR_BAUD>  Monitor baud rate
+  -b, --monitor-baud <MONITOR_BAUD>  Monitor baud rate (otherwise chosen, and checked on a UART, automatically)
   -r, --no-reconnect                 Disable serial port reconnection when monitoring
   -n, --native-serial-port           Native serial port when in WSL
   -f, --flash-baud <FLASH_BAUD>      Flash baud rate
@@ -365,7 +365,7 @@ OR
 raft m
 ```
 
-This starts the serial monitor, displaying serial output received from the device and sending keyboard commands to the device. If a serial port isn't specified (with the -p option) then the most likely suitable port will be used. To specify the baud rate for monitoring use -b.
+This starts the serial monitor, displaying serial output received from the device and sending keyboard commands to the device. If a serial port isn't specified (with the -p option) then the most likely suitable port will be used. To specify the baud rate for monitoring use -b (see [Monitor baud rate](#monitor-baud-rate) for what happens without it).
 
 When in the serial monitor up-arrow and down-arrow show prior command history (as when using bash linux shell).
 
@@ -385,7 +385,7 @@ Arguments:
 
 Options:
   -p, --port <PORT>                  Serial port
-  -b, --monitor-baud <MONITOR_BAUD>  Baud rate
+  -b, --monitor-baud <MONITOR_BAUD>  Baud rate (otherwise chosen, and checked on a UART, automatically)
   -r, --no-reconnect                 Disable serial port reconnection when monitoring
   -n, --native-serial-port           Native serial port when in WSL
   -l, --log                          Log serial data to file
@@ -397,6 +397,23 @@ Options:
 ```
 
 To exit the serial monitor press ESC
+
+### Monitor baud rate
+
+The baud rate only matters on a real UART - a USB-UART adapter (CP210x, FTDI, CH340 ...) or a serial port which isn't USB. The ESP32's own USB port (USB Serial/JTAG or USB CDC, USB vendor ID `303a`) ignores it.
+
+- **`-b` given:** that rate is used and never changed.
+- **Otherwise, on a UART,** the monitor starts with the most likely rate, the first of:
+  1. the console rate of the SysType's built firmware (`CONFIG_ESP_CONSOLE_UART_BAUDRATE` in `build/<SysType>/raft/sdkconfig`, when the console is on a UART) - for `raft run` the firmware just flashed, for `raft monitor` the SysType last built
+  2. the rate last found working on this adapter
+  3. the `-b` given last time (saved in `raft.info`)
+  4. 115200
+
+  and then checks what arrives. If the output stays unreadable for over half a second (the byte patterns a UART gives at the wrong rate, and no log lines) other rates are tried in turn (the ones above, then 115200, 921600, 460800, 230400, 1000000 and 2000000) until log text is readable. Each change is shown in the output (and in the log file), e.g. `[raft monitor: output unreadable at 115200 - trying 921600 baud]`. Once text has been read the rate is only changed again after 3 seconds of unreadable output (e.g. a different firmware), so a burst of binary data doesn't change it; if no rate gives readable text the most readable one is kept and the rates are tried again 10 seconds later. The ESP32's boot ROM always prints at 115200, so its few lines after a reset are unreadable when the app uses another rate - they don't change the rate.
+
+The rate found is remembered for the adapter in `monitor_bauds.json` in the user's config folder (`~/.config/raft` on Linux, `%APPDATA%\raft` on Windows), keyed by the adapter's USB IDs and serial number (or the port name if it has none), so the right rate is used first time next time, in any project. A `-b` given on the command line is also saved in `raft.info` as before, but is only a starting point for later sessions which don't give `-b`.
+
+Nothing is detected without received data, so a quiet device stays at the starting rate. Under WSL the rate is chosen by the Windows `raft.exe` (which can identify the adapter); `-b` is passed to it only when given.
 
 For automated testing or AI-agent workflows, use `--agent-stream`. This keeps regular monitor behaviour unchanged, but disables the interactive terminal UI and writes serial data directly to stdout. Status and reconnect messages are written to stderr.
 
@@ -740,7 +757,7 @@ Several command-line settings are automatically saved to `build/raft.info` when 
 | Setting | Saved by | Example |
 | -- | -- | -- |
 | `-p` serial port | `flash`, `run`, `monitor` | `raft flash -p COM8` |
-| `-b` monitor baud rate | `run`, `monitor` | `raft monitor -b 921600` |
+| `-b` monitor baud rate (a starting point when `-b` isn't given - see [Monitor baud rate](#monitor-baud-rate)) | `run`, `monitor` | `raft monitor -b 921600` |
 | `-f` flash baud rate | `flash`, `run` | `raft flash -f 2000000` |
 | `-v` vendor ID | `flash`, `run`, `monitor` | `raft flash -v 0x10c4` |
 | `--no-fs` / `--fs` | `flash`, `run` | `raft flash --no-fs` |
