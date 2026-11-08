@@ -36,6 +36,9 @@ pub struct BuildInfo {
     // Libraries used from raftdevlibs when each SysType was last built (comma separated names) - CMake does
     // not notice when a library switches between local and remote so the build folder must be recreated
     pub local_libs: HashMap<String, String>,
+    // Build variant (e.g. dev or release) each SysType was last built as - the sdkconfig depends on it so the
+    // build folder must be recreated when it changes
+    pub build_variants: HashMap<String, String>,
 }
 
 impl Default for BuildInfo {
@@ -53,6 +56,7 @@ impl Default for BuildInfo {
             last_ip_addr: None,
             idf_versions: HashMap::new(),
             local_libs: HashMap::new(),
+            build_variants: HashMap::new(),
         }
     }
 }
@@ -82,6 +86,11 @@ pub fn read_build_info(app_folder: &str) -> BuildInfo {
                 local_libs: json["local_libs"].as_object().map(|libs| {
                     libs.iter()
                         .filter_map(|(sys_type, names)| names.as_str().map(|n| (sys_type.clone(), n.to_string())))
+                        .collect()
+                }).unwrap_or_default(),
+                build_variants: json["build_variants"].as_object().map(|variants| {
+                    variants.iter()
+                        .filter_map(|(sys_type, variant)| variant.as_str().map(|v| (sys_type.clone(), v.to_string())))
                         .collect()
                 }).unwrap_or_default(),
             };
@@ -130,6 +139,11 @@ pub fn write_build_info(
             local_libs.extend(updates.local_libs.clone());
             local_libs
         },
+        build_variants: {
+            let mut build_variants = existing.build_variants;
+            build_variants.extend(updates.build_variants.clone());
+            build_variants
+        },
     };
 
     let mut raft_info = serde_json::json!({
@@ -147,6 +161,7 @@ pub fn write_build_info(
     if let Some(ref v) = merged.last_ip_addr { raft_info["last_ip_addr"] = serde_json::json!(v); }
     if !merged.idf_versions.is_empty() { raft_info["idf_versions"] = serde_json::json!(merged.idf_versions); }
     if !merged.local_libs.is_empty() { raft_info["local_libs"] = serde_json::json!(merged.local_libs); }
+    if !merged.build_variants.is_empty() { raft_info["build_variants"] = serde_json::json!(merged.build_variants); }
     
     fs::write(&raft_info_path, serde_json::to_string_pretty(&raft_info)?)?;
     Ok(())
@@ -731,6 +746,18 @@ mod tests {
         assert_eq!(info.local_libs.get("BoardA").map(|s| s.as_str()), Some("RaftCore"));
         assert_eq!(info.local_libs.get("BoardB").map(|s| s.as_str()), Some(""));
         assert_eq!(info.idf_versions.get("BoardB").map(|s| s.as_str()), Some("6.1.0"));
+        assert!(info.build_variants.is_empty());
+
+        // Build variants are recorded per SysType
+        for (sys_type, variant) in [("BoardA", "dev"), ("BoardB", "release"), ("BoardA", "release")] {
+            let mut updates = BuildInfo::default();
+            updates.build_variants.insert(sys_type.to_string(), variant.to_string());
+            write_build_info(&app_folder_str, &updates).unwrap();
+        }
+        let info = read_build_info(&app_folder_str);
+        assert_eq!(info.build_variants.get("BoardA").map(|s| s.as_str()), Some("release"));
+        assert_eq!(info.build_variants.get("BoardB").map(|s| s.as_str()), Some("release"));
+        assert_eq!(info.local_libs.get("BoardA").map(|s| s.as_str()), Some("RaftCore"));
 
         let _ = fs::remove_dir_all(&app_folder);
     }
