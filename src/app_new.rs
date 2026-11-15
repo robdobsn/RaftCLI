@@ -356,6 +356,27 @@ mod tests {
     }
 
     #[test]
+    fn no_user_sysmod() {
+        let folder = generate("nousersysmod", &[("create_user_sysmod", "false")]);
+        // No component is generated (the build takes every folder in components as one), and nothing refers to one
+        assert!(!folder.join("components").exists(), "{:?}", fs::read_dir(folder.join("components")).map(|d| d.count()));
+        let systypes: serde_json::Value = serde_json::from_str(&read(&folder, "systypes/MyApp/SysTypes.json")).unwrap();
+        assert!(systypes.get("DevMan").is_some());
+        assert!(systypes.as_object().unwrap().keys().all(|k| !k.is_empty() && !k.contains("{{") && k != "MainSysMod"));
+        let main = read(&folder, "main/main.cpp");
+        assert!(!main.contains("MainSysMod") && !main.contains("{{"));
+        assert!(!read(&folder, "main/CMakeLists.txt").contains("MainSysMod"));
+        fs::remove_dir_all(&folder).unwrap();
+
+        // With one (the default), named
+        let folder = generate("usersysmod", &[("user_sys_mod_class", "MyMod")]);
+        assert!(folder.join("components/MyMod/MyMod.cpp").exists() && folder.join("components/MyMod/MyMod.h").exists());
+        assert!(read(&folder, "systypes/MyApp/SysTypes.json").contains("\"MyMod\": {"));
+        assert!(read(&folder, "main/main.cpp").contains("MyMod::create"));
+        fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
     fn no_device_type_sources_without_raftcore_device_types() {
         let folder = generate("nodevtypes", &[("i2c_sensors", "i2c")]);
         assert!(!folder.join("systypes/Common/DeviceTypeSources.json").exists());

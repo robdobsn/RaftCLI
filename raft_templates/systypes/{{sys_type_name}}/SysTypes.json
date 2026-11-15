@@ -47,10 +47,10 @@
         "Devices":
         [
         ]
-    },
+    }{{#if create_user_sysmod}},
     "{{user_sys_mod_name}}": {
         "exampleGroup": {
             "exampleKey": "Welcome to Raft!"
         }
-    }
+    }{{/if}}
 }
