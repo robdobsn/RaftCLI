@@ -694,6 +694,14 @@ pub fn get_new_app_config(base_folder: &str, use_defaults: bool, overrides: &Has
         }
     }
     let hardware = hardware.ok_or("no hardware question")?;
+
+    // No user SysMod: its names are blank, so its component folder (a path with a blank part) isn't generated.
+    // user_sys_mod_name would otherwise keep its unrendered default, "{{user_sys_mod_class}}", as a folder name
+    if !get_bool(&responses, "create_user_sysmod") {
+        for key in ["user_sys_mod_class", "user_sys_mod_name"] {
+            set_value(key, json!(""), &mut responses, &mut eval_context);
+        }
+    }
     if let Some(pw) = overrides.get("ap_password") {
         set_value("ap_password", json!(pw), &mut responses, &mut eval_context);
     }
