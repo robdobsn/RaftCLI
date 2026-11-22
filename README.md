@@ -13,7 +13,7 @@ device type records on a running device over HTTP, WebSocket, USB serial or BLE.
     - [Build using Docker](#build-using-docker)
     - [Build using ESP IDF](#build-using-esp-idf)
   - [Troubleshooting](#troubleshooting)
-    - [cargo install fails on Linux/WSL (libudev-sys / pkg-config)](#cargo-install-fails-on-linuxwsl-libudev-sys--pkg-config)
+    - [cargo install fails on Linux/WSL (libudev-sys / libdbus-sys / pkg-config)](#cargo-install-fails-on-linuxwsl-libudev-sys--libdbus-sys--pkg-config)
   - [Creating a new raft app](#creating-a-new-raft-app)
   - [Building a raft app](#building-a-raft-app)
   - [Build and flash firmware to a development board](#build-and-flash-firmware-to-a-development-board)
@@ -64,6 +64,7 @@ To update to a newer release run `cargo install raftcli` again. `raft new`, `bui
 If you are using a Linux OS and see an install failure like:
 
 - `failed to run custom build command for libudev-sys`
+- `failed to run custom build command for libdbus-sys`
 - `The pkg-config command could not be found`
 
 see the [Troubleshooting](#troubleshooting) section below for exact recovery steps.
@@ -115,14 +116,15 @@ When the required version for a SysType changes RaftCLI deletes that SysType's b
 
 ## Troubleshooting
 
-### cargo install fails on Linux/WSL (libudev-sys / pkg-config)
+### cargo install fails on Linux/WSL (libudev-sys / libdbus-sys / pkg-config)
 
 If `cargo install raftcli` fails with errors such as:
 
 - `failed to run custom build command for libudev-sys`
+- `failed to run custom build command for libdbus-sys`
 - `The pkg-config command could not be found`
 
-install the required system packages and retry:
+install the required system packages and retry. `serialport` needs `libudev` and the default BLE support (`btleplug`) needs `dbus-1`, both found via `pkg-config` at build time:
 
 ```sh
 sudo apt-get update
