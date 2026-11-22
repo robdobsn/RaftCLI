@@ -313,6 +313,15 @@ fn build_with_docker(project_dir: String, systype_name: String, clean: bool, cle
 
     command_sequence += "idf.py -B ";
     command_sequence += &build_dir;
+
+    // Only the app folder is mounted, so when it is a subfolder of a git repo ESP-IDF can't run git describe in the
+    // container and the app version falls back to "1". Work the version out on the host and pass it in.
+    if let Some(project_ver) = project_version_from_host(Path::new(&project_dir)) {
+        println!("App version {}", project_ver);
+        command_sequence += " -DPROJECT_VER=";
+        command_sequence += &shell_single_quote(&project_ver);
+    }
+
     if clean {
         command_sequence += " fullclean";
     }
@@ -525,9 +534,109 @@ fn build_without_docker(project_dir: String, systype_name: String, clean: bool, 
     }
 }
 
+/// The app version ESP-IDF would choose if it could see the whole git repo, worked out on the host.
+///
+/// ESP-IDF uses PROJECT_VER if defined, else the first line of version.txt in the project folder, else
+/// `git describe --always --tags --dirty` run in the project folder. A Docker build mounts only the app folder, so
+/// for an app in a subfolder of a repo git describe fails in the container and the version becomes "1".
+///
+/// Passing the result as -DPROJECT_VER keeps the same order of precedence:
+/// - version.txt is read here, so it still wins (PROJECT_VER, once defined, stops ESP-IDF reading it)
+/// - a set(PROJECT_VER ...) in the project's CMakeLists.txt is a normal variable and still wins over the cache entry
+/// Returns None if neither source gives a version, so ESP-IDF's own fallback still applies.
+fn project_version_from_host(project_dir: &Path) -> Option<String> {
+    if let Ok(contents) = fs::read_to_string(project_dir.join("version.txt")) {
+        let first_line = contents.lines().next().unwrap_or("").trim();
+        if !first_line.is_empty() {
+            return Some(first_line.to_string());
+        }
+    }
+    let output = Command::new("git")
+        .args(["describe", "--always", "--tags", "--dirty"])
+        .current_dir(project_dir)
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let describe = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if describe.is_empty() { None } else { Some(describe) }
+}
+
+/// Quote a string for a POSIX shell (the Docker build runs its command with bash -c)
+fn shell_single_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn temp_dir(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("raftcli_test_{}_{}", name, std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn git(dir: &Path, args: &[&str]) {
+        let ok = Command::new("git").args(args).current_dir(dir)
+            .env("GIT_AUTHOR_NAME", "t").env("GIT_AUTHOR_EMAIL", "t@t").env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .stdout(Stdio::null()).stderr(Stdio::null()).status().unwrap().success();
+        assert!(ok, "git {:?} failed", args);
+    }
+
+    #[test]
+    fn project_version_from_git_tag_in_parent_repo() {
+        // App in a subfolder of a repo - the case Docker builds couldn't see
+        let repo = temp_dir("ver_git");
+        let app = repo.join("MyFirmware");
+        fs::create_dir_all(&app).unwrap();
+        fs::write(app.join("CMakeLists.txt"), "x").unwrap();
+        git(&repo, &["init", "-q"]);
+        git(&repo, &["add", "."]);
+        git(&repo, &["commit", "-q", "-m", "init"]);
+        git(&repo, &["tag", "v1.2.3"]);
+        assert_eq!(project_version_from_host(&app).as_deref(), Some("v1.2.3"));
+
+        // Uncommitted change
+        fs::write(app.join("CMakeLists.txt"), "y").unwrap();
+        assert_eq!(project_version_from_host(&app).as_deref(), Some("v1.2.3-dirty"));
+        let _ = fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn project_version_txt_wins_over_git() {
+        let repo = temp_dir("ver_txt");
+        git(&repo, &["init", "-q"]);
+        fs::write(repo.join("version.txt"), "2.0.0\nignored\n").unwrap();
+        git(&repo, &["add", "."]);
+        git(&repo, &["commit", "-q", "-m", "init"]);
+        git(&repo, &["tag", "v1.0.0"]);
+        assert_eq!(project_version_from_host(&repo).as_deref(), Some("2.0.0"));
+        let _ = fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn project_version_none_outside_git() {
+        let dir = temp_dir("ver_none");
+        // Skip if the temp folder happens to be inside a git repo
+        if Command::new("git").args(["rev-parse"]).current_dir(&dir).stderr(Stdio::null()).status()
+                .map(|s| s.success()).unwrap_or(false) {
+            return;
+        }
+        assert_eq!(project_version_from_host(&dir), None);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn shell_quoting() {
+        assert_eq!(shell_single_quote("v1.2.3-4-gabc"), "'v1.2.3-4-gabc'");
+        assert_eq!(shell_single_quote("a'b"), "'a'\\''b'");
+    }
 
     #[test]
     fn build_variant_from_options() {
